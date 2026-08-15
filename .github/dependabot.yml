@@ -7,6 +7,11 @@ updates:
     labels:
       - "dependencies"
       - "chore"
+      - "github_actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/travel-assistant/app"
@@ -15,3 +20,8 @@ updates:
     labels:
       - "dependencies"
       - "chore"
+      - "python"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
