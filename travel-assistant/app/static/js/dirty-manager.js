@@ -27,7 +27,7 @@ window.ConfigDirtyManager = (function () {
     if (dirty) {
       if (badge) {
         badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
+          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
         badge.innerHTML =
           '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Unsaved changes';
       }
@@ -43,7 +43,7 @@ window.ConfigDirtyManager = (function () {
     } else {
       if (badge) {
         badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
+          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
         badge.innerHTML =
           '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span> No unsaved changes';
       }
