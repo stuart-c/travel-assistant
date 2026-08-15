@@ -476,6 +476,17 @@ def db_stats() -> Any:
     )
 
 
+@config_bp.route("/sync", methods=["GET"])
+def background_sync() -> Any:
+    """Display transit dataset background synchronisation status and controls."""
+    stats = get_db_stats()
+    return render_template(
+        "config_sync.html",
+        stats=stats,
+        active_tab="sync",
+    )
+
+
 @config_bp.route("/db/sync", methods=["POST"], strict_slashes=False)
 @config_bp.route("/db/sync/<table_name>", methods=["POST"], strict_slashes=False)
 def sync_db_table(table_name: str = "all") -> Any:

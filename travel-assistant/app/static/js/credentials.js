@@ -1,6 +1,7 @@
 /**
  * API Credentials View Controller.
- * Manages live validation requests, status badge indicators, and dynamic model population.
+ * Manages live validation requests, status badge indicators, dynamic model population,
+ * and on-change enabled 'Check' buttons.
  */
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('credentials-form');
@@ -51,6 +52,35 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
+  function setCheckButtonState(serviceKey, enabled) {
+    const btn = document.querySelector(`.check-btn[data-service="${serviceKey}"]`);
+    if (!btn) return;
+
+    btn.disabled = !enabled;
+    if (enabled) {
+      btn.className =
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:text-sky-900 dark:border-sky-700 dark:bg-sky-950/70 dark:text-sky-300 dark:hover:bg-sky-900 transition-colors cursor-pointer';
+    } else {
+      btn.className =
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-colors';
+    }
+  }
+
+  // Bind input change listeners to enable corresponding Check button
+  Object.entries(serviceSections).forEach(([serviceKey, config]) => {
+    config.fields.forEach((fieldId) => {
+      const el = document.getElementById(fieldId);
+      if (el) {
+        el.addEventListener('input', () => {
+          setCheckButtonState(serviceKey, true);
+        });
+        el.addEventListener('change', () => {
+          setCheckButtonState(serviceKey, true);
+        });
+      }
+    });
+  });
+
   // Track input modifications for dirty manager
   if (window.ConfigDirtyManager) {
     form.addEventListener('input', () => {
@@ -60,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       form.reset();
       Object.keys(serviceSections).forEach((serviceKey) => {
+        setCheckButtonState(serviceKey, false);
         validateService(serviceKey);
       });
     });
@@ -78,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!config.hasValue()) {
       badge.className = 'hidden';
       badge.innerHTML = '';
+      setCheckButtonState(serviceKey, false);
       return;
     }
 
@@ -152,22 +184,25 @@ document.addEventListener('DOMContentLoaded', () => {
         'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
       badge.title = err.message || 'Network error';
       badge.innerHTML = `<span>✗</span> Network error`;
+    } finally {
+      setCheckButtonState(serviceKey, false);
     }
   }
 
-  // Bind Re-check buttons
-  document.querySelectorAll('.recheck-btn').forEach((btn) => {
+  // Bind Check buttons
+  document.querySelectorAll('.check-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       const service = btn.getAttribute('data-service');
-      if (service) {
+      if (service && !btn.disabled) {
         validateService(service);
       }
     });
   });
 
-  // Automatically trigger validation on page load for all populated sections
+  // Automatically trigger initial validation on page load for all populated sections
   Object.keys(serviceSections).forEach((serviceKey) => {
+    setCheckButtonState(serviceKey, false);
     validateService(serviceKey);
   });
 });

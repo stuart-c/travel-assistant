@@ -10,9 +10,10 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, and Open API credentials.
 - **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing bus routes and rail station departure feeds with client-side staging, search autocomplete, and atomic persistence.
 - **Transfers Configuration**: Dedicated configuration page at `/config/transfers` with stacked Grid.js tables for managing inter-location walking links (e.g. station-to-bus stop) and intra-station platform-to-platform interchange times with search autocomplete and step-free accessibility support.
-- **Database Statistics & Transit Synchronisation**: Dedicated storage and sync dashboard at `/config/db` showing database file size, SQLite storage path, schema tables, per-table record counts, last updated timestamps, and on-demand refresh triggers.
+- **Database Statistics**: Minimalist storage usage view at `/config/db` displaying SQLite database disk size.
+- **Background Synchronisation**: Dedicated dashboard at `/config/sync` with interactive Grid.js table displaying cached transit datasets (`bus_routes`, `bus_stops`, `stations`), record counts, last synchronised timestamps, and on-demand refresh triggers.
 - **Automated Background Updates**: Background daemon worker (`TransitBackgroundWorker`) that automatically synchronises transit datasets (`bus_routes`, `bus_stops`, and `stations`) whenever data is older than 24 hours (1 day).
-- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>`).
+- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>` and `/config/db/sync/<table_name>`).
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
 
 ## Timetable Architecture & Next Stages
