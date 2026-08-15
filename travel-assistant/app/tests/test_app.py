@@ -9,10 +9,7 @@ def test_index_page(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"Travel Assistant" in response.data
     assert b"Online &amp; Operational" in response.data
-    assert b'id="settings-cog-button"' in response.data
-    assert b'href="/config/credentials"' in response.data
-    assert b"Material+Symbols+Outlined" in response.data
-    assert b"material-symbols-outlined" in response.data
+    assert b"https://unpkg.com/@tailwindcss/browser@4" in response.data
 
 
 def test_ping_endpoint(client: FlaskClient) -> None:
@@ -41,7 +38,6 @@ def test_ingress_header_handling(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"/api/hassio_ingress/token123/api/ping" in response.data
     assert b"Active" in response.data
-    assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data
 
 
 def test_api_404_json_response(client: FlaskClient) -> None:

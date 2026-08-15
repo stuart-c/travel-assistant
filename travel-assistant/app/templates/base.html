@@ -5,35 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 </head>
-<body>
-  <div class="container">
-    <header class="header">
-      <div class="header-main">
-        <div class="title-row">
-          <a href="{{ ingress_path }}/" class="brand-link">
-            <h1>{{ app_name }}</h1>
+<body class="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between antialiased selection:bg-sky-500 selection:text-white transition-colors duration-200">
+  <div class="max-w-3xl mx-auto w-full px-4 sm:px-6 py-10 sm:py-16 flex-1 flex flex-col">
+    <header class="mb-8">
+      <div class="flex items-center justify-between gap-4 mb-2">
+        <div class="flex items-center gap-3">
+          <a href="{{ ingress_path }}/" class="group hover:opacity-90 transition-opacity">
+            <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{{ app_name }}</h1>
           </a>
-          <span class="badge">v{{ app_version }}</span>
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30">v{{ app_version }}</span>
         </div>
-        <div class="header-actions">
-          <a href="{{ ingress_path }}/config/credentials" class="icon-button" title="Settings" aria-label="Settings" id="settings-cog-button">
-            <span class="material-symbols-outlined cog-icon" aria-hidden="true">settings</span>
+        <div>
+          <a href="{{ ingress_path }}/config/credentials" class="inline-flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/80 transition-colors" title="Settings" aria-label="Settings" id="settings-cog-button">
+            <span class="material-symbols-outlined text-xl" aria-hidden="true">settings</span>
           </a>
         </div>
       </div>
       {% block subtitle %}
-      <p class="subtitle">{{ message if message else 'Travel and transport intelligence dashboard' }}</p>
+      <p class="text-base text-slate-600 dark:text-slate-400">{{ message if message else 'Travel and transport intelligence dashboard' }}</p>
       {% endblock %}
     </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div class="flash-container">
+        <div class="mb-6 space-y-3">
           {% for category, msg in messages %}
-            <div class="alert alert-{{ category }}" role="alert">
-              <span class="alert-icon">
+            <div class="flex items-center gap-3 p-4 rounded-xl text-sm font-medium border {% if category == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/50{% else %}bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800/50{% endif %}" role="alert">
+              <span class="font-bold">
                 {% if category == 'success' %}
                   ✓
                 {% else %}
@@ -47,11 +47,11 @@
       {% endif %}
     {% endwith %}
 
-    <main>
+    <main class="flex-1">
       {% block content %}{% endblock %}
     </main>
 
-    <footer class="footer">
+    <footer class="mt-auto pt-12 pb-6 text-center text-xs text-slate-500 dark:text-slate-500">
       <p>&copy; 2026 Stuart C. Licensed under Apache 2.0.</p>
     </footer>
   </div>
