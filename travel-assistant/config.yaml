@@ -13,6 +13,7 @@ panel_title: "Travel Assistant"
 ingress: true
 ingress_port: 8099
 host_network: false
+homeassistant_api: true
 options:
   log_level: "info"
 schema:

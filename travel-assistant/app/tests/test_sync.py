@@ -353,21 +353,22 @@ def test_sync_table_dispatch(app: Flask) -> None:
 
 
 def test_sync_all(app: Flask) -> None:
-    """Test sync_all runs all 3 transit synchronisations."""
+    """Test sync_all runs all registered transit synchronisations."""
     with app.app_context():
         with patch("app.sync.transit_sync.sync_table") as mock_sync:
             mock_sync.return_value = {"status": "success", "records": 2}
             res = sync_all(app=app)
             assert res["success"] is True
-            assert res["total_records"] == 6
-            assert len(res["tables"]) == 3
+            assert res["total_records"] == 8
+            assert len(res["tables"]) == 4
 
 
 def test_check_and_run_background_sync(app: Flask) -> None:
     """Test check_and_run_background_sync only triggers overdue tables."""
     with app.app_context():
-        # bus_routes is up to date
+        # bus_routes and ha_locations are up to date
         SyncMetadata.record_success("bus_routes", 10, 1.0)
+        SyncMetadata.record_success("ha_locations", 5, 0.5)
         # bus_stops is not synced
         # stations is not synced
 
@@ -378,6 +379,7 @@ def test_check_and_run_background_sync(app: Flask) -> None:
             assert "bus_stops" in res["results"]
             assert "stations" in res["results"]
             assert "bus_routes" not in res["results"]
+            assert "ha_locations" not in res["results"]
 
 
 def test_background_worker_lifecycle(app: Flask) -> None:
@@ -434,10 +436,11 @@ def test_sync_all_with_table_error(app: Flask) -> None:
                 {"status": "success", "records": 5},
                 {"status": "error", "records": 0, "message": "Failed"},
                 {"status": "success", "records": 3},
+                {"status": "success", "records": 2},
             ]
             res = sync_all(app=app)
             assert res["success"] is False
-            assert res["total_records"] == 8
+            assert res["total_records"] == 10
 
 
 def test_background_worker_handles_exception_in_loop(app: Flask) -> None:

@@ -1,5 +1,6 @@
 """Synchronisation and background update package for transit datasets."""
 
+from app.sync.ha_sync import sync_ha_locations
 from app.sync.transit_sync import (
     check_and_run_background_sync,
     sync_all,
@@ -19,6 +20,7 @@ __all__ = [
     "sync_bus_routes",
     "sync_bus_stops",
     "sync_stations",
+    "sync_ha_locations",
     "sync_table",
     "sync_all",
     "check_and_run_background_sync",

@@ -18,7 +18,7 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations")
+SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations", "ha_locations")
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -95,8 +95,24 @@ def run_migrations(database: SqliteDatabase) -> None:
     with database.bind_ctx(all_models):
         database.create_tables(all_models, safe=True)
 
-    # Migrator instance for future column alterations
-    _ = SqliteMigrator(database)
+    # Migrator instance for schema column alterations
+    migrator = SqliteMigrator(database)
+    try:
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='locations'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("locations")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "ha" not in cols:
+                from peewee import BooleanField
+                from playhouse.migrate import migrate
+
+                migrate(
+                    migrator.add_column("locations", "ha", BooleanField(default=False))
+                )
+    except Exception:
+        pass
 
 
 def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
@@ -225,8 +241,17 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             sync_status = "idle" if is_syncable else "managed"
             error_message = None
 
-            if table_name in sync_meta_map:
-                meta_item = sync_meta_map[table_name]
+            meta_key = (
+                table_name
+                if table_name in sync_meta_map
+                else (
+                    "ha_locations"
+                    if table_name == "locations" and "ha_locations" in sync_meta_map
+                    else None
+                )
+            )
+            if meta_key:
+                meta_item = sync_meta_map[meta_key]
                 last_updated_at = meta_item.get("last_updated_at")
                 sync_status = meta_item.get("status", "idle")
                 error_message = meta_item.get("error_message")

@@ -1,7 +1,7 @@
 """Peewee model for configured geographic locations."""
 
 from typing import Any, Dict, List, Optional
-from peewee import AutoField, CharField, FloatField
+from peewee import AutoField, BooleanField, CharField, FloatField
 
 from app.models.base import BaseModel
 
@@ -13,6 +13,7 @@ class Location(BaseModel):
     name = CharField()
     latitude = FloatField()
     longitude = FloatField()
+    ha = BooleanField(default=False)
 
     class Meta:
         table_name = "locations"
@@ -36,6 +37,9 @@ class Location(BaseModel):
     def get_stats(cls) -> Dict[str, Any]:
         """Aggregate summary counts of configured locations."""
         total = cls.select().count()
+        ha_count = cls.select().where(cls.ha == True).count()  # noqa: E712
         return {
             "total": total,
+            "ha_count": ha_count,
+            "manual_count": total - ha_count,
         }

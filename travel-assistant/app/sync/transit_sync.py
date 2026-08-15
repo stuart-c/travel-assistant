@@ -25,6 +25,7 @@ from app.models import (
     Station,
     SyncMetadata,
 )
+from app.sync.ha_sync import sync_ha_locations
 
 
 def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
@@ -314,6 +315,8 @@ def sync_table(
         return sync_bus_stops(app=app)
     elif norm_name == "stations":
         return sync_stations(app=app)
+    elif norm_name in ("ha_locations", "locations", "homeassistant"):
+        return sync_ha_locations(app=app)
     else:
         return {
             "table": norm_name,

@@ -18,7 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.
 - Timetables configuration page (`/config/timetables`) with CDN-hosted Grid.js table supporting client-side search, sorting, pagination, and deletion.
 - Transfers configuration page (`/config/transfers`) with stacked CDN-hosted Grid.js tables for managing inter-location walking links and intra-station platform transfers.
-- Locations configuration page (`/config/locations`) with Grid.js table and Leaflet interactive map modal dialog supporting add, edit, delete, and two-way coordinate synchronisation.
+- Locations configuration page (`/config/locations`) with Grid.js table and Leaflet interactive map modal dialogue supporting add, edit, delete, and two-way coordinate synchronisation.
+- Home Assistant location synchronisation (`ha_locations`) importing all Home Assistant zones (`zone.*` entities) daily and on-demand.
+- Boolean flag `ha` on `Location` model and schema migration for `locations` table to distinguish Home Assistant synchronised locations from manual entries.
+- UI protections and read-only View modal dialogue on `/config/locations` preventing direct editing or deletion of Home Assistant synchronised locations.
+- `HomeAssistantClient` datasource client in `app/datasources/homeassistant.py` communicating with Home Assistant Core API via Supervisor or `HA_URL` / `HA_TOKEN`.
+- Background worker integration and on-demand synchronisation on `/config/sync` for Home Assistant locations.
+- Granted Home Assistant Core API permissions via `homeassistant_api: true` in `travel-assistant/config.yaml`.
 - Peewee database model `Location` and schema table `locations` for persisting named geographic coordinates.
 - Dedicated location lookup and autocomplete endpoint (`GET /config/transfers/search`) querying local SQLite `stations` and `bus_stops` datasets with search deduplication and fallback support.
 - SQLite schema tables `location_transfers` and `platform_transfers` with index optimisations.

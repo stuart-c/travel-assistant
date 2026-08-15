@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncAllIcon = document.getElementById('sync-all-icon');
   const syncAllText = document.getElementById('sync-all-text');
 
-  const SYNCABLE_NAMES = ['bus_routes', 'bus_stops', 'stations'];
+  const SYNCABLE_NAMES = ['bus_routes', 'bus_stops', 'stations', 'ha_locations'];
 
   function extractSyncableTables(stats) {
     const allTables = (stats && Array.isArray(stats.tables)) ? stats.tables : [];
@@ -46,6 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'bus_routes': return 'alt_route';
       case 'bus_stops': return 'directions_bus';
       case 'stations': return 'train';
+      case 'ha_locations': return 'pin_drop';
+      case 'locations': return 'pin_drop';
       default: return 'sync';
     }
   }
@@ -55,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'bus_routes': return 'Bus Routes';
       case 'bus_stops': return 'Bus Stops';
       case 'stations': return 'Train Stations';
+      case 'ha_locations': return 'Home Assistant Locations';
+      case 'locations': return 'Home Assistant Locations';
       default: return name;
     }
   }

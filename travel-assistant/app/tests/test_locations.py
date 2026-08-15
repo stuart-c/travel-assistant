@@ -19,15 +19,19 @@ def test_location_model_crud(app: Flask) -> None:
             name="Home",
             latitude=51.7520,
             longitude=-1.2577,
+            ha=True,
         )
         loc2 = Location.create(
             name="Workplace",
             latitude=51.5074,
             longitude=-0.1278,
+            ha=False,
         )
 
         assert loc1.id > 0
         assert loc2.id > 0
+        assert loc1.ha is True
+        assert loc2.ha is False
         assert Location.select().count() == 2
 
         # Get by ID and check dict representation
@@ -35,11 +39,13 @@ def test_location_model_crud(app: Flask) -> None:
         assert retrieved.name == "Home"
         assert retrieved.latitude == 51.7520
         assert retrieved.longitude == -1.2577
+        assert retrieved.ha is True
 
         loc_dict = retrieved.to_dict()
         assert loc_dict["name"] == "Home"
         assert loc_dict["latitude"] == 51.7520
         assert loc_dict["longitude"] == -1.2577
+        assert loc_dict["ha"] is True
         assert "created_at" in loc_dict
         assert "updated_at" in loc_dict
 
@@ -62,6 +68,8 @@ def test_location_model_crud(app: Flask) -> None:
         # Stats
         stats = Location.get_stats()
         assert stats["total"] == 2
+        assert stats["ha_count"] == 1
+        assert stats["manual_count"] == 1
 
         # Delete
         loc2.delete_instance()
@@ -124,9 +132,9 @@ def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
 def test_post_locations_empty_list_clears_records(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/locations with empty list clears existing records."""
+    """Test POST /config/locations with empty list clears existing manual records."""
     with app.app_context():
-        Location.create(name="Temporary Place", latitude=51.5, longitude=-0.1)
+        Location.create(name="Temporary Place", latitude=51.5, longitude=-0.1, ha=False)
         assert Location.select().count() == 1
 
     response = client.post(
@@ -140,6 +148,39 @@ def test_post_locations_empty_list_clears_records(
 
     with app.app_context():
         assert Location.select().count() == 0
+
+
+def test_post_locations_preserves_ha_records(client: FlaskClient, app: Flask) -> None:
+    """Test POST /config/locations preserves existing HA records even if omitted."""
+    with app.app_context():
+        Location.create(name="HA Home", latitude=51.7520, longitude=-1.2577, ha=True)
+        Location.create(name="Manual Place", latitude=51.5, longitude=-0.1, ha=False)
+        assert Location.select().count() == 2
+
+    # Post an empty list or only a new manual location
+    payload = [
+        {"name": "New Manual Place", "latitude": 52.0, "longitude": 0.0, "ha": False}
+    ]
+
+    response = client.post(
+        "/config/locations",
+        data={"locations_json": json.dumps(payload)},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Locations saved successfully." in response.data
+
+    with app.app_context():
+        saved = list(Location.select())
+        assert len(saved) == 2
+        names = {s.name: s for s in saved}
+        assert "HA Home" in names
+        assert names["HA Home"].ha is True
+        assert names["HA Home"].latitude == 51.7520
+        assert "New Manual Place" in names
+        assert names["New Manual Place"].ha is False
+        assert "Manual Place" not in names
 
 
 def test_post_locations_invalid_json(client: FlaskClient) -> None:

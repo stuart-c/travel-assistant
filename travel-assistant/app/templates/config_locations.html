@@ -5,7 +5,7 @@
 {% block config_title %}Locations{% endblock %}
 
 {% block subtitle %}
-<p class="text-base text-slate-600 dark:text-slate-400">Manage custom locations, coordinates, and journey waypoints.</p>
+<p class="text-base text-slate-600 dark:text-slate-400">Manage custom locations, coordinates, and Home Assistant synchronised waypoints.</p>
 {% endblock %}
 
 {% block config_content %}
@@ -87,6 +87,11 @@
     </div>
 
     <input type="hidden" id="edit-location-index" value="-1">
+
+    <div id="location-ha-readonly-notice" class="hidden p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 dark:bg-sky-950/60 dark:border-sky-800 dark:text-sky-300 text-xs flex items-center gap-2">
+      <span class="material-symbols-outlined text-base">info</span>
+      <span>This location is synchronised from Home Assistant and is read-only. Coordinates and names cannot be edited or deleted here.</span>
+    </div>
 
     <div class="space-y-4">
       <div>
