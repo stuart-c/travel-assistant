@@ -457,3 +457,89 @@ def test_get_db_stats(app: Flask) -> None:
             t["name"] == "bus_routes" and t["sync_status"] == "success"
             for t in stats["tables"]
         )
+
+
+def test_get_db_stats_with_raw_string_timestamp(app: Flask) -> None:
+    """Test get_db_stats safely handles string-formatted timestamps in sync_metadata."""
+    from app.db import db
+
+    with app.app_context():
+        database = db.obj
+        database.execute_sql(
+            "INSERT OR REPLACE INTO sync_metadata "
+            "(table_name, last_updated_at, status, records_count, duration_seconds, "
+            "created_at, updated_at) "
+            "VALUES ('stations', '2026-08-15 12:30:45.123456', 'success', 42, 1.2, "
+            "'2026-08-15 12:30:45', '2026-08-15 12:30:45')"
+        )
+        stats = get_db_stats(app)
+        station_table = next(
+            (t for t in stats["tables"] if t["name"] == "stations"), None
+        )
+        assert station_table is not None
+        assert station_table["last_updated_at"] == "2026-08-15T12:30:45.123456"
+        assert station_table["sync_status"] == "success"
+
+
+def test_get_db_stats_connection_management(app: Flask) -> None:
+    """Test get_db_stats preserves open connection state and closes if initially closed."""
+    from app.db import db
+
+    with app.app_context():
+        database = db.obj
+
+        # 1. When connection is already open, it stays open
+        if database.is_closed():
+            database.connect()
+        assert not database.is_closed()
+        _ = get_db_stats(app)
+        assert not database.is_closed()
+
+        # 2. When connection is closed, it cleans up after execution
+        database.close()
+        assert database.is_closed()
+        _ = get_db_stats(app)
+        assert database.is_closed()
+
+
+def test_run_migrations_adds_missing_columns_to_existing_tables(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """Test run_migrations upgrades older tables missing created_at/updated_at columns."""
+    from peewee import SqliteDatabase
+    from app.db.core import run_migrations
+    from app.models import SyncMetadata
+
+    test_db_path = str(tmp_path / "legacy_schema.db")
+    legacy_db = SqliteDatabase(test_db_path)
+
+    # 1. Create a legacy table without created_at and updated_at
+    legacy_db.execute_sql(
+        "CREATE TABLE sync_metadata ("
+        "table_name VARCHAR PRIMARY KEY, "
+        "last_updated_at DATETIME, "
+        "status VARCHAR DEFAULT 'idle', "
+        "error_message TEXT, "
+        "records_count INTEGER DEFAULT 0, "
+        "duration_seconds FLOAT DEFAULT 0.0"
+        ")"
+    )
+    legacy_db.execute_sql(
+        "INSERT INTO sync_metadata (table_name, status) VALUES ('bus_routes', 'idle')"
+    )
+
+    # 2. Run migrations on the legacy database
+    run_migrations(legacy_db)
+
+    # 3. Verify columns now exist and queries with BaseModel work
+    with legacy_db.bind_ctx([SyncMetadata]):
+        cursor = legacy_db.execute_sql('PRAGMA table_info("sync_metadata")')
+        cols = {row[1] for row in cursor.fetchall()}
+        assert "created_at" in cols
+        assert "updated_at" in cols
+
+        # Query using Peewee select which includes t1.created_at
+        records = list(SyncMetadata.select())
+        assert len(records) == 1
+        assert records[0].table_name == "bus_routes"
+        assert records[0].status == "idle"

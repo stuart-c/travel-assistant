@@ -1,6 +1,7 @@
 """Unit tests for configuration views and credentials management."""
 
 import json
+from typing import Any
 from unittest.mock import MagicMock
 from pytest import MonkeyPatch
 from flask.testing import FlaskClient
@@ -525,3 +526,61 @@ def test_sync_db_table_endpoint_specific_error(
     data = response.get_json()
     assert data["success"] is False
     assert data["status"] == "error"
+
+
+def test_db_and_sync_route_aliases_and_redirects(client: FlaskClient) -> None:
+    """Test /config/database alias and /db, /database, /sync redirects."""
+    # 1. Alias /config/database -> 200 (same template as /config/db)
+    res_alias = client.get("/config/database")
+    assert res_alias.status_code == 200
+    assert b"Database Size" in res_alias.data
+
+    # 2. Redirects
+    res_db = client.get("/db", follow_redirects=False)
+    assert res_db.status_code == 302
+    assert res_db.headers["Location"].endswith("/config/db")
+
+    res_database = client.get("/database", follow_redirects=False)
+    assert res_database.status_code == 302
+    assert res_database.headers["Location"].endswith("/config/db")
+
+    res_sync = client.get("/sync", follow_redirects=False)
+    assert res_sync.status_code == 302
+    assert res_sync.headers["Location"].endswith("/config/sync")
+
+
+def test_sync_db_table_unmocked_integration(client: FlaskClient) -> None:
+    """Test live unmocked POST /config/db/sync and POST /config/db/sync/<table_name>."""
+    # Without credentials configured, sync returns skipped_no_credentials gracefully
+    res_all = client.post("/config/db/sync")
+    assert res_all.status_code == 200
+    data_all = res_all.get_json()
+    assert "stats" in data_all
+    assert data_all["table"] == "all"
+
+    res_routes = client.post("/config/db/sync/bus_routes")
+    assert res_routes.status_code == 200
+    data_routes = res_routes.get_json()
+    assert data_routes["table"] == "bus_routes"
+    assert data_routes["status"] == "skipped_no_credentials"
+    assert "stats" in data_routes
+
+
+def test_get_db_and_sync_pages_with_fallback_on_error(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test database and sync pages render fallback safely if get_db_stats fails."""
+    from app.views import config
+
+    def raise_err(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Simulated database failure")
+
+    monkeypatch.setattr(config, "get_db_stats", raise_err)
+
+    res_db = client.get("/config/db")
+    assert res_db.status_code == 200
+    assert b"Database Size" in res_db.data
+
+    res_sync = client.get("/config/sync")
+    assert res_sync.status_code == 200
+    assert b"Background Sync" in res_sync.data
