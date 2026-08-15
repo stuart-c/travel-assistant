@@ -52,9 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getDatasetDisplayName(name) {
     switch (name) {
-      case 'bus_routes': return 'Bus Routes (BODS)';
-      case 'bus_stops': return 'Bus Stops (BODS)';
-      case 'stations': return 'Rail Stations (Darwin/S3)';
+      case 'bus_routes': return 'Bus Routes';
+      case 'bus_stops': return 'Bus Stops';
+      case 'stations': return 'Train Stations';
       default: return name;
     }
   }
@@ -63,19 +63,18 @@ document.addEventListener('DOMContentLoaded', () => {
     return tables.map((tbl) => {
       const icon = getDatasetIcon(tbl.name);
       const displayName = getDatasetDisplayName(tbl.name);
-      const rowCountFormatted = Number(tbl.row_count || 0).toLocaleString();
 
       let statusBadge = '';
       if (tbl.sync_status === 'success') {
         statusBadge = `
           <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Synced
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Updated
           </span>
         `;
       } else if (tbl.sync_status === 'syncing') {
         statusBadge = `
           <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Syncing...
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Refreshing...
           </span>
         `;
       } else if (tbl.sync_status === 'skipped_no_credentials') {
@@ -100,28 +99,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const lastUpdatedHtml = tbl.last_updated_at
         ? `<div class="font-medium text-slate-700 dark:text-slate-300 text-xs">${escapeHtml(tbl.last_updated_at)}</div>`
-        : `<div class="text-slate-400 dark:text-slate-500 italic text-xs">Never / Not synchronised</div>`;
+        : `<div class="text-slate-400 dark:text-slate-500 italic text-xs">Never updated</div>`;
 
       const actionHtml = `
         <button 
           type="button" 
           class="row-refresh-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-sky-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-sky-400 transition-colors shadow-xs cursor-pointer"
           data-table="${escapeHtml(tbl.name)}"
-          title="Synchronise ${escapeHtml(tbl.name)} dataset now"
+          title="Refresh ${escapeHtml(displayName)} dataset now"
         >
-          <span class="material-symbols-outlined text-xs leading-none" id="sync-icon-${escapeHtml(tbl.name)}">sync</span>
-          <span>Sync Now</span>
+          <span class="material-symbols-outlined text-xs leading-none" id="sync-icon-${escapeHtml(tbl.name)}">refresh</span>
+          <span>Refresh</span>
         </button>
       `;
 
       return [
         gridjs.html(`
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2.5">
             <span class="material-symbols-outlined text-base text-slate-400 dark:text-slate-500 leading-none">${icon}</span>
-            <div>
-              <div class="font-semibold text-xs text-slate-900 dark:text-slate-100">${escapeHtml(displayName)}</div>
-              <code class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapeHtml(tbl.name)}</code>
-            </div>
+            <span class="font-medium text-sm text-slate-900 dark:text-slate-100">${escapeHtml(displayName)}</span>
           </div>
         `),
         gridjs.html(`
@@ -129,11 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ${lastUpdatedHtml}
             <div>${statusBadge}</div>
           </div>
-        `),
-        gridjs.html(`
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/60 dark:border-sky-800/40">
-            ${rowCountFormatted}
-          </span>
         `),
         gridjs.html(actionHtml),
       ];
@@ -143,31 +134,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialise Grid.js instance
   const grid = new gridjs.Grid({
     columns: [
-      { name: 'Dataset', width: '240px' },
-      { name: 'Last Synchronised', width: '240px' },
-      { name: 'Records', width: '130px' },
-      { name: 'Actions', width: '130px', sort: false },
+      { name: 'Dataset', width: '40%' },
+      { name: 'Last updated', width: '40%' },
+      { name: 'Actions', width: '20%', sort: false },
     ],
     data: formatGridData(stagedTables),
-    search: {
-      placeholder: 'Search transit datasets...',
-    },
+    search: false,
+    pagination: false,
     sort: true,
-    pagination: {
-      limit: 10,
-      summary: true,
-    },
-    language: {
-      search: {
-        placeholder: 'Search transit datasets...',
-      },
-      pagination: {
-        previous: 'Previous',
-        next: 'Next',
-        showing: 'Showing',
-        results: () => 'datasets',
-      },
-    },
   }).render(gridContainer);
 
   function syncGridDisplay() {

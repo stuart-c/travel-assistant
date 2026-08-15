@@ -13,7 +13,12 @@
 {% endblock %}
 
 {% block config_content %}
+<!-- Grid.js Stylesheet (CDN) and Custom Theme -->
+<link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+
 <div class="space-y-6" id="db-stats-container">
+  <!-- Storage Overview Stat Card -->
   <section class="rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 max-w-md">
     <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
       <span class="material-symbols-outlined text-base text-sky-500">hard_drive</span>
@@ -26,5 +31,25 @@
       {{ "{:,}".format(stats.file_size_bytes) }} bytes
     </div>
   </section>
+
+  <!-- Database Tables Section -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="mb-4">
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Database Tables</h2>
+      <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+        Overview of SQLite schema tables and persisted record counts.
+      </p>
+    </div>
+
+    <!-- Grid.js Container Mount Point -->
+    <div id="db-grid-wrapper"></div>
+  </section>
 </div>
+
+<!-- Initial Data Payload -->
+<script id="initial-db-stats" type="application/json">{{ stats | tojson }}</script>
+
+<!-- Grid.js UMD Script (CDN) and Database Controller -->
+<script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/db.js"></script>
 {% endblock %}

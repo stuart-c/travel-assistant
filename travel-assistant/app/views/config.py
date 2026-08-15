@@ -468,19 +468,7 @@ def search_transfers_locations() -> Any:
 @config_bp.route("/db", methods=["GET"])
 def db_stats() -> Any:
     """Display SQLite database storage metrics and table row counts."""
-    try:
-        stats = get_db_stats()
-    except Exception:
-        stats = {
-            "file_path": "",
-            "file_size_bytes": 0,
-            "file_size_formatted": "0 B",
-            "page_size": 4096,
-            "page_count": 0,
-            "total_tables": 0,
-            "total_rows": 0,
-            "tables": [],
-        }
+    stats = get_db_stats()
     return render_template(
         "config_db.html",
         stats=stats,
@@ -491,19 +479,7 @@ def db_stats() -> Any:
 @config_bp.route("/sync", methods=["GET"])
 def background_sync() -> Any:
     """Display transit dataset background synchronisation status and controls."""
-    try:
-        stats = get_db_stats()
-    except Exception:
-        stats = {
-            "file_path": "",
-            "file_size_bytes": 0,
-            "file_size_formatted": "0 B",
-            "page_size": 4096,
-            "page_count": 0,
-            "total_tables": 0,
-            "total_rows": 0,
-            "tables": [],
-        }
+    stats = get_db_stats()
     return render_template(
         "config_sync.html",
         stats=stats,

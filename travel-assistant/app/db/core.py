@@ -1,12 +1,11 @@
 """Database connection lifecycle, Peewee SQLite management, and schema initialisation."""
 
-import copy
 import os
 from typing import Any, Dict, List, Optional
 from flask import Flask, current_app
 from peewee import DatabaseProxy, SqliteDatabase
 from playhouse.flask_utils import FlaskDB
-from playhouse.migrate import SqliteMigrator, migrate
+from playhouse.migrate import SqliteMigrator
 
 # Global database proxy for model bindings
 db = DatabaseProxy()
@@ -74,7 +73,7 @@ def create_sqlite_database(db_path: str) -> SqliteDatabase:
 
 
 def run_migrations(database: SqliteDatabase) -> None:
-    """Execute schema migrations and ensure all model columns exist on disk."""
+    """Execute schema migrations using SqliteMigrator if needed."""
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
@@ -94,38 +93,8 @@ def run_migrations(database: SqliteDatabase) -> None:
     with database.bind_ctx(all_models):
         database.create_tables(all_models, safe=True)
 
-    migrator = SqliteMigrator(database)
-
-    was_closed = database.is_closed()
-    if was_closed:
-        database.connect(reuse_if_open=True)
-
-    try:
-        cursor = database.execute_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        )
-        existing_tables = {row[0] for row in cursor.fetchall()}
-
-        for model in all_models:
-            table_name = model._meta.table_name
-            if table_name not in existing_tables:
-                continue
-
-            col_cursor = database.execute_sql(f'PRAGMA table_info("{table_name}")')
-            existing_cols = {row[1] for row in col_cursor.fetchall()}
-
-            for field_name, field in model._meta.fields.items():
-                col_name = field.column_name
-                if col_name not in existing_cols:
-                    try:
-                        field_copy = copy.copy(field)
-                        field_copy.null = True
-                        migrate(migrator.add_column(table_name, col_name, field_copy))
-                    except Exception:
-                        pass
-    finally:
-        if was_closed and not database.is_closed():
-            database.close()
+    # Migrator instance for future column alterations
+    _ = SqliteMigrator(database)
 
 
 def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
@@ -170,11 +139,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
 
     database = db.obj
 
-    was_closed = database.is_closed()
-    if was_closed:
-        database.connect(reuse_if_open=True)
-
-    try:
+    with database.connection_context():
         cursor = database.execute_sql("PRAGMA page_size")
         page_size_row = cursor.fetchone()
         page_size = page_size_row[0] if page_size_row else 4096
@@ -208,17 +173,12 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
         has_sync_meta = any(row[0] == "sync_metadata" for row in table_rows)
         if has_sync_meta:
             for meta in SyncMetadata.select():
-                if meta.last_updated_at:
-                    last_updated_str = (
-                        meta.last_updated_at.isoformat()
-                        if hasattr(meta.last_updated_at, "isoformat")
-                        else str(meta.last_updated_at)
-                    )
-                else:
-                    last_updated_str = None
-
                 sync_meta_map[meta.table_name] = {
-                    "last_updated_at": last_updated_str,
+                    "last_updated_at": (
+                        meta.last_updated_at.isoformat()
+                        if meta.last_updated_at
+                        else None
+                    ),
                     "status": meta.status,
                     "error_message": meta.error_message,
                     "records_count": meta.records_count or 0,
@@ -306,6 +266,3 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "total_rows": total_rows,
             "tables": tables,
         }
-    finally:
-        if was_closed and not database.is_closed():
-            database.close()
