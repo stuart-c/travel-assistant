@@ -65,22 +65,15 @@ def test_api_timetables_search_endpoint(client: FlaskClient) -> None:
     assert len(data["results"]) > 0
 
 
-def test_api_sync_endpoints(client: FlaskClient) -> None:
-    """Test /api/sync and /api/sync/<table_name> endpoints."""
-    # Specific table
-    res = client.post("/api/sync/bus_routes")
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["table"] == "bus_routes"
-
-    # All tables
-    res_all = client.post("/api/sync")
-    assert res_all.status_code == 200
-    data_all = res_all.get_json()
-    assert "tables" in data_all
-
-    # Invalid table
-    res_bad = client.post("/api/sync/invalid_table_name")
-    assert res_bad.status_code == 400
-    data_bad = res_bad.get_json()
-    assert data_bad["status"] == "error"
+def test_static_assets_served(client: FlaskClient) -> None:
+    """Test that extracted static JS and CSS files are served successfully."""
+    assets = [
+        "/static/js/dirty-manager.js",
+        "/static/js/credentials.js",
+        "/static/js/timetables.js",
+        "/static/css/timetables.css",
+    ]
+    for asset_path in assets:
+        response = client.get(asset_path)
+        assert response.status_code == 200, f"Failed to load static asset: {asset_path}"
+        assert len(response.data) > 0

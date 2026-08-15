@@ -325,8 +325,34 @@ def test_timetable_repository_explicit_connection(temp_db_path: str) -> None:
     conn.close()
 
 
+def test_base_repository_methods(app: Flask, temp_db_path: str) -> None:
+    """Test BaseRepository conn property and format_timestamp helper."""
+    from datetime import datetime
+    from app.db import BaseRepository
+
+    # Test format_timestamp
+    assert BaseRepository.format_timestamp(None) == ""
+    now = datetime(2026, 8, 15, 14, 0, 0)
+    assert BaseRepository.format_timestamp(now) == "2026-08-15T14:00:00"
+    assert BaseRepository.format_timestamp("2026-08-15") == "2026-08-15"
+
+    # Test explicit connection
+    conn = sqlite3.connect(temp_db_path)
+    base_repo = BaseRepository(connection=conn)
+    assert base_repo.conn is conn
+    conn.close()
+
+    # Test app context connection
+    with app.app_context():
+        base_repo_default = BaseRepository()
+        assert base_repo_default.conn is not None
+
+
 def test_db_module_exports() -> None:
-    """Test that app.db exports SettingsRepository, TimetableRepository, and core helpers."""
+    """Test that app.db exports BaseRepository, SettingsRepository, TimetableRepository,
+    and core helpers.
+    """
+    from app.db.base import BaseRepository as DirectBaseRepo
     from app.db.settings import SettingsRepository as DirectSettingsRepo
     from app.db.timetables import TimetableRepository as DirectTimetableRepo
     from app.db.core import (
@@ -335,6 +361,7 @@ def test_db_module_exports() -> None:
         format_file_size as DirectFormatFileSize,
     )
     from app.db import (
+        BaseRepository as DbBaseRepo,
         SettingsRepository as DbSettingsRepo,
         TimetableRepository as DbTimetableRepo,
         get_db as DbGetDb,
@@ -342,6 +369,7 @@ def test_db_module_exports() -> None:
         format_file_size as DbFormatFileSize,
     )
 
+    assert DirectBaseRepo is DbBaseRepo
     assert DirectSettingsRepo is DbSettingsRepo
     assert DirectTimetableRepo is DbTimetableRepo
     assert DirectGetDb is DbGetDb

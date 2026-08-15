@@ -3,6 +3,7 @@
 Provides SQLite lifecycle management and table repositories.
 """
 
+from app.db.base import BaseRepository
 from app.db.core import (
     DEFAULT_SCHEMA,
     SYNCABLE_TABLE_NAMES,
@@ -35,6 +36,7 @@ __all__ = [
     "close_db",
     "init_db",
     "init_app",
+    "BaseRepository",
     "SettingsRepository",
     "TimetableRepository",
     "SyncMetadataRepository",

@@ -1,23 +1,10 @@
-"""Repository for querying and persisting configuration settings in SQLite."""
-
-import sqlite3
 from typing import Any, Dict, Optional
 
-from app.db.core import get_db
+from app.db.base import BaseRepository
 
 
-class SettingsRepository:
+class SettingsRepository(BaseRepository):
     """Repository for querying and persisting configuration settings in SQLite."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
 
     def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Retrieve a single configuration value by key."""
