@@ -11,6 +11,8 @@ def test_index_page(client: FlaskClient) -> None:
     assert b"Online &amp; Operational" in response.data
     assert b'id="settings-cog-button"' in response.data
     assert b'href="/config/credentials"' in response.data
+    assert b"Material+Symbols+Outlined" in response.data
+    assert b"material-symbols-outlined" in response.data
 
 
 def test_ping_endpoint(client: FlaskClient) -> None:
