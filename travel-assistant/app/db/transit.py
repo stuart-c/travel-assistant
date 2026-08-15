@@ -1,26 +1,15 @@
 """Repositories for transit datasets (bus routes, bus stops, rail stations, and sync metadata)."""
 
 import datetime
-import sqlite3
 from typing import Any, Dict, List, Optional
 
-from app.db.core import get_db
+from app.db.base import BaseRepository
 
 SYNCABLE_TABLES = ("bus_routes", "bus_stops", "stations")
 
 
-class SyncMetadataRepository:
+class SyncMetadataRepository(BaseRepository):
     """Repository for querying and updating synchronisation metadata."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
 
     def get(self, table_name: str) -> Optional[Dict[str, Any]]:
         """Retrieve synchronisation metadata for a given table."""
@@ -203,18 +192,8 @@ class SyncMetadataRepository:
         return age_seconds >= max_age_seconds
 
 
-class BusRouteRepository:
+class BusRouteRepository(BaseRepository):
     """Repository for querying and persisting bus routes in SQLite."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
 
     def get_all(self) -> List[Dict[str, Any]]:
         """Retrieve all bus routes ordered by route number."""
@@ -313,18 +292,8 @@ class BusRouteRepository:
             self.conn.execute("DELETE FROM bus_routes")
 
 
-class BusStopRepository:
+class BusStopRepository(BaseRepository):
     """Repository for querying and persisting bus stops in SQLite."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
 
     def get_all(self) -> List[Dict[str, Any]]:
         """Retrieve all bus stops ordered by name."""
@@ -432,18 +401,8 @@ class BusStopRepository:
             self.conn.execute("DELETE FROM bus_stops")
 
 
-class StationRepository:
+class StationRepository(BaseRepository):
     """Repository for querying and persisting rail stations in SQLite."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
 
     def get_all(self) -> List[Dict[str, Any]]:
         """Retrieve all rail stations ordered by station name."""
