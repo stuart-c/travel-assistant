@@ -5,7 +5,7 @@ Provides the Home Assistant Add-on web interface and API endpoints.
 
 import os
 from typing import Any, Dict
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 from app import db
 from app.sync import start_background_worker, sync_all, sync_table

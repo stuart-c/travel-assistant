@@ -15,18 +15,6 @@ from app.db.core import (
     init_db,
     run_migrations,
 )
-from app.models import (
-    ALL_MODELS,
-    BaseModel,
-    BusRoute,
-    BusStop,
-    LocationTransfer,
-    PlatformTransfer,
-    Setting,
-    Station,
-    SyncMetadata,
-    Timetable,
-)
 
 SYNCABLE_TABLES = SYNCABLE_TABLE_NAMES
 
@@ -42,14 +30,4 @@ __all__ = [
     "run_migrations",
     "SYNCABLE_TABLE_NAMES",
     "SYNCABLE_TABLES",
-    "ALL_MODELS",
-    "BaseModel",
-    "Setting",
-    "Timetable",
-    "BusRoute",
-    "BusStop",
-    "Station",
-    "SyncMetadata",
-    "LocationTransfer",
-    "PlatformTransfer",
 ]
