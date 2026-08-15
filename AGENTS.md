@@ -47,20 +47,25 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
 - **Code Coverage**: Aim for 100% unit test code coverage for new backend code.
 - **Linting**: Ensure `black --check` and `flake8` pass with 0 warnings or errors.
 
-## 5. Pull Request Management
-- **Mergeability**: PRs **MUST** be rebased from the latest `main` branch before any review is requested.
+## 5. Mandatory Pull Requests & Review Workflow
+**All changes, regardless of size or scope, MUST be submitted as a Pull Request (PR) for user review.** Direct pushes or commits to `main` are strictly forbidden.
+
+### Pull Request Rules
+- **Always Create a PR**: Every task must culminate in a GitHub Pull Request created using `gh pr create`.
+- **Provide Direct PR Link**: Agents **MUST ALWAYS** provide the direct URL/link to the newly created Pull Request in their response to the user so they can review it immediately.
+- **Mergeability**: PRs **MUST** be rebased from the latest `main` branch before any review is requested:
   ```bash
   git fetch origin
   git rebase origin/main
   ```
-- **Local Verification**: Ensure all tests and lints pass locally via `./scripts/verify_all.sh`.
+- **Local Verification**: Ensure all tests and lints pass locally via `bash scripts/verify_all.sh` prior to creating or updating a PR.
 - **PR Quality**: When creating a PR, provide a detailed title and description explaining:
   - **Purpose**: Why are these changes being made?
   - **Implementation**: How were the changes implemented? Highlight architectural decisions and patterns.
 - **Auto-Merge**: Enable auto-merge when creating a pull request:
   ```bash
   gh pr create --fill
-  gh pr merge --auto --merge
+  gh pr merge --auto --squash
   ```
 
 ## 6. Post-Merge Cleanup

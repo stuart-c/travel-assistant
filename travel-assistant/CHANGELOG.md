@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings navigation cog button in the web UI header.
 - Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.
 - API credentials management page (`/config/credentials`) supporting Bus API keys, Train S3 bucket details, Train live credentials, and Open API credentials.
-- Asynchronous credential validation endpoint (`POST /config/credentials/validate`) supporting live verification for Bus Open Data Service (`bods-client`), AWS S3 buckets (`boto3`), National Rail LDBWS (`bravado` OpenAPI / SOAP), and OpenAI services (`openai`).
+- Asynchronous credential validation endpoint (`POST /config/credentials/validate`) supporting live verification for Bus Open Data Service (BODS REST API), AWS S3 buckets (`boto3`), National Rail LDBWS (`bravado` OpenAPI / SOAP), and OpenAI services (`openai`).
 - Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.
 - Comprehensive unit tests covering database lifecycle, repository operations, credential validators, and configuration views with 100% code coverage.
 
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migrated frontend styling from custom vanilla CSS to Tailwind CSS v4 via Browser CDN.
 - Modernised UI with responsive layout, automated dark mode support via `prefers-color-scheme`, and pulsing status animations.
 - Removed legacy `style.css` stylesheet.
+
+### Fixed
+- Fixed Bus Open Data Service (BODS) API key validation by querying the BODS REST endpoint directly, avoiding schema validation failures on null end dates in `bods-client`.
 
 ## [0.1.0] - 2026-08-15
 
