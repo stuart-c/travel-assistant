@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Initialise Version Metadata
@@ -25,6 +26,9 @@ jobs:
           VERSION="${{ github.event.release.tag_name || github.event.pull_request.head.sha || github.sha }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
           if [[ "${{ github.event_name }}" == "release" ]]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
@@ -124,12 +128,43 @@ jobs:
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
           TAG="${{ needs.prepare.outputs.tag }}"
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
           REPO="ghcr.io/${{ github.repository }}"
 
-          docker buildx imagetools create \
-            $(printf "${REPO}@sha256:%s " *) \
-            --tag "${REPO}:${VERSION}" \
-            --tag "${REPO}:${TAG}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            docker buildx imagetools create \
+              $(printf "${REPO}@sha256:%s " *) \
+              --tag "${REPO}:${VERSION}" \
+              --tag "${REPO}:${TAG}"
+          else
+            docker buildx imagetools create \
+              $(printf "${REPO}@sha256:%s " *) \
+              --tag "${REPO}:${VERSION}" \
+              --tag "${REPO}:${TAG}" \
+              --tag "${REPO}:dev-${SHORT_SHA}"
+          fi
+
+  dispatch-dev:
+    name: Notify ha-addons of Dev Build
+    runs-on: ubuntu-latest
+    needs: [prepare, merge]
+    if: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'chore: bump addon version') == false }}"
+    steps:
+      - name: Generate GitHub App Token for Dispatch
+        id: dispatch-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: ha-addons
+
+      - name: Dispatch Dev Update Signal
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ steps.dispatch-token.outputs.token }}
+          repository: stuart-c/ha-addons
+          event-type: update-dev
+          client-payload: '{"app": "travel-assistant-dev", "version": "dev-${{ needs.prepare.outputs.short_sha }}"}'
 
   version:
     name: Bump Version
