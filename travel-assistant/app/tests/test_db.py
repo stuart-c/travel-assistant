@@ -347,40 +347,77 @@ def test_sync_metadata_model(app: Flask) -> None:
 def test_timetable_model(app: Flask) -> None:
     """Test Timetable model search and summary statistics."""
     with app.app_context():
-        Timetable.create(
-            transport_type="bus",
-            name="Oxford Tube",
-            identifier="OX-TUBE",
-            status="active",
+        t1 = Timetable.create(
+            name="Weekday Morning Commute",
+            start_date="2026-09-01",
+            end_date="2026-12-31",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            saturday=False,
+            sunday=False,
+            bank_holiday=False,
         )
-        Timetable.create(
-            transport_type="train",
-            name="London Paddington",
-            identifier="PAD",
-            status="active",
+        t2 = Timetable.create(
+            name="Weekend Leisure Schedule",
+            start_date=None,
+            end_date=None,
+            monday=False,
+            tuesday=False,
+            wednesday=False,
+            thursday=False,
+            friday=False,
+            saturday=True,
+            sunday=True,
+            bank_holiday=True,
         )
-        Timetable.create(
-            transport_type="train",
-            name="London Marylebone",
-            identifier="MYB",
-            status="inactive",
+        t3 = Timetable.create(
+            name="Bank Holiday Special",
+            start_date="2026-08-25",
+            end_date="2026-08-25",
+            monday=True,
+            tuesday=False,
+            wednesday=False,
+            thursday=False,
+            friday=False,
+            saturday=False,
+            sunday=False,
+            bank_holiday=True,
         )
 
         stats = Timetable.get_stats()
         assert stats["total"] == 3
-        assert stats["active"] == 2
-        assert stats["inactive"] == 1
-        assert stats["by_type"]["bus"] == 1
-        assert stats["by_type"]["train"] == 2
 
         # Search
-        res1 = Timetable.search(query="Paddington")
+        res1 = Timetable.search(query="Commute")
         assert len(res1) == 1
-        assert res1[0].identifier == "PAD"
+        assert res1[0].name == "Weekday Morning Commute"
+        assert res1[0].monday is True
+        assert res1[0].saturday is False
+        assert res1[0].start_date.isoformat() == "2026-09-01"
 
-        res2 = Timetable.search(transport_type="train", status="active")
+        res2 = Timetable.search(query="Special")
         assert len(res2) == 1
-        assert res2[0].name == "London Paddington"
+        assert res2[0].name == "Bank Holiday Special"
+
+        # to_dict verification
+        t1_dict = t1.to_dict()
+        assert t1_dict["name"] == "Weekday Morning Commute"
+        assert t1_dict["start_date"] == "2026-09-01"
+        assert t1_dict["end_date"] == "2026-12-31"
+        assert t1_dict["monday"] is True
+        assert t1_dict["saturday"] is False
+
+        t2_dict = t2.to_dict()
+        assert t2_dict["name"] == "Weekend Leisure Schedule"
+        assert t2_dict["start_date"] is None
+        assert t2_dict["saturday"] is True
+
+        t3_dict = t3.to_dict()
+        assert t3_dict["name"] == "Bank Holiday Special"
+        assert t3_dict["bank_holiday"] is True
 
 
 def test_transfer_models(app: Flask) -> None:

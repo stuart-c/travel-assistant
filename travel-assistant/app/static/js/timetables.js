@@ -1,7 +1,7 @@
 /**
  * Timetables View Controller.
- * Manages Grid.js data table rendering, in-memory staged mutations,
- * asynchronous station/feed search autocomplete, and modal interactions.
+ * Manages Grid.js data table rendering, in-memory staged timetable schedules,
+ * add/edit modal workflows, date validation, and day selection helpers.
  */
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('timetables-form');
@@ -15,39 +15,69 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial timetables data:', e);
   }
 
-  // In-memory staged state
-  let stagedTimetables = JSON.parse(JSON.stringify(initialRaw || []));
-  const initialSnapshot = JSON.stringify(stagedTimetables);
+  // Sanitise initial items into standard schema format
+  function normaliseItem(item) {
+    return {
+      id: item.id || null,
+      name: item.name || '',
+      start_date: item.start_date || '',
+      end_date: item.end_date || '',
+      monday: item.monday !== undefined ? Boolean(item.monday) : true,
+      tuesday: item.tuesday !== undefined ? Boolean(item.tuesday) : true,
+      wednesday: item.wednesday !== undefined ? Boolean(item.wednesday) : true,
+      thursday: item.thursday !== undefined ? Boolean(item.thursday) : true,
+      friday: item.friday !== undefined ? Boolean(item.friday) : true,
+      saturday: item.saturday !== undefined ? Boolean(item.saturday) : true,
+      sunday: item.sunday !== undefined ? Boolean(item.sunday) : true,
+      bank_holiday:
+        item.bank_holiday !== undefined ? Boolean(item.bank_holiday) : true,
+    };
+  }
 
-  const searchUrl =
-    form.dataset.searchUrl ||
-    (window.location.pathname.replace(/\/$/, '') + '/search');
+  // In-memory staged state
+  let stagedTimetables = (initialRaw || []).map(normaliseItem);
+  const initialSnapshot = JSON.stringify(stagedTimetables);
+  let currentEditIndex = -1;
 
   const hiddenInput = document.getElementById('timetables_json');
   const emptyState = document.getElementById('grid-empty-state');
   const gridContainer = document.getElementById('timetables-grid-wrapper');
 
   // Modal elements
-  const addModal = document.getElementById('add-timetable-modal');
+  const timetableModal = document.getElementById('timetable-modal');
   const openAddBtn = document.getElementById('open-add-modal-btn');
   const emptyAddBtn = document.getElementById('empty-add-btn');
-  const closeAddBtn = document.getElementById('close-add-modal-btn');
-  const cancelAddBtn = document.getElementById('cancel-add-modal-btn');
-  const confirmAddBtn = document.getElementById('confirm-add-timetable-btn');
-  const modalSearchInput = document.getElementById('modal-search-input');
-  const searchSuggestions = document.getElementById('search-suggestions');
-  const searchSpinner = document.getElementById('search-spinner');
+  const closeModalBtn = document.getElementById('close-modal-btn');
+  const cancelModalBtn = document.getElementById('cancel-modal-btn');
+  const confirmBtn = document.getElementById('confirm-timetable-btn');
+  const modalTitle = document.getElementById('modal-title');
+  const modalIcon = document.getElementById('modal-icon');
   const modalNameInput = document.getElementById('modal_name');
-  const modalIdInput = document.getElementById('modal_identifier');
-  const modalStatusSelect = document.getElementById('modal_status');
+  const modalStartDateInput = document.getElementById('modal_start_date');
+  const modalEndDateInput = document.getElementById('modal_end_date');
   const modalError = document.getElementById('modal-validation-error');
 
-  function getSelectedTransportType() {
-    const checked = document.querySelector(
-      'input[name="modal_transport_type"]:checked'
-    );
-    return checked ? checked.value : 'bus';
-  }
+  // Day pill inputs
+  const dayKeys = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+    'bank_holiday',
+  ];
+  const dayCheckboxes = {};
+  dayKeys.forEach((key) => {
+    dayCheckboxes[key] = document.getElementById(`modal_${key}`);
+  });
+
+  // Quick select helper buttons
+  const btnSelectAll = document.getElementById('days-select-all');
+  const btnSelectWeekdays = document.getElementById('days-select-weekdays');
+  const btnSelectWeekends = document.getElementById('days-select-weekends');
+  const btnClearAll = document.getElementById('days-clear-all');
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -58,53 +88,198 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/"/g, '&quot;');
   }
 
+  // Update visual appearance of a day pill based on checkbox state
+  function updateDayPillStyle(cb) {
+    if (!cb) return;
+    const pill = cb.closest('.day-pill');
+    if (!pill) return;
+
+    if (cb.checked) {
+      pill.classList.remove(
+        'border-slate-200',
+        'dark:border-slate-800',
+        'bg-white',
+        'dark:bg-slate-900',
+        'text-slate-400',
+        'dark:text-slate-500'
+      );
+      pill.classList.add(
+        'border-sky-500',
+        'bg-sky-50',
+        'dark:bg-sky-950/50',
+        'text-sky-700',
+        'dark:text-sky-300'
+      );
+    } else {
+      pill.classList.remove(
+        'border-sky-500',
+        'bg-sky-50',
+        'dark:bg-sky-950/50',
+        'text-sky-700',
+        'dark:text-sky-300'
+      );
+      pill.classList.add(
+        'border-slate-200',
+        'dark:border-slate-800',
+        'bg-white',
+        'dark:bg-slate-900',
+        'text-slate-400',
+        'dark:text-slate-500'
+      );
+    }
+  }
+
+  function setDayValues(values) {
+    dayKeys.forEach((k) => {
+      if (dayCheckboxes[k]) {
+        dayCheckboxes[k].checked = Boolean(values[k]);
+        updateDayPillStyle(dayCheckboxes[k]);
+      }
+    });
+  }
+
+  // Attach change listeners to day checkboxes
+  dayKeys.forEach((k) => {
+    const cb = dayCheckboxes[k];
+    if (cb) {
+      cb.addEventListener('change', () => updateDayPillStyle(cb));
+    }
+  });
+
+  // Attach quick selection buttons
+  if (btnSelectAll) {
+    btnSelectAll.addEventListener('click', () => {
+      dayKeys.forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = true;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+    });
+  }
+
+  if (btnSelectWeekdays) {
+    btnSelectWeekdays.addEventListener('click', () => {
+      ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = true;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+      ['saturday', 'sunday', 'bank_holiday'].forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = false;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+    });
+  }
+
+  if (btnSelectWeekends) {
+    btnSelectWeekends.addEventListener('click', () => {
+      ['saturday', 'sunday'].forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = true;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+      [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'bank_holiday',
+      ].forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = false;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+    });
+  }
+
+  if (btnClearAll) {
+    btnClearAll.addEventListener('click', () => {
+      dayKeys.forEach((k) => {
+        if (dayCheckboxes[k]) {
+          dayCheckboxes[k].checked = false;
+          updateDayPillStyle(dayCheckboxes[k]);
+        }
+      });
+    });
+  }
+
+  // Format active days summary HTML badges
+  function renderDaysHtml(item) {
+    const daysConfig = [
+      { label: 'M', active: item.monday, title: 'Monday' },
+      { label: 'T', active: item.tuesday, title: 'Tuesday' },
+      { label: 'W', active: item.wednesday, title: 'Wednesday' },
+      { label: 'T', active: item.thursday, title: 'Thursday' },
+      { label: 'F', active: item.friday, title: 'Friday' },
+      { label: 'S', active: item.saturday, title: 'Saturday' },
+      { label: 'S', active: item.sunday, title: 'Sunday' },
+      { label: 'BH', active: item.bank_holiday, title: 'Bank Holiday' },
+    ];
+
+    const badges = daysConfig
+      .map((d) => {
+        const cls = d.active
+          ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 font-bold'
+          : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 opacity-40';
+        return `<span class="inline-flex items-center justify-center min-w-[20px] px-1 py-0.5 rounded text-[10px] ${cls}" title="${d.title}">${d.label}</span>`;
+      })
+      .join(' ');
+
+    return `<div class="flex items-center gap-1 flex-wrap">${badges}</div>`;
+  }
+
   // Format data rows for Grid.js
   function formatGridData(items) {
     return items.map((item, index) => {
-      const typeIcon =
-        item.transport_type === 'train' ? 'train' : 'directions_bus';
-      const typeBadgeColor =
-        item.transport_type === 'train'
-          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30'
-          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
-      const typeLabel = item.transport_type === 'train' ? 'Rail Station' : 'Bus Route';
+      const startDateHtml = item.start_date
+        ? `<span class="font-mono text-xs text-slate-700 dark:text-slate-300">${escapeHtml(
+            item.start_date
+          )}</span>`
+        : `<span class="text-slate-400 text-xs">—</span>`;
 
-      const statusBadgeColor =
-        item.status === 'active'
-          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
-          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
-      const statusLabel = item.status === 'active' ? 'Active' : 'Inactive';
+      const endDateHtml = item.end_date
+        ? `<span class="font-mono text-xs text-slate-700 dark:text-slate-300">${escapeHtml(
+            item.end_date
+          )}</span>`
+        : `<span class="text-slate-400 text-xs">—</span>`;
 
       return [
-        gridjs.html(`
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${typeBadgeColor}">
-            <span class="material-symbols-outlined text-xs leading-none">${typeIcon}</span>
-            ${typeLabel}
-          </span>
-        `),
         gridjs.html(
-          `<span class="font-medium text-slate-900 dark:text-slate-100">${escapeHtml(
+          `<span class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(
             item.name
           )}</span>`
         ),
-        gridjs.html(
-          `<code class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-mono">${escapeHtml(
-            item.identifier
-          )}</code>`
-        ),
-        gridjs.html(
-          `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusBadgeColor}">${statusLabel}</span>`
-        ),
+        gridjs.html(startDateHtml),
+        gridjs.html(endDateHtml),
+        gridjs.html(renderDaysHtml(item)),
         gridjs.html(`
-          <button 
-            type="button" 
-            class="remove-row-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
-            data-index="${index}"
-            title="Remove from list"
-          >
-            <span class="material-symbols-outlined text-xs leading-none">delete</span>
-            Remove
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button 
+              type="button" 
+              class="edit-row-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-sky-600 hover:text-white hover:bg-sky-600 dark:text-sky-400 dark:hover:bg-sky-700/80 transition-colors cursor-pointer"
+              data-index="${index}"
+              title="Edit timetable"
+            >
+              <span class="material-symbols-outlined text-xs leading-none">edit</span>
+              Edit
+            </button>
+            <button 
+              type="button" 
+              class="remove-row-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+              data-index="${index}"
+              title="Remove timetable"
+            >
+              <span class="material-symbols-outlined text-xs leading-none">delete</span>
+              Remove
+            </button>
+          </div>
         `),
       ];
     });
@@ -113,11 +288,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialise Grid.js instance
   const grid = new gridjs.Grid({
     columns: [
-      { name: 'Type', width: '110px' },
-      { name: 'Name', width: 'auto' },
-      { name: 'Identifier / Feed', width: '180px' },
-      { name: 'Status', width: '110px' },
-      { name: 'Actions', width: '110px', sort: false },
+      { name: 'Timetable Name', width: 'auto' },
+      { name: 'Start Date', width: '130px' },
+      { name: 'End Date', width: '130px' },
+      { name: 'Applicable Days', width: '220px', sort: false },
+      { name: 'Actions', width: '170px', sort: false },
     ],
     data: formatGridData(stagedTimetables),
     search: {
@@ -185,11 +360,83 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Delegate row removal clicks
+  // Open Add Timetable Modal
+  function showAddModal() {
+    currentEditIndex = -1;
+    if (modalTitle) modalTitle.textContent = 'Add New Timetable';
+    if (modalIcon) modalIcon.textContent = 'calendar_add_on';
+    if (confirmBtn) confirmBtn.textContent = 'Add Timetable';
+    if (modalError) modalError.classList.add('hidden');
+
+    if (modalNameInput) modalNameInput.value = '';
+    if (modalStartDateInput) modalStartDateInput.value = '';
+    if (modalEndDateInput) modalEndDateInput.value = '';
+
+    // Default all days enabled
+    setDayValues({
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: true,
+      sunday: true,
+      bank_holiday: true,
+    });
+
+    if (timetableModal && typeof timetableModal.showModal === 'function') {
+      timetableModal.showModal();
+    }
+  }
+
+  // Open Edit Timetable Modal
+  function showEditModal(index) {
+    if (index < 0 || index >= stagedTimetables.length) return;
+    currentEditIndex = index;
+    const item = stagedTimetables[index];
+
+    if (modalTitle) modalTitle.textContent = 'Edit Timetable';
+    if (modalIcon) modalIcon.textContent = 'edit_calendar';
+    if (confirmBtn) confirmBtn.textContent = 'Update Timetable';
+    if (modalError) modalError.classList.add('hidden');
+
+    if (modalNameInput) modalNameInput.value = item.name || '';
+    if (modalStartDateInput) modalStartDateInput.value = item.start_date || '';
+    if (modalEndDateInput) modalEndDateInput.value = item.end_date || '';
+
+    setDayValues(item);
+
+    if (timetableModal && typeof timetableModal.showModal === 'function') {
+      timetableModal.showModal();
+    }
+  }
+
+  if (openAddBtn) openAddBtn.addEventListener('click', showAddModal);
+  if (emptyAddBtn) emptyAddBtn.addEventListener('click', showAddModal);
+
+  function closeModal() {
+    if (timetableModal && typeof timetableModal.close === 'function') {
+      timetableModal.close();
+    }
+  }
+
+  if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
+
+  // Delegate Edit and Remove row actions
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.remove-row-btn');
-    if (btn) {
-      const idx = parseInt(btn.getAttribute('data-index'), 10);
+    const editBtn = e.target.closest('.edit-row-btn');
+    if (editBtn) {
+      const idx = parseInt(editBtn.getAttribute('data-index'), 10);
+      if (!isNaN(idx)) {
+        showEditModal(idx);
+      }
+      return;
+    }
+
+    const removeBtn = e.target.closest('.remove-row-btn');
+    if (removeBtn) {
+      const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
         stagedTimetables.splice(idx, 1);
         syncState();
@@ -197,168 +444,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Open Add Modal
-  function showAddModal() {
-    if (modalError) modalError.classList.add('hidden');
-    if (modalSearchInput) modalSearchInput.value = '';
-    if (modalNameInput) modalNameInput.value = '';
-    if (modalIdInput) modalIdInput.value = '';
-    if (modalStatusSelect) modalStatusSelect.value = 'active';
-    if (searchSuggestions) {
-      searchSuggestions.innerHTML = '';
-      searchSuggestions.classList.add('hidden');
-    }
-    if (addModal && typeof addModal.showModal === 'function') {
-      addModal.showModal();
-    }
-  }
-
-  if (openAddBtn) openAddBtn.addEventListener('click', showAddModal);
-  if (emptyAddBtn) emptyAddBtn.addEventListener('click', showAddModal);
-
-  function closeAddModal() {
-    if (addModal && typeof addModal.close === 'function') {
-      addModal.close();
-    }
-  }
-
-  if (closeAddBtn) closeAddBtn.addEventListener('click', closeAddModal);
-  if (cancelAddBtn) cancelAddBtn.addEventListener('click', closeAddModal);
-
-  // Update styling when transport type radio changes
-  document
-    .querySelectorAll('input[name="modal_transport_type"]')
-    .forEach((radio) => {
-      radio.addEventListener('change', () => {
-        document
-          .querySelectorAll('.transport-type-label')
-          .forEach((lbl) => {
-            lbl.classList.remove(
-              'border-sky-500',
-              'bg-sky-50/50',
-              'dark:bg-sky-950/40'
-            );
-            lbl.classList.add('border-slate-200', 'dark:border-slate-800');
-          });
-        const activeLabel = radio.closest('.transport-type-label');
-        if (activeLabel) {
-          activeLabel.classList.remove(
-            'border-slate-200',
-            'dark:border-slate-800'
-          );
-          activeLabel.classList.add(
-            'border-sky-500',
-            'bg-sky-50/50',
-            'dark:bg-sky-950/40'
-          );
-        }
-        if (modalSearchInput) {
-          triggerSearch(modalSearchInput.value.trim());
-        }
-      });
-    });
-
-  // Dynamic autocomplete search querying searchUrl
-  let searchDebounce = null;
-  async function triggerSearch(query) {
-    const type = getSelectedTransportType();
-    if (searchSpinner) searchSpinner.classList.remove('hidden');
-
-    try {
-      const sep = searchUrl.includes('?') ? '&' : '?';
-      const res = await fetch(
-        `${searchUrl}${sep}type=${encodeURIComponent(
-          type
-        )}&q=${encodeURIComponent(query)}`
-      );
-      const data = await res.json();
-      renderSuggestions(data.results || []);
-    } catch (err) {
-      console.error('Search lookup failed:', err);
-    } finally {
-      if (searchSpinner) searchSpinner.classList.add('hidden');
-    }
-  }
-
-  function renderSuggestions(results) {
-    if (!searchSuggestions) return;
-    if (!results || results.length === 0) {
-      searchSuggestions.innerHTML = `<div class="p-3 text-xs text-slate-500 dark:text-slate-400 text-center">No matching templates found. Enter custom details below.</div>`;
-      searchSuggestions.classList.remove('hidden');
-      return;
-    }
-
-    searchSuggestions.innerHTML = '';
-    results.forEach((item) => {
-      const div = document.createElement('div');
-      div.className =
-        'p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer rounded-lg transition-colors flex items-center justify-between gap-3';
-      div.innerHTML = `
-        <div class="min-w-0">
-          <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(
-            item.name
-          )}</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(
-            item.description || item.identifier
-          )}</div>
-        </div>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">${escapeHtml(
-          item.identifier
-        )}</span>
-      `;
-      div.addEventListener('click', () => {
-        if (modalNameInput) modalNameInput.value = item.name;
-        if (modalIdInput) modalIdInput.value = item.identifier;
-        searchSuggestions.classList.add('hidden');
-      });
-      searchSuggestions.appendChild(div);
-    });
-    searchSuggestions.classList.remove('hidden');
-  }
-
-  if (modalSearchInput) {
-    modalSearchInput.addEventListener('input', () => {
-      clearTimeout(searchDebounce);
-      searchDebounce = setTimeout(() => {
-        triggerSearch(modalSearchInput.value.trim());
-      }, 250);
-    });
-
-    modalSearchInput.addEventListener('focus', () => {
-      if (
-        searchSuggestions &&
-        searchSuggestions.children &&
-        searchSuggestions.children.length > 0
-      ) {
-        searchSuggestions.classList.remove('hidden');
-      } else {
-        triggerSearch(modalSearchInput.value.trim());
-      }
-    });
-  }
-
-  // Confirm adding new timetable to staged list
-  if (confirmAddBtn) {
-    confirmAddBtn.addEventListener('click', () => {
+  // Confirm adding / updating timetable entry
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', () => {
       const name = modalNameInput ? modalNameInput.value.trim() : '';
-      const identifier = modalIdInput ? modalIdInput.value.trim() : '';
-      const transport_type = getSelectedTransportType();
-      const status = modalStatusSelect ? modalStatusSelect.value : 'active';
+      const start_date = modalStartDateInput
+        ? modalStartDateInput.value.trim()
+        : '';
+      const end_date = modalEndDateInput ? modalEndDateInput.value.trim() : '';
 
-      if (!name || !identifier) {
-        if (modalError) modalError.classList.remove('hidden');
+      if (!name) {
+        if (modalError) {
+          modalError.textContent = 'Please provide a timetable name.';
+          modalError.classList.remove('hidden');
+        }
         return;
       }
 
-      stagedTimetables.push({
-        transport_type,
-        name,
-        identifier,
-        status,
+      if (start_date && end_date && end_date < start_date) {
+        if (modalError) {
+          modalError.textContent =
+            'End Date cannot be earlier than Start Date.';
+          modalError.classList.remove('hidden');
+        }
+        return;
+      }
+
+      const days = {};
+      let atLeastOneDay = false;
+      dayKeys.forEach((k) => {
+        days[k] = dayCheckboxes[k] ? dayCheckboxes[k].checked : true;
+        if (days[k]) atLeastOneDay = true;
       });
 
+      if (!atLeastOneDay) {
+        if (modalError) {
+          modalError.textContent =
+            'Please select at least one applicable operating day.';
+          modalError.classList.remove('hidden');
+        }
+        return;
+      }
+
+      const payloadItem = {
+        name,
+        start_date: start_date || null,
+        end_date: end_date || null,
+        ...days,
+      };
+
+      if (currentEditIndex >= 0 && currentEditIndex < stagedTimetables.length) {
+        // Retain original ID if present
+        payloadItem.id = stagedTimetables[currentEditIndex].id;
+        stagedTimetables[currentEditIndex] = payloadItem;
+      } else {
+        stagedTimetables.push(payloadItem);
+      }
+
       syncState();
-      closeAddModal();
+      closeModal();
     });
   }
 });
