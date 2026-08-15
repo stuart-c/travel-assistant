@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Breadcrumb & Top Bar -->
+  <div class="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+    <nav class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 font-medium">
+      <a href="{{ ingress_path }}/" class="config-nav-link hover:text-slate-900 dark:hover:text-slate-100 transition-colors">&larr; Overview</a>
+      <span class="text-slate-300 dark:text-slate-600">/</span>
+      <span class="text-slate-600 dark:text-slate-300">Settings</span>
+      <span class="text-slate-300 dark:text-slate-600">/</span>
+      <span class="text-sky-600 dark:text-sky-400 font-semibold">{% block config_title %}Configuration{% endblock %}</span>
+    </nav>
+
+    <!-- Mobile Sidebar Toggle -->
+    <div class="md:hidden">
+      <button 
+        type="button" 
+        id="mobile-config-toggle" 
+        class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 transition-colors cursor-pointer"
+        aria-expanded="false"
+        aria-controls="config-sidebar"
+      >
+        <span class="material-symbols-outlined text-base" id="mobile-toggle-icon">menu</span>
+        <span>Config Menu</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Layout Container: Left Sidebar + Main Config Area -->
+  <div class="flex flex-col md:flex-row gap-8 items-start">
+    <!-- Left Navigation Bar -->
+    <aside 
+      id="config-sidebar" 
+      class="w-full md:w-60 shrink-0 hidden md:block transition-all duration-200"
+    >
+      <div class="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 space-y-1.5">
+        <div class="px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Configuration
+        </div>
+
+        <a 
+          href="{{ ingress_path }}/config/credentials" 
+          class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'credentials' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
+          id="nav-link-credentials"
+        >
+          <span class="material-symbols-outlined text-lg leading-none text-sky-500 dark:text-sky-400">key</span>
+          <span>API Credentials</span>
+        </a>
+
+        <a 
+          href="{{ ingress_path }}/config/timetables" 
+          class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'timetables' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
+          id="nav-link-timetables"
+        >
+          <span class="material-symbols-outlined text-lg leading-none text-sky-500 dark:text-sky-400">directions_bus</span>
+          <span>Timetables</span>
+        </a>
+      </div>
+
+      <!-- Quick status indicator box -->
+      <div class="mt-4 px-3 py-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400">
+        <div class="font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>Post/Redirect/Get Pattern</span>
+        </div>
+        <p class="leading-relaxed">Changes remain staged in your browser until you explicitly click <strong>Save Changes</strong>.</p>
+      </div>
+    </aside>
+
+    <!-- Main Section Content -->
+    <section class="flex-1 min-w-0 w-full">
+      {% block config_content %}{% endblock %}
+
+      <!-- Standard Action Bar: Save & Discard (Sticky Bottom Bar) -->
+      <div class="mt-8 pt-4 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4" id="standard-action-bar">
+        <div class="flex items-center gap-2">
+          <span id="dirty-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            No unsaved changes
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button 
+            type="button" 
+            id="config-discard-btn" 
+            class="inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
+            disabled
+          >
+            Discard Changes
+          </button>
+
+          <button 
+            type="button" 
+            id="config-save-btn" 
+            class="inline-flex items-center justify-center px-5 py-2 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 shadow-sm transition-all cursor-pointer opacity-90"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Unsaved Changes Confirmation Modal Dialog -->
+<dialog id="unsaved-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-md w-full mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl">
+    <div class="flex items-center gap-3 text-amber-500 dark:text-amber-400 mb-3">
+      <span class="material-symbols-outlined text-2xl">warning</span>
+      <h3 class="text-base font-bold text-slate-900 dark:text-white">Unsaved Changes</h3>
+    </div>
+    <p class="text-sm text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
+      You have unsaved changes on this page. If you leave or switch sections now, your modifications will be discarded.
+    </p>
+    <div class="flex items-center justify-end gap-3">
+      <button 
+        type="button" 
+        id="unsaved-stay-btn" 
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+      >
+        Stay on Page
+      </button>
+      <button 
+        type="button" 
+        id="unsaved-leave-btn" 
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-500 transition-colors cursor-pointer"
+      >
+        Discard &amp; Leave
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  // Global Dirty Manager for Configuration Pages
+  window.ConfigDirtyManager = (function() {
+    let dirty = false;
+    let pendingNavigationUrl = null;
+    let onDiscardCallback = null;
+    let isSubmitting = false;
+
+    const badge = document.getElementById('dirty-status-badge');
+    const saveBtn = document.getElementById('config-save-btn');
+    const discardBtn = document.getElementById('config-discard-btn');
+    const modal = document.getElementById('unsaved-modal');
+    const stayBtn = document.getElementById('unsaved-stay-btn');
+    const leaveBtn = document.getElementById('unsaved-leave-btn');
+
+    function updateUI() {
+      if (dirty) {
+        if (badge) {
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
+          badge.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Unsaved changes';
+        }
+        if (discardBtn) {
+          discardBtn.disabled = false;
+          discardBtn.className = 'inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all cursor-pointer';
+        }
+        if (saveBtn) {
+          saveBtn.classList.remove('opacity-90');
+          saveBtn.classList.add('ring-2', 'ring-sky-500/50');
+        }
+      } else {
+        if (badge) {
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
+          badge.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span> No unsaved changes';
+        }
+        if (discardBtn) {
+          discardBtn.disabled = true;
+          discardBtn.className = 'inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all';
+        }
+        if (saveBtn) {
+          saveBtn.classList.remove('ring-2', 'ring-sky-500/50');
+        }
+      }
+    }
+
+    function setDirty(isDirty) {
+      dirty = isDirty;
+      updateUI();
+    }
+
+    function markDirty() {
+      setDirty(true);
+    }
+
+    function clearDirty() {
+      setDirty(false);
+    }
+
+    function registerDiscardHandler(fn) {
+      onDiscardCallback = fn;
+    }
+
+    // Intercept internal navigation
+    function handleNavigation(e, href) {
+      if (dirty && !isSubmitting) {
+        e.preventDefault();
+        pendingNavigationUrl = href;
+        if (modal && typeof modal.showModal === 'function') {
+          modal.showModal();
+        } else {
+          const leave = confirm('You have unsaved changes. If you leave, your changes will be discarded. Continue?');
+          if (leave) {
+            dirty = false;
+            window.location.href = href;
+          }
+        }
+      }
+    }
+
+    // Bind navigation interceptors
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.config-nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+          const href = link.getAttribute('href');
+          if (href && href !== '#' && !href.startsWith('javascript:')) {
+            handleNavigation(e, href);
+          }
+        });
+      });
+
+      if (stayBtn && modal) {
+        stayBtn.addEventListener('click', () => {
+          modal.close();
+          pendingNavigationUrl = null;
+        });
+      }
+
+      if (leaveBtn && modal) {
+        leaveBtn.addEventListener('click', () => {
+          modal.close();
+          dirty = false;
+          if (pendingNavigationUrl) {
+            window.location.href = pendingNavigationUrl;
+          }
+        });
+      }
+
+      if (discardBtn) {
+        discardBtn.addEventListener('click', () => {
+          if (!dirty) return;
+          if (typeof onDiscardCallback === 'function') {
+            onDiscardCallback();
+          }
+          clearDirty();
+        });
+      }
+
+      // Save button delegates to current active config form submit
+      if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+          const form = document.querySelector('form.config-main-form') || document.querySelector('form');
+          if (form) {
+            isSubmitting = true;
+            dirty = false;
+            form.submit();
+          }
+        });
+      }
+
+      // Intercept page reload/close
+      window.addEventListener('beforeunload', (e) => {
+        if (dirty && !isSubmitting) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
+      // Mobile sidebar toggle handler
+      const toggleBtn = document.getElementById('mobile-config-toggle');
+      const sidebar = document.getElementById('config-sidebar');
+      const toggleIcon = document.getElementById('mobile-toggle-icon');
+
+      if (toggleBtn && sidebar) {
+        toggleBtn.addEventListener('click', () => {
+          const isHidden = sidebar.classList.contains('hidden');
+          if (isHidden) {
+            sidebar.classList.remove('hidden');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            if (toggleIcon) toggleIcon.textContent = 'close';
+          } else {
+            sidebar.classList.add('hidden');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            if (toggleIcon) toggleIcon.textContent = 'menu';
+          }
+        });
+      }
+    });
+
+    return {
+      setDirty,
+      markDirty,
+      clearDirty,
+      isDirty: () => dirty,
+      registerDiscardHandler,
+      markSubmitting: () => { isSubmitting = true; dirty = false; }
+    };
+  })();
+</script>
+{% endblock %}
