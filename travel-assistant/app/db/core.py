@@ -74,6 +74,7 @@ def create_sqlite_database(db_path: str) -> SqliteDatabase:
 
 def run_migrations(database: SqliteDatabase) -> None:
     """Execute schema migrations using SqliteMigrator if needed."""
+    from app.models.location import Location
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
@@ -88,6 +89,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         Station,
         LocationTransfer,
         PlatformTransfer,
+        Location,
     ]
 
     with database.bind_ctx(all_models):
@@ -126,6 +128,7 @@ def init_app(app: Flask) -> None:
 
 def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     """Inspect and return SQLite database storage metrics and table row counts."""
+    from app.models.location import Location
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
@@ -195,6 +198,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "stations": Station,
             "location_transfers": LocationTransfer,
             "platform_transfers": PlatformTransfer,
+            "locations": Location,
         }
 
         tables: List[Dict[str, Any]] = []
