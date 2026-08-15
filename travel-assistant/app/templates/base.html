@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="header-main">
+        <div class="title-row">
+          <a href="{{ ingress_path }}/" class="brand-link">
+            <h1>{{ app_name }}</h1>
+          </a>
+          <span class="badge">v{{ app_version }}</span>
+        </div>
+        <div class="header-actions">
+          <a href="{{ ingress_path }}/config/credentials" class="icon-button" title="Settings" aria-label="Settings" id="settings-cog-button">
+            <span class="material-symbols-outlined cog-icon" aria-hidden="true">settings</span>
+          </a>
+        </div>
+      </div>
+      {% block subtitle %}
+      <p class="subtitle">{{ message if message else 'Travel and transport intelligence dashboard' }}</p>
+      {% endblock %}
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for category, msg in messages %}
+            <div class="alert alert-{{ category }}" role="alert">
+              <span class="alert-icon">
+                {% if category == 'success' %}
+                  ✓
+                {% else %}
+                  ℹ
+                {% endif %}
+              </span>
+              <span>{{ msg }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <p>&copy; 2026 Stuart C. Licensed under Apache 2.0.</p>
+    </footer>
+  </div>
+</body>
+</html>

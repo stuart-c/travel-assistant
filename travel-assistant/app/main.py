@@ -7,6 +7,9 @@ import os
 from typing import Any, Dict
 from flask import Flask, render_template, jsonify, request
 
+from app import db
+from app.views.config import config_bp
+
 
 class IngressMiddleware:
     """WSGI middleware to handle Home Assistant Ingress dynamic subpaths."""
@@ -38,8 +41,14 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    # Initialise SQLite database
+    db.init_app(app)
+
     # Enable Ingress middleware
     app.wsgi_app = IngressMiddleware(app.wsgi_app)
+
+    # Register blueprints
+    app.register_blueprint(config_bp)
 
     @app.context_processor
     def inject_ingress_path() -> Dict[str, str]:
@@ -53,7 +62,7 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
 
     @app.route("/")
     def index() -> str:
-        """Render the primary dashboard single page."""
+        """Render the primary dashboard page."""
         return render_template(
             "index.html",
             message="Welcome to Travel Assistant for Home Assistant.",
