@@ -34,6 +34,7 @@ def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
     assert b'name="open_api_key"' in response.data
     assert b'name="open_api_base_url"' in response.data
     assert b'name="open_api_model"' in response.data
+    assert b'href="https://developers.openai.com/api/docs/pricing"' in response.data
     assert b'value="gpt-4o-mini"' in response.data
 
 
