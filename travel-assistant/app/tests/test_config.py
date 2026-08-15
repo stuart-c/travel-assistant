@@ -328,30 +328,145 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
 
 
 def test_search_timetables_endpoint(client: FlaskClient) -> None:
-    """Test GET /config/timetables/search filters results."""
-    # Test all results
+    """Test GET /config/timetables/search filters results across cached datasets and fallbacks."""
+    from app.db import BusRouteRepository, BusStopRepository, StationRepository
+
+    # 1. Test fallback sample data when nothing cached
     res_all = client.get("/config/timetables/search")
     assert res_all.status_code == 200
     data_all = res_all.get_json()
     assert data_all["total"] > 0
+    assert data_all["is_cached"] is False
 
-    # Test bus filter
-    res_bus = client.get("/config/timetables/search?type=bus")
-    assert res_bus.status_code == 200
-    data_bus = res_bus.get_json()
-    assert all(item["transport_type"] == "bus" for item in data_bus["results"])
+    res_sample_bus = client.get("/config/timetables/search?type=bus_route")
+    assert res_sample_bus.status_code == 200
+    data_sample_bus = res_sample_bus.get_json()
+    assert data_sample_bus["is_cached"] is False
+    assert data_sample_bus["results"] == []
 
-    # Test train filter
-    res_train = client.get("/config/timetables/search?type=train")
-    assert res_train.status_code == 200
-    data_train = res_train.get_json()
-    assert all(item["transport_type"] == "train" for item in data_train["results"])
+    res_sample_generic = client.get(
+        "/config/timetables/search?type=unsupported_type&q=Oxford"
+    )
+    assert res_sample_generic.status_code == 200
+    data_sample_gen = res_sample_generic.get_json()
+    assert data_sample_gen["results"] == []
 
-    # Test search query
-    res_query = client.get("/config/timetables/search?q=Oxford")
-    assert res_query.status_code == 200
-    data_query = res_query.get_json()
-    assert any("Oxford" in item["name"] for item in data_query["results"])
+    res_sample_query = client.get("/config/timetables/search?q=Oxford")
+    assert res_sample_query.status_code == 200
+    data_sample_query = res_sample_query.get_json()
+    assert any("Oxford" in item["name"] for item in data_sample_query["results"])
+
+    # 2. Test Station search with cached station records
+    station_repo = StationRepository()
+    station_repo.bulk_upsert(
+        [
+            {
+                "crs_code": "OXF",
+                "name": "Oxford",
+                "operator": "Great Western Railway",
+            },
+            {
+                "crs_code": "PAD",
+                "name": "London Paddington",
+                "operator": "Great Western Railway",
+            },
+            {
+                "crs_code": "BHM",
+                "name": "Birmingham New Street",
+                "operator": "CrossCountry",
+            },
+        ]
+    )
+
+    res_station_empty_q = client.get("/config/timetables/search?type=station&limit=2")
+    assert res_station_empty_q.status_code == 200
+    data_st_empty = res_station_empty_q.get_json()
+    assert data_st_empty["is_cached"] is True
+    assert len(data_st_empty["results"]) == 2
+
+    res_station_q = client.get("/config/timetables/search?type=train&q=PAD")
+    assert res_station_q.status_code == 200
+    data_st_q = res_station_q.get_json()
+    assert data_st_q["is_cached"] is True
+    assert len(data_st_q["results"]) == 1
+    assert data_st_q["results"][0]["crs_code"] == "PAD"
+
+    # 3. Test Bus Stop search with cached bus stops
+    stop_repo = BusStopRepository()
+    stop_repo.bulk_upsert(
+        [
+            {
+                "atco_code": "340000001",
+                "name": "High Street Stop T1",
+                "locality": "Oxford",
+                "indicator": "Stop T1",
+            },
+            {
+                "atco_code": "340000002",
+                "name": "Blackbird Leys Leisure Centre",
+                "locality": "Oxford",
+                "indicator": "opp",
+            },
+        ]
+    )
+
+    res_stop_empty = client.get("/config/timetables/search?type=bus_stop")
+    assert res_stop_empty.status_code == 200
+    data_stop_empty = res_stop_empty.get_json()
+    assert data_stop_empty["is_cached"] is True
+    assert len(data_stop_empty["results"]) == 2
+
+    res_stop_q = client.get("/config/timetables/search?type=stop&q=340000001")
+    assert res_stop_q.status_code == 200
+    data_stop_q = res_stop_q.get_json()
+    assert len(data_stop_q["results"]) == 1
+    assert data_stop_q["results"][0]["atco_code"] == "340000001"
+
+    # 4. Test Bus Route search with cached bus routes
+    route_repo = BusRouteRepository()
+    route_repo.bulk_upsert(
+        [
+            {
+                "route_number": "1",
+                "operator_name": "Oxford Bus Company",
+                "origin": "Blackbird Leys",
+                "destination": "Oxford City Centre",
+            },
+            {
+                "route_number": "5",
+                "operator_name": "Oxford Bus Company",
+                "origin": "Blackbird Leys",
+                "destination": "Oxford Rail Station",
+            },
+        ]
+    )
+
+    res_route_empty = client.get("/config/timetables/search?type=bus_route")
+    assert res_route_empty.status_code == 200
+    data_route_empty = res_route_empty.get_json()
+    assert data_route_empty["is_cached"] is True
+    assert len(data_route_empty["results"]) == 2
+
+    res_route_q = client.get("/config/timetables/search?type=route&q=5")
+    assert res_route_q.status_code == 200
+    data_route_q = res_route_q.get_json()
+    assert len(data_route_q["results"]) == 1
+    assert data_route_q["results"][0]["route_number"] == "5"
+
+    # 5. Test status check and custom limits
+    res_status = client.get("/config/timetables/search?type=status")
+    assert res_status.status_code == 200
+    data_status = res_status.get_json()
+    assert data_status["is_cached"] is True
+    assert data_status["cache_counts"]["stations"] == 3
+    assert data_status["cache_counts"]["bus_stops"] == 2
+    assert data_status["cache_counts"]["bus_routes"] == 2
+
+    # 6. Test generic search when cached
+    res_generic = client.get("/config/timetables/search?q=Oxford&limit=invalid")
+    assert res_generic.status_code == 200
+    data_generic = res_generic.get_json()
+    assert len(data_generic["results"]) > 0
 
 
 def test_timetables_ingress_header(client: FlaskClient) -> None:
