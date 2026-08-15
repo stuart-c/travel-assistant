@@ -13,10 +13,8 @@ from app.validators import filter_chat_models, validate_open_api_key
 
 def test_filter_chat_models() -> None:
     """Test filtering and ordering of chat models from raw model list."""
-    # Empty list should return empty
     assert filter_chat_models([]) == []
 
-    # Non-conversational models should be excluded
     raw_models = [
         "",
         "   ",
@@ -42,7 +40,6 @@ def test_filter_chat_models() -> None:
     ]
     filtered = filter_chat_models(raw_models)
 
-    # Verify exclusions
     assert "text-embedding-3-small" not in filtered
     assert "custom-moderation-model" not in filtered
     assert "custom-realtime-voice" not in filtered
@@ -55,7 +52,6 @@ def test_filter_chat_models() -> None:
     assert "davinci-002" not in filtered
     assert "babbage-002" not in filtered
 
-    # Verify priority ordering: gpt-4o-mini, gpt-4o, o3-mini, then others
     assert filtered[0] == "gpt-4o-mini"
     assert filtered[1] == "gpt-4o"
     assert filtered[2] == "o3-mini"
@@ -65,7 +61,6 @@ def test_filter_chat_models() -> None:
     assert "claude-3-5-sonnet" in filtered
     assert "llama-3.1-70b" in filtered
 
-    # If all models are excluded or non-standard, falls back to raw candidates
     all_excluded = ["text-embedding-ada-002", "whisper-medium"]
     fallback_result = filter_chat_models(all_excluded)
     assert len(fallback_result) == 2
@@ -79,7 +74,7 @@ def test_validate_open_api_key_empty() -> None:
     assert models == []
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_success(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation success with model extraction."""
     mock_instance = MagicMock()
@@ -100,7 +95,7 @@ def test_validate_open_api_key_success(mock_openai_cls: MagicMock) -> None:
     assert "text-embedding-3-large" not in models
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_success_empty_models(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation success when API returns no model objects."""
     mock_instance = MagicMock()
@@ -113,7 +108,7 @@ def test_validate_open_api_key_success_empty_models(mock_openai_cls: MagicMock) 
     assert "gpt-4o-mini" in models
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_unauthorised(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation unauthorised key."""
     mock_instance = MagicMock()
@@ -129,7 +124,7 @@ def test_validate_open_api_key_unauthorised(mock_openai_cls: MagicMock) -> None:
     assert models == []
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_timeout(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation timeout."""
     mock_instance = MagicMock()
@@ -142,7 +137,7 @@ def test_validate_open_api_key_timeout(mock_openai_cls: MagicMock) -> None:
     assert models == []
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_conn_error(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation connection error."""
     mock_instance = MagicMock()
@@ -157,7 +152,7 @@ def test_validate_open_api_key_conn_error(mock_openai_cls: MagicMock) -> None:
     assert models == []
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_api_error(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation generic OpenAIError."""
     mock_instance = MagicMock()
@@ -174,7 +169,7 @@ def test_validate_open_api_key_api_error(mock_openai_cls: MagicMock) -> None:
     assert models == []
 
 
-@patch("app.validators.openai.OpenAI")
+@patch("app.datasources.openai.OpenAI")
 def test_validate_open_api_key_generic_exception(mock_openai_cls: MagicMock) -> None:
     """Test Open API validation unexpected exception."""
     mock_instance = MagicMock()
