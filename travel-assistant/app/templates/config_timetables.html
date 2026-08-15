@@ -5,7 +5,7 @@
 {% block config_title %}Timetables{% endblock %}
 
 {% block subtitle %}
-<p class="text-base text-slate-600 dark:text-slate-400">Manage bus routes, rail station departure boards, and static schedule feeds.</p>
+<p class="text-base text-slate-600 dark:text-slate-400">Manage timetable schedules, validity date ranges, and operating days.</p>
 {% endblock %}
 
 {% block config_content %}
@@ -20,7 +20,7 @@
       <div>
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Active Timetables</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-          List of configured bus routes and rail stations. Add or remove entries, then click <strong>Save Changes</strong>.
+          List of configured timetables. Add or edit entries, then click <strong>Save Changes</strong>.
         </p>
       </div>
 
@@ -43,10 +43,10 @@
       
       <!-- Empty state container when 0 items -->
       <div id="grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
-        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">departure_board</span>
+        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">calendar_month</span>
         <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No timetables configured</h3>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-          Add bus routes or rail station departure feeds to populate your travel dashboard.
+          Add timetable schedules with validity date ranges and operating days.
         </p>
         <button 
           type="button" 
@@ -61,22 +61,22 @@
 </div>
 
 <!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/timetables" data-search-url="{{ ingress_path }}/config/timetables/search" class="config-main-form hidden" id="timetables-form">
+<form method="POST" action="{{ ingress_path }}/config/timetables" class="config-main-form hidden" id="timetables-form">
   <input type="hidden" name="timetables_json" id="timetables_json" value="">
   <script id="initial-timetables-data" type="application/json">{{ timetables | tojson }}</script>
 </form>
 
-<!-- Add Timetable Modal Dialog -->
-<dialog id="add-timetable-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-xl w-full mx-auto">
+<!-- Add/Edit Timetable Modal Dialog -->
+<dialog id="timetable-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-xl w-full mx-auto">
   <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
       <div class="flex items-center gap-2.5">
-        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl">add_circle</span>
-        <h3 class="text-lg font-bold text-slate-900 dark:text-white">Add New Timetable</h3>
+        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl" id="modal-icon">calendar_add_on</span>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white" id="modal-title">Add New Timetable</h3>
       </div>
       <button 
         type="button" 
-        id="close-add-modal-btn" 
+        id="close-modal-btn" 
         class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer p-1"
         aria-label="Close dialog"
       >
@@ -85,86 +85,94 @@
     </div>
 
     <div class="space-y-4">
-      <!-- 1. Transport Type Segmented Radio -->
+      <!-- 1. Timetable Name -->
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Transport Mode</label>
-        <div class="grid grid-cols-2 gap-3" id="transport-type-selector">
-          <label class="flex items-center gap-3 p-3 rounded-xl border border-sky-500 bg-sky-50/50 dark:bg-sky-950/40 text-slate-900 dark:text-slate-100 cursor-pointer transport-type-label">
-            <input type="radio" name="modal_transport_type" value="bus" checked class="text-sky-600 focus:ring-sky-500">
-            <span class="material-symbols-outlined text-amber-500">directions_bus</span>
-            <span class="text-sm font-semibold">Bus Route</span>
-          </label>
-          <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 cursor-pointer transport-type-label">
-            <input type="radio" name="modal_transport_type" value="train" class="text-sky-600 focus:ring-sky-500">
-            <span class="material-symbols-outlined text-indigo-500">train</span>
-            <span class="text-sm font-semibold">Rail Station</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- 2. Dynamic Search / Lookup -->
-      <div>
-        <label for="modal-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
-          Search Feed / Station Lookup
-        </label>
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <span class="material-symbols-outlined text-lg">search</span>
-          </div>
-          <input 
-            type="text" 
-            id="modal-search-input" 
-            class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-            placeholder="Type to search (e.g., Oxford, London, Tube, Route 1, PAD)..."
-            autocomplete="off"
-          >
-          <div id="search-spinner" class="hidden absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-            <span class="inline-block w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
-          </div>
-        </div>
-
-        <!-- Autocomplete Suggestions List -->
-        <div id="search-suggestions" class="hidden mt-2 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-md dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60">
-        </div>
-      </div>
-
-      <!-- 3. Name & Identifier Fields -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-        <div>
-          <label for="modal_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Display Name *</label>
-          <input 
-            type="text" 
-            id="modal_name" 
-            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-            placeholder="e.g. Oxford Tube Express"
-          >
-        </div>
-
-        <div>
-          <label for="modal_identifier" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Identifier / Code *</label>
-          <input 
-            type="text" 
-            id="modal_identifier" 
-            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-            placeholder="e.g. OX-TUBE or OXF"
-          >
-        </div>
-      </div>
-
-      <!-- 4. Status -->
-      <div>
-        <label for="modal_status" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Initial Status</label>
-        <select 
-          id="modal_status" 
-          class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+        <label for="modal_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Timetable Name *</label>
+        <input 
+          type="text" 
+          id="modal_name" 
+          class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+          placeholder="e.g. Weekday Commute Schedule or Summer Timetable"
+          autocomplete="off"
         >
-          <option value="active" selected>Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
+      </div>
+
+      <!-- 2. Date Range Fields -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label for="modal_start_date" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Start Date (Optional)</label>
+          <input 
+            type="date" 
+            id="modal_start_date" 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          >
+        </div>
+
+        <div>
+          <label for="modal_end_date" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">End Date (Optional)</label>
+          <input 
+            type="date" 
+            id="modal_end_date" 
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          >
+        </div>
+      </div>
+
+      <!-- 3. Applicable Days Selection -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            Applicable Days *
+          </label>
+          <div class="flex items-center gap-1.5 text-xs">
+            <button type="button" id="days-select-all" class="px-2 py-0.5 rounded text-xs font-medium text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50 cursor-pointer">All</button>
+            <span class="text-slate-300 dark:text-slate-700">|</span>
+            <button type="button" id="days-select-weekdays" class="px-2 py-0.5 rounded text-xs font-medium text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50 cursor-pointer">Weekdays</button>
+            <span class="text-slate-300 dark:text-slate-700">|</span>
+            <button type="button" id="days-select-weekends" class="px-2 py-0.5 rounded text-xs font-medium text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50 cursor-pointer">Weekends</button>
+            <span class="text-slate-300 dark:text-slate-700">|</span>
+            <button type="button" id="days-clear-all" class="px-2 py-0.5 rounded text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer">Clear</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4 sm:grid-cols-8 gap-2" id="days-pill-container">
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_monday" name="monday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Mon</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_tuesday" name="tuesday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Tue</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_wednesday" name="wednesday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Wed</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_thursday" name="thursday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Thu</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_friday" name="friday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Fri</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_saturday" name="saturday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Sat</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all">
+            <input type="checkbox" id="modal_sunday" name="sunday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Sun</span>
+          </label>
+          <label class="day-pill flex flex-col items-center justify-center p-2 rounded-xl border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 cursor-pointer select-none transition-all" title="Bank Holidays">
+            <input type="checkbox" id="modal_bank_holiday" name="bank_holiday" checked class="sr-only day-checkbox">
+            <span class="text-xs font-bold">Bank Hol</span>
+          </label>
+        </div>
       </div>
 
       <div id="modal-validation-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
-        Please provide both a Display Name and Identifier.
+        Please provide a timetable name.
       </div>
     </div>
 
@@ -172,14 +180,14 @@
     <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
       <button 
         type="button" 
-        id="cancel-add-modal-btn" 
+        id="cancel-modal-btn" 
         class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
       >
         Cancel
       </button>
       <button 
         type="button" 
-        id="confirm-add-timetable-btn" 
+        id="confirm-timetable-btn" 
         class="px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
       >
         Add Timetable

@@ -167,16 +167,30 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     """Test POST /config/timetables stores valid entries."""
     items = [
         {
-            "transport_type": "bus",
-            "name": "Oxford Tube",
-            "identifier": "OX-TUBE",
-            "status": "active",
+            "name": "Standard Commute Schedule",
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
+            "monday": True,
+            "tuesday": True,
+            "wednesday": True,
+            "thursday": True,
+            "friday": True,
+            "saturday": False,
+            "sunday": False,
+            "bank_holiday": False,
         },
         {
-            "transport_type": "train",
-            "name": "London Paddington",
-            "identifier": "PAD",
-            "status": "inactive",
+            "name": "Weekend Service",
+            "start_date": None,
+            "end_date": None,
+            "monday": False,
+            "tuesday": False,
+            "wednesday": False,
+            "thursday": False,
+            "friday": False,
+            "saturday": True,
+            "sunday": True,
+            "bank_holiday": True,
         },
     ]
 
@@ -190,15 +204,74 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     # Verify model has items
     saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 2
-    assert saved[0]["name"] == "Oxford Tube"
-    assert saved[0]["transport_type"] == "bus"
-    assert saved[1]["name"] == "London Paddington"
-    assert saved[1]["status"] == "inactive"
+    assert saved[0]["name"] == "Standard Commute Schedule"
+    assert saved[0]["start_date"] == "2026-09-01"
+    assert saved[0]["end_date"] == "2026-12-31"
+    assert saved[0]["monday"] is True
+    assert saved[0]["saturday"] is False
+    assert saved[1]["name"] == "Weekend Service"
+    assert saved[1]["start_date"] is None
+    assert saved[1]["saturday"] is True
 
     # Follow redirect
     follow = client.get("/config/timetables")
     assert follow.status_code == 200
     assert b"Timetables saved successfully." in follow.data
+
+
+def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
+    """Test POST /config/timetables validates end_date is after start_date."""
+    items = [
+        {
+            "name": "Invalid Date Schedule",
+            "start_date": "2026-12-31",
+            "end_date": "2026-01-01",
+        }
+    ]
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items)},
+    )
+    assert response.status_code == 303
+    follow = client.get("/config/timetables")
+    assert follow.status_code == 200
+    assert b"End date" in follow.data
+    assert b"cannot be before start date" in follow.data
+
+
+def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
+    """Test POST /config/timetables rejects malformed date format."""
+    items = [
+        {
+            "name": "Malformed Start Date Schedule",
+            "start_date": "01-09-2026",
+            "end_date": "2026-12-31",
+        }
+    ]
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items)},
+    )
+    assert response.status_code == 303
+    follow = client.get("/config/timetables")
+    assert follow.status_code == 200
+    assert b"Invalid start date format" in follow.data
+
+    items_end = [
+        {
+            "name": "Malformed End Date Schedule",
+            "start_date": "2026-09-01",
+            "end_date": "31-12-2026",
+        }
+    ]
+    response_end = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items_end)},
+    )
+    assert response_end.status_code == 303
+    follow_end = client.get("/config/timetables")
+    assert follow_end.status_code == 200
+    assert b"Invalid end date format" in follow_end.data
 
 
 def test_post_timetables_malformed_json(client: FlaskClient) -> None:
@@ -230,15 +303,12 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
     items = [
         "not-a-dict",
         {
-            "transport_type": "plane",  # Unknown type should fallback to bus
-            "name": "Valid Route",
-            "identifier": "VR-1",
-            "status": "unknown_status",  # Should fallback to active
+            "name": "Valid Route Schedule",
+            "monday": True,
         },
         {
-            "transport_type": "bus",
             "name": "",  # Empty name should be skipped
-            "identifier": "NO-NAME",
+            "start_date": "2026-01-01",
         },
     ]
 
@@ -249,9 +319,8 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
     assert response.status_code == 303
     saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 1
-    assert saved[0]["transport_type"] == "bus"
-    assert saved[0]["name"] == "Valid Route"
-    assert saved[0]["status"] == "active"
+    assert saved[0]["name"] == "Valid Route Schedule"
+    assert saved[0]["monday"] is True
 
 
 def test_search_timetables_endpoint(client: FlaskClient) -> None:
