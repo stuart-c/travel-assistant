@@ -16,6 +16,7 @@ from app.db import get_db_stats
 from app.models import (
     BusRoute,
     BusStop,
+    Location,
     LocationTransfer,
     PlatformTransfer,
     Setting,
@@ -281,6 +282,64 @@ def search_timetables() -> Any:
             "cache_counts": cache_counts,
             "type": transport_type,
         }
+    )
+
+
+@config_bp.route("/locations", methods=["GET", "POST"])
+def locations() -> Any:
+    """Manage configured geographic locations."""
+    if request.method == "POST":
+        locations_raw = request.form.get("locations_json", "[]").strip()
+        try:
+            items = json.loads(locations_raw)
+            if not isinstance(items, list):
+                raise ValueError("Payload must be a list of location objects.")
+
+            cleaned_items: List[Dict[str, Any]] = []
+            for entry in items:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("name", "")).strip()
+                if not name:
+                    continue
+
+                try:
+                    lat_val = entry.get("latitude")
+                    lon_val = entry.get("longitude")
+                    if lat_val is None or lon_val is None:
+                        continue
+                    lat = float(lat_val)
+                    lon = float(lon_val)
+                except (ValueError, TypeError):
+                    continue
+
+                if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                    continue
+
+                cleaned_items.append(
+                    {
+                        "name": name,
+                        "latitude": round(lat, 6),
+                        "longitude": round(lon, 6),
+                    }
+                )
+
+            with Location._meta.database.atomic():
+                Location.delete().execute()
+                if cleaned_items:
+                    Location.insert_many(cleaned_items).execute()
+
+            flash("Locations saved successfully.", "success")
+        except Exception as e:
+            flash(f"Failed to save locations: {str(e)}", "error")
+
+        return redirect(url_for("config.locations"), code=303)
+
+    current_locations = [loc.to_dict() for loc in Location.select()]
+    return render_template(
+        "config_locations.html",
+        locations=current_locations,
+        active_tab="locations",
     )
 
 
