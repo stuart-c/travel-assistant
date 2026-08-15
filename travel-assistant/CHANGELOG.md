@@ -26,9 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified left sidebar configuration layout (`config_base.html`) across `/config/*` sections with collapsible mobile drawer.
 - Unsaved changes protection manager (`ConfigDirtyManager`) intercepting page reloads, tab navigation, and breadcrumbs with warning prompts.
 - Standard action bar with dynamic **Save Changes** and **Discard Changes** across all configuration sections.
-- Unified Grid.js table view on the Database page (`/config/db`) with client-side search, sort, pagination, and empty states.
-- Dedicated `app/static/js/db.js` controller and `app/static/css/tables.css` stylesheet providing dark mode theme support via `@media (prefers-color-scheme: dark)` and `.dark` classes.
-- Top-level dynamic notification alert banner on `/config/db` matching standard flashed message geometry.
+- Dedicated Background Synchronisation page at `/config/sync` featuring Grid.js interactive table for cached transit datasets (`bus_routes`, `bus_stops`, `stations`), record counts, last synchronised timestamps, per-table sync triggers, and a top "Refresh All Datasets" action.
+- Streamlined Database storage page (`/config/db`) displaying a minimalist single-stat card for SQLite database disk size.
+- Relocated **Save Changes** and **Discard Changes** action bar to the top header row of editable configuration pages (`/config/credentials`, `/config/timetables`, `/config/transfers`), omitting action bars on read-only pages.
+- Converted Add Timetable and Add Transfer action buttons into compact, rounded `+` icon-only buttons with accessible labels and tooltips.
+- Unnumbered API credentials section headings ("Bus API Key", "Train S3 Bucket Details", "Train Live Credentials", "OpenAI & LLM Credentials").
+- Replaced "Re-check" buttons with interactive "Check" buttons on the API Credentials page that remain disabled on page load and dynamically enable when text inputs are modified.
+- Fixed BODS endpoint resolution in `sync_bus_stops` to correctly target dataset feeds.
 - Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, transfers management, and configuration views with 100% code coverage.
 
 ### Changed

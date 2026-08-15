@@ -124,7 +124,11 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
         SyncMetadata.record_start("bus_stops")
 
         try:
-            url = f"{client.base_url}/datafeed/"
+            url = (
+                client.base_url.rstrip("/") + "/"
+                if "/dataset" in client.base_url
+                else f"{client.base_url}/dataset/"
+            )
             params = {"api_key": client.api_key, "limit": 25}
             response = requests.get(url, params=params, timeout=client.timeout)
 

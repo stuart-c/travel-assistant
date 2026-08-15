@@ -67,6 +67,15 @@
         </a>
 
         <a 
+          href="{{ ingress_path }}/config/sync" 
+          class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'sync' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
+          id="nav-link-sync"
+        >
+          <span class="material-symbols-outlined text-lg leading-none text-sky-500 dark:text-sky-400">sync</span>
+          <span>Background Sync</span>
+        </a>
+
+        <a 
           href="{{ ingress_path }}/config/db" 
           class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'db' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
           id="nav-link-db"
@@ -87,23 +96,26 @@
     </aside>
 
     <!-- Main Section Content -->
-    <section class="flex-1 min-w-0 w-full">
-      {% block config_content %}{% endblock %}
+    <section class="flex-1 min-w-0 w-full space-y-6">
+      <!-- Top Action / Title Header Row -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-slate-800">
+        <div class="space-y-1">
+          <h1 class="text-2xl font-bold text-slate-900 dark:text-white">{% block page_title %}{{ self.config_title() }}{% endblock %}</h1>
+          {% block subtitle %}{% endblock %}
+        </div>
 
-      <!-- Standard Action Bar: Save & Discard (Sticky Bottom Bar) -->
-      <div class="mt-8 pt-4 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4" id="standard-action-bar">
-        <div class="flex items-center gap-2">
-          <span id="dirty-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+        {% block action_bar %}
+        <!-- Standard Action Bar: Save & Discard (Top Right) -->
+        <div class="flex flex-wrap items-center gap-3 shrink-0" id="standard-action-bar">
+          <span id="dirty-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
             No unsaved changes
           </span>
-        </div>
 
-        <div class="flex items-center gap-3">
           <button 
             type="button" 
             id="config-discard-btn" 
-            class="inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
+            class="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
             disabled
           >
             Discard Changes
@@ -112,12 +124,15 @@
           <button 
             type="button" 
             id="config-save-btn" 
-            class="inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 shadow-sm transition-all cursor-pointer opacity-90"
+            class="inline-flex items-center justify-center px-4 py-1.5 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 shadow-sm transition-all cursor-pointer opacity-90"
           >
             Save Changes
           </button>
         </div>
+        {% endblock %}
       </div>
+
+      {% block config_content %}{% endblock %}
     </section>
   </div>
 </div>

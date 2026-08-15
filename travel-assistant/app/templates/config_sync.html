@@ -1,0 +1,69 @@
+{% extends "config_base.html" %}
+
+{% block title %}Background Sync - {{ app_name }}{% endblock %}
+
+{% block config_title %}Background Sync{% endblock %}
+
+{% block subtitle %}
+<p class="text-sm text-slate-600 dark:text-slate-400">View transit dataset synchronisation status, record counts, and trigger on-demand refresh.</p>
+{% endblock %}
+
+{% block action_bar %}
+<!-- Read-only sync page: Save/Discard action bar omitted -->
+{% endblock %}
+
+{% block config_content %}
+<!-- Grid.js Stylesheet (CDN) and Custom Theme -->
+<link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+
+<div class="space-y-6" id="sync-page-container" data-ingress-path="{{ ingress_path }}">
+  <!-- Dynamic Notification Alert Banner -->
+  <div id="sync-toast-box" class="hidden mb-6 p-4 rounded-xl text-sm font-medium border flex items-center gap-3 transition-all" role="alert"></div>
+
+  <!-- Sync Actions Header Card -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Transit Datasets</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          Local cached datasets for bus routes, bus stops, and rail stations automatically refreshed every 24 hours.
+        </p>
+      </div>
+
+      <div>
+        <button 
+          type="button" 
+          id="sync-all-btn" 
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors shadow-sm cursor-pointer" 
+          title="Refresh all transit datasets now"
+        >
+          <span class="material-symbols-outlined text-sm leading-none" id="sync-all-icon" aria-hidden="true">refresh</span>
+          <span id="sync-all-text">Refresh All Datasets</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid.js Container Mount Point -->
+    <div class="mt-6">
+      <div id="sync-grid-wrapper"></div>
+
+      <!-- Empty state container when 0 items -->
+      <div id="grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
+        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">sync_problem</span>
+        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No transit datasets initialised</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          Transit tables will be automatically created and populated on initial dataset refresh.
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Initial Data Payload -->
+<script id="initial-sync-stats" type="application/json">{{ stats | tojson }}</script>
+
+<!-- Grid.js UMD Script (CDN) and Sync Controller -->
+<script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/sync.js"></script>
+{% endblock %}

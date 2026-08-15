@@ -23,10 +23,11 @@ def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
     """Test GET /config/credentials renders empty form fields initially with default model."""
     response = client.get("/config/credentials")
     assert response.status_code == 200
-    assert b"1. Bus API Key" in response.data
-    assert b"2. Train S3 Bucket Details" in response.data
-    assert b"3. Train Live Credentials" in response.data
-    assert b"4. OpenAI &amp; LLM Credentials" in response.data
+    assert b"Bus API Key" in response.data
+    assert b"Train S3 Bucket Details" in response.data
+    assert b"Train Live Credentials" in response.data
+    assert b"OpenAI &amp; LLM Credentials" in response.data
+    assert b"1. Bus API Key" not in response.data
     assert b'name="bus_api_key"' in response.data
     assert b'name="train_s3_bucket"' in response.data
     assert b'name="train_s3_access_key"' in response.data
@@ -407,22 +408,19 @@ def test_timetables_ingress_header(client: FlaskClient) -> None:
 
 
 def test_get_db_page_initial_render(client: FlaskClient) -> None:
-    """Test GET /config/db renders database stats page correctly."""
+    """Test GET /config/db renders minimalist database size card."""
     response = client.get("/config/db")
     assert response.status_code == 200
-    assert b"Database Storage Overview" in response.data
     assert b"Database Size" in response.data
-    assert b"User Tables" in response.data
-    assert b"Total Records" in response.data
-    assert b"Database Tables" in response.data
-    assert b"settings" in response.data
-    assert b"timetables" in response.data
+    assert b"stat-db-size" in response.data
     assert b"nav-link-db" in response.data
-    assert b"refresh-stats-btn" in response.data
+    assert b"standard-action-bar" not in response.data
+    assert b"refresh-stats-btn" not in response.data
+    assert b"Database Tables" not in response.data
 
 
 def test_get_db_page_with_populated_tables(client: FlaskClient) -> None:
-    """Test GET /config/db accurately displays table row counts."""
+    """Test GET /config/db accurately displays database size metrics."""
     Setting.set_val("bus_key", "secret123", category="credentials")
     Setting.set_val("train_key", "secret456", category="credentials")
 
@@ -431,9 +429,34 @@ def test_get_db_page_with_populated_tables(client: FlaskClient) -> None:
 
     response = client.get("/config/db")
     assert response.status_code == 200
-    assert b"settings" in response.data
-    assert b"timetables" in response.data
-    assert b"stat-total-rows" in response.data
+    assert b"Database Size" in response.data
+    assert b"stat-db-size" in response.data
+
+
+def test_db_page_ingress_header(client: FlaskClient) -> None:
+    """Test that Ingress header is respected in db stats template."""
+    response = client.get(
+        "/config/db",
+        headers={"X-Ingress-Path": "/api/hassio_ingress/test_token"},
+    )
+    assert response.status_code == 200
+    assert b'href="/api/hassio_ingress/test_token/config/db"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/credentials"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/sync"' in response.data
+
+
+def test_get_sync_page_initial_render(client: FlaskClient) -> None:
+    """Test GET /config/sync renders transit datasets sync page with Grid.js."""
+    response = client.get("/config/sync")
+    assert response.status_code == 200
+    assert b"Background Sync" in response.data
+    assert b"Transit Datasets" in response.data
+    assert b"sync-all-btn" in response.data
+    assert b"sync-grid-wrapper" in response.data
+    assert b"initial-sync-stats" in response.data
+    assert b"/static/js/sync.js" in response.data
+    assert b"standard-action-bar" not in response.data
 
 
 def test_sync_db_table_endpoint_all(
