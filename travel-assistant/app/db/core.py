@@ -1,7 +1,4 @@
-"""Database management and SQLite connection lifecycle for Travel Assistant.
-
-Provides persistent storage initialization and re-exports table repositories.
-"""
+"""Database connection lifecycle, SQLite management, and schema initialisation."""
 
 import os
 import sqlite3
@@ -93,19 +90,3 @@ def init_app(app: Flask) -> None:
     """Register database functions with the Flask application."""
     app.teardown_appcontext(close_db)
     init_db(app)
-
-
-# Re-export table repository classes for clean backwards-compatibility
-from app.repositories.settings import SettingsRepository  # noqa: E402
-from app.repositories.timetables import TimetableRepository  # noqa: E402
-
-__all__ = [
-    "DEFAULT_SCHEMA",
-    "get_db_path",
-    "get_db",
-    "close_db",
-    "init_db",
-    "init_app",
-    "SettingsRepository",
-    "TimetableRepository",
-]

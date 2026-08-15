@@ -1,9 +1,9 @@
-"""Repository for managing timetable entries in SQLite."""
+"""Repository for querying and persisting timetable entries in SQLite."""
 
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from app.db import get_db
+from app.db.core import get_db
 
 
 class TimetableRepository:

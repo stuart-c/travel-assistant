@@ -318,12 +318,17 @@ def test_timetable_repository_explicit_connection(temp_db_path: str) -> None:
     conn.close()
 
 
-def test_repositories_module_exports() -> None:
-    """Test that app.repositories exports SettingsRepository and TimetableRepository."""
-    from app.repositories import SettingsRepository as DirectSettingsRepo
-    from app.repositories import TimetableRepository as DirectTimetableRepo
-    from app.db import SettingsRepository as DbSettingsRepo
-    from app.db import TimetableRepository as DbTimetableRepo
+def test_db_module_exports() -> None:
+    """Test that app.db exports SettingsRepository, TimetableRepository, and core helpers."""
+    from app.db.settings import SettingsRepository as DirectSettingsRepo
+    from app.db.timetables import TimetableRepository as DirectTimetableRepo
+    from app.db.core import get_db as DirectGetDb
+    from app.db import (
+        SettingsRepository as DbSettingsRepo,
+        TimetableRepository as DbTimetableRepo,
+        get_db as DbGetDb,
+    )
 
     assert DirectSettingsRepo is DbSettingsRepo
     assert DirectTimetableRepo is DbTimetableRepo
+    assert DirectGetDb is DbGetDb

@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Changed
-- Refactored per-table repository classes from `db.py` into dedicated modules in `app/repositories/` (`settings.py` and `timetables.py`) while preserving backwards-compatible re-exports in `app/db.py`.
+- Refactored `app/db` into a modular package with per-table repository modules (`app/db/settings.py` and `app/db/timetables.py`) and connection lifecycle management in `app/db/core.py`, while maintaining top-level `app.db` exports.
 - Migrated frontend styling from custom vanilla CSS to Tailwind CSS v4 via Browser CDN.
 - Modernised UI with responsive layout, automated dark mode support via `prefers-color-scheme`, and pulsing status animations.
 - Removed legacy `style.css` stylesheet.

@@ -1,9 +1,9 @@
-"""Repository for managing application configuration settings in SQLite."""
+"""Repository for querying and persisting configuration settings in SQLite."""
 
 import sqlite3
 from typing import Any, Dict, Optional
 
-from app.db import get_db
+from app.db.core import get_db
 
 
 class SettingsRepository:
