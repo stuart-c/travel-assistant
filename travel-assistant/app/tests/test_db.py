@@ -316,3 +316,14 @@ def test_timetable_repository_explicit_connection(temp_db_path: str) -> None:
     item = repo.get(tid)
     assert item["name"] == "Custom Route"
     conn.close()
+
+
+def test_repositories_module_exports() -> None:
+    """Test that app.repositories exports SettingsRepository and TimetableRepository."""
+    from app.repositories import SettingsRepository as DirectSettingsRepo
+    from app.repositories import TimetableRepository as DirectTimetableRepo
+    from app.db import SettingsRepository as DbSettingsRepo
+    from app.db import TimetableRepository as DbTimetableRepo
+
+    assert DirectSettingsRepo is DbSettingsRepo
+    assert DirectTimetableRepo is DbTimetableRepo

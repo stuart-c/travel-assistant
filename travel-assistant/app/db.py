@@ -1,11 +1,11 @@
-"""Database management and settings repository using SQLite.
+"""Database management and SQLite connection lifecycle for Travel Assistant.
 
-Provides persistent storage for application settings, credentials, and data.
+Provides persistent storage initialization and re-exports table repositories.
 """
 
 import os
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from flask import Flask, current_app, g
 
 DEFAULT_SCHEMA = """
@@ -95,229 +95,17 @@ def init_app(app: Flask) -> None:
     init_db(app)
 
 
-class SettingsRepository:
-    """Repository for querying and persisting configuration settings in SQLite."""
+# Re-export table repository classes for clean backwards-compatibility
+from app.repositories.settings import SettingsRepository  # noqa: E402
+from app.repositories.timetables import TimetableRepository  # noqa: E402
 
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
-
-    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        """Retrieve a single configuration value by key."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-        row = cursor.fetchone()
-        if row is not None:
-            return row["value"]
-        return default
-
-    def get_all(self, category: Optional[str] = None) -> Dict[str, str]:
-        """Retrieve all configuration settings, optionally filtered by category."""
-        cursor = self.conn.cursor()
-        if category:
-            cursor.execute(
-                "SELECT key, value FROM settings WHERE category = ?",
-                (category,),
-            )
-        else:
-            cursor.execute("SELECT key, value FROM settings")
-
-        rows = cursor.fetchall()
-        return {row["key"]: row["value"] for row in rows}
-
-    def set(self, key: str, value: str, category: Optional[str] = None) -> None:
-        """Store or update a configuration setting."""
-        with self.conn:
-            self.conn.execute(
-                """
-                INSERT INTO settings (key, value, category, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    category = coalesce(excluded.category, settings.category),
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (key, value, category),
-            )
-
-    def set_many(
-        self, settings: Dict[str, Any], category: Optional[str] = None
-    ) -> None:
-        """Store or update multiple configuration settings in a single transaction."""
-        with self.conn:
-            for key, value in settings.items():
-                str_val = "" if value is None else str(value)
-                self.conn.execute(
-                    """
-                    INSERT INTO settings (key, value, category, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(key) DO UPDATE SET
-                        value = excluded.value,
-                        category = coalesce(excluded.category, settings.category),
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (key, str_val, category),
-                )
-
-    def delete(self, key: str) -> None:
-        """Delete a configuration setting by key."""
-        with self.conn:
-            self.conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-
-
-class TimetableRepository:
-    """Repository for querying and persisting timetable entries in SQLite."""
-
-    def __init__(self, connection: Optional[sqlite3.Connection] = None) -> None:
-        self._connection = connection
-
-    @property
-    def conn(self) -> sqlite3.Connection:
-        """Get the active SQLite connection."""
-        if self._connection is not None:
-            return self._connection
-        return get_db()
-
-    def get_all(self) -> List[Dict[str, Any]]:
-        """Retrieve all timetable entries ordered by creation date."""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT id, transport_type, name, identifier, status, created_at, updated_at
-            FROM timetables
-            ORDER BY id ASC
-            """)
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row["id"],
-                "transport_type": row["transport_type"],
-                "name": row["name"],
-                "identifier": row["identifier"],
-                "status": row["status"],
-                "created_at": (
-                    row["created_at"].isoformat()
-                    if hasattr(row["created_at"], "isoformat")
-                    else str(row["created_at"])
-                ),
-                "updated_at": (
-                    row["updated_at"].isoformat()
-                    if hasattr(row["updated_at"], "isoformat")
-                    else str(row["updated_at"])
-                ),
-            }
-            for row in rows
-        ]
-
-    def get(self, timetable_id: int) -> Optional[Dict[str, Any]]:
-        """Retrieve a single timetable entry by ID."""
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, transport_type, name, identifier, status, created_at, updated_at
-            FROM timetables
-            WHERE id = ?
-            """,
-            (timetable_id,),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
-        return {
-            "id": row["id"],
-            "transport_type": row["transport_type"],
-            "name": row["name"],
-            "identifier": row["identifier"],
-            "status": row["status"],
-            "created_at": (
-                row["created_at"].isoformat()
-                if hasattr(row["created_at"], "isoformat")
-                else str(row["created_at"])
-            ),
-            "updated_at": (
-                row["updated_at"].isoformat()
-                if hasattr(row["updated_at"], "isoformat")
-                else str(row["updated_at"])
-            ),
-        }
-
-    def add(
-        self,
-        transport_type: str,
-        name: str,
-        identifier: str,
-        status: str = "active",
-    ) -> int:
-        """Add a new timetable entry and return its generated ID."""
-        with self.conn:
-            cursor = self.conn.execute(
-                """
-                INSERT INTO timetables (
-                    transport_type, name, identifier, status, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (transport_type.lower(), name, identifier, status.lower()),
-            )
-            return cursor.lastrowid or 0
-
-    def update(
-        self,
-        timetable_id: int,
-        transport_type: str,
-        name: str,
-        identifier: str,
-        status: str = "active",
-    ) -> bool:
-        """Update an existing timetable entry."""
-        with self.conn:
-            cursor = self.conn.execute(
-                """
-                UPDATE timetables
-                SET transport_type = ?, name = ?, identifier = ?, status = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    transport_type.lower(),
-                    name,
-                    identifier,
-                    status.lower(),
-                    timetable_id,
-                ),
-            )
-            return cursor.rowcount > 0
-
-    def delete(self, timetable_id: int) -> bool:
-        """Delete a timetable entry by ID."""
-        with self.conn:
-            cursor = self.conn.execute(
-                "DELETE FROM timetables WHERE id = ?",
-                (timetable_id,),
-            )
-            return cursor.rowcount > 0
-
-    def replace_all(self, timetables: List[Dict[str, Any]]) -> None:
-        """Atomically replace all timetable entries with a newly submitted list."""
-        with self.conn:
-            self.conn.execute("DELETE FROM timetables")
-            for item in timetables:
-                self.conn.execute(
-                    """
-                    INSERT INTO timetables (
-                        transport_type, name, identifier, status, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        item.get("transport_type", "bus").lower(),
-                        item.get("name", "").strip(),
-                        item.get("identifier", "").strip(),
-                        item.get("status", "active").lower(),
-                    ),
-                )
+__all__ = [
+    "DEFAULT_SCHEMA",
+    "get_db_path",
+    "get_db",
+    "close_db",
+    "init_db",
+    "init_app",
+    "SettingsRepository",
+    "TimetableRepository",
+]
