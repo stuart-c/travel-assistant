@@ -67,9 +67,44 @@ CREATE TABLE IF NOT EXISTS stations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS location_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_type TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    from_name TEXT NOT NULL,
+    to_type TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    to_name TEXT NOT NULL,
+    transfer_time_minutes INTEGER NOT NULL DEFAULT 5,
+    bidirectional INTEGER NOT NULL DEFAULT 1,
+    step_free INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS platform_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_type TEXT NOT NULL DEFAULT 'station',
+    location_id TEXT NOT NULL,
+    location_name TEXT NOT NULL,
+    from_platform TEXT NOT NULL,
+    to_platform TEXT NOT NULL,
+    transfer_time_minutes INTEGER NOT NULL DEFAULT 2,
+    bidirectional INTEGER NOT NULL DEFAULT 1,
+    step_free INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_bus_routes_number ON bus_routes(route_number);
 CREATE INDEX IF NOT EXISTS idx_bus_stops_atco ON bus_stops(atco_code);
 CREATE INDEX IF NOT EXISTS idx_stations_crs ON stations(crs_code);
+CREATE INDEX IF NOT EXISTS idx_location_transfers_from ON location_transfers(from_type, from_id);
+CREATE INDEX IF NOT EXISTS idx_location_transfers_to ON location_transfers(to_type, to_id);
+CREATE INDEX IF NOT EXISTS idx_platform_transfers_loc
+ON platform_transfers(location_type, location_id);
 """
 
 SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations")

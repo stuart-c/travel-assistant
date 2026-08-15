@@ -350,11 +350,16 @@ def test_base_repository_methods(app: Flask, temp_db_path: str) -> None:
 
 def test_db_module_exports() -> None:
     """Test that app.db exports BaseRepository, SettingsRepository, TimetableRepository,
-    and core helpers.
+    Transfer repositories, and core helpers.
     """
     from app.db.base import BaseRepository as DirectBaseRepo
     from app.db.settings import SettingsRepository as DirectSettingsRepo
     from app.db.timetables import TimetableRepository as DirectTimetableRepo
+    from app.db.transfers import (
+        LocationTransferRepository as DirectLocRepo,
+        PlatformTransferRepository as DirectPlatRepo,
+        TransferRepository as DirectTransferRepo,
+    )
     from app.db.core import (
         get_db as DirectGetDb,
         get_db_stats as DirectGetDbStats,
@@ -364,6 +369,9 @@ def test_db_module_exports() -> None:
         BaseRepository as DbBaseRepo,
         SettingsRepository as DbSettingsRepo,
         TimetableRepository as DbTimetableRepo,
+        TransferRepository as DbTransferRepo,
+        LocationTransferRepository as DbLocRepo,
+        PlatformTransferRepository as DbPlatRepo,
         get_db as DbGetDb,
         get_db_stats as DbGetDbStats,
         format_file_size as DbFormatFileSize,
@@ -372,6 +380,9 @@ def test_db_module_exports() -> None:
     assert DirectBaseRepo is DbBaseRepo
     assert DirectSettingsRepo is DbSettingsRepo
     assert DirectTimetableRepo is DbTimetableRepo
+    assert DirectTransferRepo is DbTransferRepo
+    assert DirectLocRepo is DbLocRepo
+    assert DirectPlatRepo is DbPlatRepo
     assert DirectGetDb is DbGetDb
     assert DirectGetDbStats is DbGetDbStats
     assert DirectFormatFileSize is DbFormatFileSize
@@ -411,12 +422,14 @@ def test_get_db_stats_in_app_context(app: Flask) -> None:
         assert (
             "KB" in stats["file_size_formatted"] or "B" in stats["file_size_formatted"]
         )
-        assert stats["total_tables"] == 6
+        assert stats["total_tables"] == 8
         assert stats["total_rows"] == 3
 
         table_dict = {t["name"]: t for t in stats["tables"]}
         assert "settings" in table_dict
         assert "timetables" in table_dict
+        assert "location_transfers" in table_dict
+        assert "platform_transfers" in table_dict
 
         assert table_dict["settings"]["row_count"] == 2
         assert "key" in table_dict["settings"]["columns"]
@@ -424,6 +437,8 @@ def test_get_db_stats_in_app_context(app: Flask) -> None:
 
         assert table_dict["timetables"]["row_count"] == 1
         assert "transport_type" in table_dict["timetables"]["columns"]
+        assert "from_id" in table_dict["location_transfers"]["columns"]
+        assert "from_platform" in table_dict["platform_transfers"]["columns"]
 
 
 def test_get_db_stats_explicit_connection(temp_db_path: str) -> None:
