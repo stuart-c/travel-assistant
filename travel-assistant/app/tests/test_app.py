@@ -59,7 +59,7 @@ def test_page_404_html_response(client: FlaskClient) -> None:
 
 def test_api_timetables_search_endpoint(client: FlaskClient, app: Flask) -> None:
     """Test that /api/timetables/search returns search results and handles unpopulated states."""
-    from app.db import BusRouteRepository
+    from app.models import BusRoute
 
     # Unpopulated state
     response = client.get("/api/timetables/search?type=bus")
@@ -71,7 +71,7 @@ def test_api_timetables_search_endpoint(client: FlaskClient, app: Flask) -> None
 
     # Populated state
     with app.app_context():
-        BusRouteRepository().bulk_upsert(
+        BusRoute.bulk_upsert(
             [
                 {
                     "route_number": "1",

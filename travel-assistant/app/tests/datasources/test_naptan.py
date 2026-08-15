@@ -10,14 +10,12 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
 
 
 def test_naptan_from_settings(app: Flask) -> None:
-    """Test NaptanClient initialisation from SettingsRepository."""
+    """Test NaptanClient initialisation from settings."""
     with app.app_context():
-        repo = SettingsRepository()
-        client = NaptanClient.from_settings(repo)
+        client = NaptanClient.from_settings()
         assert client.provider_name == "naptan"
         assert client.validate_credentials()["valid"] is True
 

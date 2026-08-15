@@ -14,19 +14,18 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 
 def test_train_s3_from_settings(app: Flask) -> None:
-    """Test TrainS3Client initialisation from SettingsRepository."""
+    """Test TrainS3Client initialisation from Setting model."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_s3_bucket", "my-rail-bucket")
-        repo.set("train_s3_region", "eu-west-2")
-        repo.set("train_s3_access_key", "AKIA123")
-        repo.set("train_s3_secret_key", "SECRET456")
+        Setting.set_val("train_s3_bucket", "my-rail-bucket")
+        Setting.set_val("train_s3_region", "eu-west-2")
+        Setting.set_val("train_s3_access_key", "AKIA123")
+        Setting.set_val("train_s3_secret_key", "SECRET456")
 
-        client = TrainS3Client.from_settings(repo)
+        client = TrainS3Client.from_settings()
         assert client.bucket_name == "my-rail-bucket"
         assert client.region == "eu-west-2"
         assert client.access_key == "AKIA123"

@@ -3,8 +3,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from app.db.settings import SettingsRepository
-
 
 class BaseDataSource(ABC):
     """Abstract base class defining the datasource client interface."""
@@ -21,13 +19,11 @@ class BaseDataSource(ABC):
 
     @classmethod
     @abstractmethod
-    def from_settings(
-        cls, settings_repo: Optional[SettingsRepository] = None
-    ) -> "BaseDataSource":
-        """Factory method to initialise a client instance from saved SettingsRepository.
+    def from_settings(cls, settings: Optional[Any] = None) -> "BaseDataSource":
+        """Factory method to initialise a client instance from saved settings or Setting model.
 
         Args:
-            settings_repo: Optional SettingsRepository instance.
+            settings: Optional Setting model, dict, or settings provider.
 
         Returns:
             Configured datasource client instance.

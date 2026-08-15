@@ -1,3 +1,5 @@
+"""Configuration views and REST API endpoints for Travel Assistant."""
+
 import json
 from typing import Any, Dict, List
 from flask import (
@@ -10,14 +12,15 @@ from flask import (
     url_for,
 )
 
-from app.db import (
-    BusRouteRepository,
-    BusStopRepository,
-    SettingsRepository,
-    StationRepository,
-    TimetableRepository,
-    TransferRepository,
-    get_db_stats,
+from app.db import get_db_stats
+from app.models import (
+    BusRoute,
+    BusStop,
+    LocationTransfer,
+    PlatformTransfer,
+    Setting,
+    Station,
+    Timetable,
 )
 from app.sync import sync_all, sync_table
 from app.validators import validate_service_credentials
@@ -48,19 +51,17 @@ def index() -> Any:
 @config_bp.route("/credentials", methods=["GET", "POST"])
 def credentials() -> Any:
     """Manage API credentials and service tokens."""
-    repo = SettingsRepository()
-
     if request.method == "POST":
         payload: Dict[str, str] = {}
         for field in CREDENTIAL_FIELDS:
             value = request.form.get(field, "").strip()
             payload[field] = value
 
-        repo.set_many(payload, category="credentials")
+        Setting.bulk_set(payload, category="credentials")
         flash("API credentials saved successfully.", "success")
         return redirect(url_for("config.credentials"), code=303)
 
-    stored = repo.get_all(category="credentials")
+    stored = Setting.get_by_category("credentials")
     current_credentials = {field: stored.get(field, "") for field in CREDENTIAL_FIELDS}
     if not current_credentials.get("open_api_model"):
         current_credentials["open_api_model"] = "gpt-4o-mini"
@@ -91,9 +92,8 @@ def validate_credentials() -> Any:
             400,
         )
 
-    # Fall back to saved repository credentials if fields are not present in payload
-    repo = SettingsRepository()
-    stored = repo.get_all(category="credentials")
+    # Fall back to saved database credentials if fields are not present in payload
+    stored = Setting.get_all_dict()
     merged_payload = dict(stored)
     merged_payload.update(raw_payload)
 
@@ -119,8 +119,6 @@ def validate_credentials() -> Any:
 @config_bp.route("/timetables", methods=["GET", "POST"])
 def timetables() -> Any:
     """Manage bus and train timetable entries."""
-    repo = TimetableRepository()
-
     if request.method == "POST":
         timetables_raw = request.form.get("timetables_json", "[]").strip()
         try:
@@ -151,14 +149,18 @@ def timetables() -> Any:
                         }
                     )
 
-            repo.replace_all(cleaned_items)
+            with Timetable._meta.database.atomic():
+                Timetable.delete().execute()
+                if cleaned_items:
+                    Timetable.insert_many(cleaned_items).execute()
+
             flash("Timetables saved successfully.", "success")
         except Exception as e:
             flash(f"Failed to save timetables: {str(e)}", "error")
 
         return redirect(url_for("config.timetables"), code=303)
 
-    current_timetables = repo.get_all()
+    current_timetables = [t.to_dict() for t in Timetable.select()]
     return render_template(
         "config_timetables.html",
         timetables=current_timetables,
@@ -177,13 +179,9 @@ def search_timetables() -> Any:
     except ValueError:
         limit = 25
 
-    station_repo = StationRepository()
-    stop_repo = BusStopRepository()
-    route_repo = BusRouteRepository()
-
-    stations_count = station_repo.count()
-    stops_count = stop_repo.count()
-    routes_count = route_repo.count()
+    stations_count = Station.select().count()
+    stops_count = BusStop.select().count()
+    routes_count = BusRoute.select().count()
 
     cache_counts = {
         "stations": stations_count,
@@ -197,15 +195,55 @@ def search_timetables() -> Any:
     if transport_type in ("station", "train", "stations"):
         is_cached = stations_count > 0
         if is_cached:
-            results = station_repo.search(query, limit=limit)
+            results = [
+                {
+                    "transport_type": "train",
+                    "name": s.name,
+                    "identifier": s.crs_code,
+                    "crs_code": s.crs_code,
+                    "description": f"National Rail Station - {s.crs_code}"
+                    + (f" ({s.operator})" if s.operator else ""),
+                }
+                for s in Station.search(query, limit=limit)
+            ]
     elif transport_type in ("bus_stop", "stop", "bus_stops", "stops"):
         is_cached = stops_count > 0
         if is_cached:
-            results = stop_repo.search(query, limit=limit)
+            results = [
+                {
+                    "transport_type": "bus",
+                    "name": s.name + (f" ({s.indicator})" if s.indicator else ""),
+                    "identifier": s.atco_code,
+                    "atco_code": s.atco_code,
+                    "description": "Bus Stop"
+                    + (f", {s.locality}" if s.locality else "")
+                    + f" - {s.atco_code}",
+                }
+                for s in BusStop.search(query, limit=limit)
+            ]
     elif transport_type in ("bus_route", "route", "bus_routes", "routes", "bus"):
         is_cached = routes_count > 0
         if is_cached:
-            results = route_repo.search(query, limit=limit)
+            results = [
+                {
+                    "transport_type": "bus",
+                    "name": f"Route {r.route_number}"
+                    + (
+                        f" ({r.origin} - {r.destination})"
+                        if r.origin and r.destination
+                        else ""
+                    ),
+                    "identifier": r.route_number,
+                    "route_number": r.route_number,
+                    "description": r.description
+                    or (
+                        f"Operated by {r.operator_name}"
+                        if r.operator_name
+                        else "Bus route"
+                    ),
+                }
+                for r in BusRoute.search(query, limit=limit)
+            ]
     elif transport_type in ("status", "status_check"):
         is_cached = (stations_count > 0) or (stops_count > 0 and routes_count > 0)
         results = []
@@ -213,9 +251,27 @@ def search_timetables() -> Any:
         # Generic search across cached stations and bus routes
         is_cached = (stations_count > 0) or (stops_count > 0) or (routes_count > 0)
         if is_cached:
-            st_res = station_repo.search(query, limit=limit)
-            rt_res = route_repo.search(query, limit=limit)
-            results = st_res + rt_res
+            st_res = [
+                {
+                    "transport_type": "train",
+                    "name": s.name,
+                    "identifier": s.crs_code,
+                    "crs_code": s.crs_code,
+                    "description": f"National Rail Station - {s.crs_code}",
+                }
+                for s in Station.search(query, limit=limit)
+            ]
+            rt_res = [
+                {
+                    "transport_type": "bus",
+                    "name": f"Route {r.route_number}",
+                    "identifier": r.route_number,
+                    "route_number": r.route_number,
+                    "description": r.description or "Bus route",
+                }
+                for r in BusRoute.search(query, limit=limit)
+            ]
+            results = (st_res + rt_res)[:limit]
 
     return jsonify(
         {
@@ -231,8 +287,6 @@ def search_timetables() -> Any:
 @config_bp.route("/transfers", methods=["GET", "POST"])
 def transfers() -> Any:
     """Manage inter-location walking links and station platform transfers."""
-    repo = TransferRepository()
-
     if request.method == "POST":
         loc_raw = request.form.get("location_transfers_json", "[]").strip()
         plat_raw = request.form.get("platform_transfers_json", "[]").strip()
@@ -323,18 +377,27 @@ def transfers() -> Any:
                         }
                     )
 
-            repo.replace_all(cleaned_location_transfers, cleaned_platform_transfers)
+            with LocationTransfer._meta.database.atomic():
+                LocationTransfer.delete().execute()
+                PlatformTransfer.delete().execute()
+                if cleaned_location_transfers:
+                    LocationTransfer.insert_many(cleaned_location_transfers).execute()
+                if cleaned_platform_transfers:
+                    PlatformTransfer.insert_many(cleaned_platform_transfers).execute()
+
             flash("Transfers saved successfully.", "success")
         except Exception as e:
             flash(f"Failed to save transfers: {str(e)}", "error")
 
         return redirect(url_for("config.transfers"), code=303)
 
-    transfers_data = repo.get_all()
+    location_transfers = [t.to_dict() for t in LocationTransfer.select()]
+    platform_transfers = [t.to_dict() for t in PlatformTransfer.select()]
+
     return render_template(
         "config_transfers.html",
-        location_transfers=transfers_data["location_transfers"],
-        platform_transfers=transfers_data["platform_transfers"],
+        location_transfers=location_transfers,
+        platform_transfers=platform_transfers,
         active_tab="transfers",
     )
 
@@ -348,82 +411,52 @@ def search_transfers_locations() -> Any:
     results: List[Dict[str, str]] = []
     seen_keys = set()
 
-    # Query local SQLite stations database
+    # Query local SQLite stations
     if not target_type or target_type == "station":
-        station_repo = StationRepository()
         try:
-            cursor = station_repo.conn.cursor()
-            if query:
-                cursor.execute(
-                    """
-                    SELECT crs_code, name, operator
-                    FROM stations
-                    WHERE LOWER(name) LIKE ? OR LOWER(crs_code) LIKE ?
-                    ORDER BY name ASC
-                    LIMIT 15
-                    """,
-                    (f"%{query}%", f"%{query}%"),
-                )
-            else:
-                cursor.execute("""
-                    SELECT crs_code, name, operator
-                    FROM stations
-                    ORDER BY name ASC
-                    LIMIT 10
-                    """)
-            for row in cursor.fetchall():
-                key = f"station:{row['crs_code']}"
+            st_list = (
+                Station.search(query, limit=15)
+                if query
+                else list(Station.select().limit(10))
+            )
+            for st in st_list:
+                key = f"station:{st.crs_code}"
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    op_suffix = f" ({row['operator']})" if row["operator"] else ""
+                    op_suffix = f" ({st.operator})" if st.operator else ""
                     results.append(
                         {
                             "type": "station",
-                            "id": row["crs_code"],
-                            "name": row["name"],
-                            "description": f"National Rail Station - {row['crs_code']}{op_suffix}",
+                            "id": st.crs_code,
+                            "name": st.name,
+                            "description": f"National Rail Station - {st.crs_code}{op_suffix}",
                             "indicator": "Platforms",
                         }
                     )
         except Exception:
             pass
 
-    # Query local SQLite bus stops database
+    # Query local SQLite bus stops
     if not target_type or target_type == "bus_stop":
-        bus_stop_repo = BusStopRepository()
         try:
-            cursor = bus_stop_repo.conn.cursor()
-            if query:
-                cursor.execute(
-                    """
-                    SELECT atco_code, name, indicator, locality
-                    FROM bus_stops
-                    WHERE LOWER(name) LIKE ? OR LOWER(atco_code) LIKE ? OR LOWER(locality) LIKE ?
-                    ORDER BY name ASC
-                    LIMIT 15
-                    """,
-                    (f"%{query}%", f"%{query}%", f"%{query}%"),
-                )
-            else:
-                cursor.execute("""
-                    SELECT atco_code, name, indicator, locality
-                    FROM bus_stops
-                    ORDER BY name ASC
-                    LIMIT 10
-                    """)
-            for row in cursor.fetchall():
-                key = f"bus_stop:{row['atco_code']}"
+            stop_list = (
+                BusStop.search(query, limit=15)
+                if query
+                else list(BusStop.select().limit(10))
+            )
+            for sp in stop_list:
+                key = f"bus_stop:{sp.atco_code}"
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    loc_suffix = f", {row['locality']}" if row["locality"] else ""
-                    ind_text = f" ({row['indicator']})" if row["indicator"] else ""
+                    loc_suffix = f", {sp.locality}" if sp.locality else ""
+                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
                     results.append(
                         {
                             "type": "bus_stop",
-                            "id": row["atco_code"],
-                            "name": f"{row['name']}{ind_text}",
-                            "description": f"Bus Stop{loc_suffix} - {row['atco_code']}",
-                            "indicator": row["indicator"] or "Stop",
+                            "id": sp.atco_code,
+                            "name": f"{sp.name}{ind_text}",
+                            "description": f"Bus Stop{loc_suffix} - {sp.atco_code}",
+                            "indicator": sp.indicator or "Stop",
                         }
                     )
         except Exception:

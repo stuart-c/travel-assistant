@@ -1,54 +1,55 @@
 """Database package for Travel Assistant.
 
-Provides SQLite lifecycle management and table repositories.
+Provides Peewee SQLite database lifecycle management, FlaskDB integration, and schema migrations.
 """
 
-from app.db.base import BaseRepository
 from app.db.core import (
-    DEFAULT_SCHEMA,
     SYNCABLE_TABLE_NAMES,
-    close_db,
+    create_sqlite_database,
+    db,
+    flask_db,
     format_file_size,
-    get_db,
     get_db_path,
     get_db_stats,
     init_app,
     init_db,
+    run_migrations,
 )
-from app.db.settings import SettingsRepository
-from app.db.timetables import TimetableRepository
-from app.db.transfers import (
-    LocationTransferRepository,
-    PlatformTransferRepository,
-    TransferRepository,
-)
-from app.db.transit import (
-    BusRouteRepository,
-    BusStopRepository,
-    StationRepository,
-    SyncMetadataRepository,
-    SYNCABLE_TABLES,
+from app.models import (
+    ALL_MODELS,
+    BaseModel,
+    BusRoute,
+    BusStop,
+    LocationTransfer,
+    PlatformTransfer,
+    Setting,
+    Station,
+    SyncMetadata,
+    Timetable,
 )
 
+SYNCABLE_TABLES = SYNCABLE_TABLE_NAMES
+
 __all__ = [
-    "DEFAULT_SCHEMA",
-    "SYNCABLE_TABLE_NAMES",
-    "SYNCABLE_TABLES",
-    "get_db_path",
-    "get_db",
-    "get_db_stats",
-    "format_file_size",
-    "close_db",
+    "db",
+    "flask_db",
     "init_db",
     "init_app",
-    "BaseRepository",
-    "SettingsRepository",
-    "TimetableRepository",
-    "TransferRepository",
-    "LocationTransferRepository",
-    "PlatformTransferRepository",
-    "SyncMetadataRepository",
-    "BusRouteRepository",
-    "BusStopRepository",
-    "StationRepository",
+    "get_db_path",
+    "get_db_stats",
+    "format_file_size",
+    "create_sqlite_database",
+    "run_migrations",
+    "SYNCABLE_TABLE_NAMES",
+    "SYNCABLE_TABLES",
+    "ALL_MODELS",
+    "BaseModel",
+    "Setting",
+    "Timetable",
+    "BusRoute",
+    "BusStop",
+    "Station",
+    "SyncMetadata",
+    "LocationTransfer",
+    "PlatformTransfer",
 ]

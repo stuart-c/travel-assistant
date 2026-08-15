@@ -11,7 +11,6 @@ from openai import (
 from flask import Flask
 
 from app.datasources.openai import (
-    DEFAULT_OPENAI_BASE_URL,
     OpenAIClient,
     filter_chat_models,
 )
@@ -21,19 +20,18 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 
 def test_openai_from_settings(app: Flask) -> None:
-    """Test OpenAIClient initialisation from SettingsRepository."""
+    """Test OpenAIClient initialisation from Setting model."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("open_api_key", "sk-test-12345")
-        repo.set("open_api_base_url", "https://api.openai.com/v1")
+        Setting.set_val("open_api_key", "sk-test-12345")
+        Setting.set_val("open_api_base_url", "https://api.openai.com/v1")
 
-        client = OpenAIClient.from_settings(repo)
+        client = OpenAIClient.from_settings()
         assert client.api_key == "sk-test-12345"
-        assert client.base_url == DEFAULT_OPENAI_BASE_URL
+        assert client.base_url == "https://api.openai.com/v1"
         assert client.provider_name == "openai"
 
 

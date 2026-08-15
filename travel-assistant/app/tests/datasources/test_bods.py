@@ -13,15 +13,14 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 
 def test_bods_client_from_settings(app: Flask) -> None:
-    """Test BodsClient initialisation from SettingsRepository."""
+    """Test BodsClient initialisation from Setting model."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("bus_api_key", "test-bus-key-123")
-        client = BodsClient.from_settings(repo)
+        Setting.set_val("bus_api_key", "test-bus-key-123")
+        client = BodsClient.from_settings()
         assert client.api_key == "test-bus-key-123"
         assert client.provider_name == "bods"
 

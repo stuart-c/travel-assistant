@@ -10,7 +10,6 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
 
 DEFAULT_NAPTAN_STOPS_URL = (
     "https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv"
@@ -31,9 +30,7 @@ class NaptanClient(BaseDataSource):
         self.timeout = timeout
 
     @classmethod
-    def from_settings(
-        cls, settings_repo: Optional[SettingsRepository] = None
-    ) -> "NaptanClient":
+    def from_settings(cls, settings: Optional[Any] = None) -> "NaptanClient":
         """Instantiate NaptanClient (NaPTAN requires no API key)."""
         return cls()
 

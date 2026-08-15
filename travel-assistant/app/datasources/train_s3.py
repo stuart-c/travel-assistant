@@ -18,7 +18,7 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 DEFAULT_S3_REGION = "eu-west-2"
 
@@ -47,16 +47,18 @@ class TrainS3Client(BaseDataSource):
         self._s3_client = s3_client
 
     @classmethod
-    def from_settings(
-        cls, settings_repo: Optional[SettingsRepository] = None
-    ) -> "TrainS3Client":
-        """Instantiate TrainS3Client with credentials loaded from SettingsRepository."""
-        repo = settings_repo or SettingsRepository()
+    def from_settings(cls, settings: Optional[Any] = None) -> "TrainS3Client":
+        """Instantiate TrainS3Client with credentials loaded from Setting model or provider."""
+        getter = (
+            settings.get_val
+            if hasattr(settings, "get_val")
+            else (settings.get if hasattr(settings, "get") else Setting.get_val)
+        )
         return cls(
-            bucket_name=repo.get("train_s3_bucket", ""),
-            region=repo.get("train_s3_region", DEFAULT_S3_REGION),
-            access_key=repo.get("train_s3_access_key", ""),
-            secret_key=repo.get("train_s3_secret_key", ""),
+            bucket_name=getter("train_s3_bucket", ""),
+            region=getter("train_s3_region", DEFAULT_S3_REGION),
+            access_key=getter("train_s3_access_key", ""),
+            secret_key=getter("train_s3_secret_key", ""),
         )
 
     def get_client(self) -> Any:
