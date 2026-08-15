@@ -9,6 +9,7 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, and unsaved changes protection.
 - **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, and Open API credentials.
 - **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing bus routes and rail station departure feeds with client-side staging, search autocomplete, and atomic persistence.
+- **Database Statistics**: Dedicated storage statistics dashboard at `/config/db` showing total database file size, SQLite storage path, and per-table row counts with live refresh.
 - **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and transport insights.
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
 

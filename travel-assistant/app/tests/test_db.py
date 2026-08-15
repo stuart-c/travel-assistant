@@ -322,13 +322,155 @@ def test_db_module_exports() -> None:
     """Test that app.db exports SettingsRepository, TimetableRepository, and core helpers."""
     from app.db.settings import SettingsRepository as DirectSettingsRepo
     from app.db.timetables import TimetableRepository as DirectTimetableRepo
-    from app.db.core import get_db as DirectGetDb
+    from app.db.core import (
+        get_db as DirectGetDb,
+        get_db_stats as DirectGetDbStats,
+        format_file_size as DirectFormatFileSize,
+    )
     from app.db import (
         SettingsRepository as DbSettingsRepo,
         TimetableRepository as DbTimetableRepo,
         get_db as DbGetDb,
+        get_db_stats as DbGetDbStats,
+        format_file_size as DbFormatFileSize,
     )
 
     assert DirectSettingsRepo is DbSettingsRepo
     assert DirectTimetableRepo is DbTimetableRepo
     assert DirectGetDb is DbGetDb
+    assert DirectGetDbStats is DbGetDbStats
+    assert DirectFormatFileSize is DbFormatFileSize
+
+
+def test_format_file_size() -> None:
+    """Test format_file_size formats byte quantities correctly."""
+    from app.db import format_file_size
+
+    assert format_file_size(0) == "0 B"
+    assert format_file_size(512) == "512 B"
+    assert format_file_size(1023) == "1023 B"
+    assert format_file_size(1024) == "1.0 KB"
+    assert format_file_size(1536) == "1.5 KB"
+    assert format_file_size(1024 * 1024) == "1.0 MB"
+    assert format_file_size(25 * 1024 * 1024) == "25.0 MB"
+    assert format_file_size(1024 * 1024 * 1024) == "1.00 GB"
+    assert format_file_size(3 * 1024 * 1024 * 1024) == "3.00 GB"
+
+
+def test_get_db_stats_in_app_context(app: Flask) -> None:
+    """Test get_db_stats within application context with tables and rows."""
+    from app.db import SettingsRepository, TimetableRepository, get_db_stats
+
+    with app.app_context():
+        settings_repo = SettingsRepository()
+        settings_repo.set("site_name", "Test Site", category="general")
+        settings_repo.set("theme", "dark", category="appearance")
+
+        timetables_repo = TimetableRepository()
+        timetables_repo.add("bus", "Route 1", "R-1")
+
+        stats = get_db_stats()
+
+        assert stats["file_path"] == app.config["DATABASE_PATH"]
+        assert stats["file_size_bytes"] > 0
+        assert (
+            "KB" in stats["file_size_formatted"] or "B" in stats["file_size_formatted"]
+        )
+        assert stats["total_tables"] == 2
+        assert stats["total_rows"] == 3
+
+        table_dict = {t["name"]: t for t in stats["tables"]}
+        assert "settings" in table_dict
+        assert "timetables" in table_dict
+
+        assert table_dict["settings"]["row_count"] == 2
+        assert "key" in table_dict["settings"]["columns"]
+        assert "value" in table_dict["settings"]["columns"]
+
+        assert table_dict["timetables"]["row_count"] == 1
+        assert "transport_type" in table_dict["timetables"]["columns"]
+
+
+def test_get_db_stats_explicit_connection(temp_db_path: str) -> None:
+    """Test get_db_stats using an explicitly passed sqlite3 connection."""
+    from app.db import get_db_stats
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        conn.executescript("""
+            CREATE TABLE custom_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_name TEXT NOT NULL
+            );
+            INSERT INTO custom_items (item_name) VALUES ('Item A'), ('Item B');
+        """)
+
+    stats = get_db_stats(connection=conn)
+    assert stats["total_tables"] == 1
+    assert stats["total_rows"] == 2
+    assert stats["tables"][0]["name"] == "custom_items"
+    assert stats["tables"][0]["row_count"] == 2
+    assert stats["tables"][0]["column_count"] == 2
+    conn.close()
+
+
+def test_get_db_stats_no_app_context(
+    temp_db_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test get_db_stats called outside of Flask request/app context."""
+    from app.db import get_db_stats
+
+    monkeypatch.setenv("DATABASE_PATH", temp_db_path)
+    conn = sqlite3.connect(temp_db_path)
+    with conn:
+        conn.execute("CREATE TABLE sample (id INT)")
+        conn.execute("INSERT INTO sample VALUES (1)")
+    conn.close()
+
+    # Call with no app context and no connection passed
+    stats = get_db_stats()
+    assert stats["file_path"] == temp_db_path
+    assert stats["total_tables"] == 1
+    assert stats["total_rows"] == 1
+
+
+def test_get_db_stats_memory_db() -> None:
+    """Test get_db_stats with in-memory database."""
+    from app.db import get_db_stats
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    with conn:
+        conn.execute("CREATE TABLE mem_table (id INT, val TEXT)")
+        conn.execute("INSERT INTO mem_table VALUES (1, 'alpha')")
+
+    stats = get_db_stats(connection=conn)
+    assert stats["file_size_bytes"] >= 0
+    assert stats["total_tables"] == 1
+    assert stats["total_rows"] == 1
+    conn.close()
+
+
+def test_get_db_stats_filters_internal_tables(temp_db_path: str) -> None:
+    """Test get_db_stats filters out sqlite_ internal tables."""
+    from app.db import get_db_stats
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        conn.executescript("""
+            CREATE TABLE auto_tbl (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+            INSERT INTO auto_tbl (name) VALUES ('Alpha');
+        """)
+
+    # Check sqlite_sequence exists in sqlite_master
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE name = 'sqlite_sequence'")
+    assert cur.fetchone() is not None
+
+    stats = get_db_stats(connection=conn)
+    table_names = [t["name"] for t in stats["tables"]]
+    assert "auto_tbl" in table_names
+    assert "sqlite_sequence" not in table_names
+    assert stats["total_tables"] == 1
+    conn.close()
