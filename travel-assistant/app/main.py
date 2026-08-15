@@ -5,7 +5,7 @@ Provides the Home Assistant Add-on web interface and API endpoints.
 
 import os
 from typing import Any, Dict
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template, request
 
 from app import db
 from app.sync import start_background_worker, sync_all, sync_table
@@ -76,17 +76,6 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
             "index.html",
             message="Welcome to Travel Assistant for Home Assistant.",
         )
-
-    @app.route("/db")
-    @app.route("/database")
-    def redirect_db() -> Any:
-        """Redirect top-level database path to configuration database view."""
-        return redirect(url_for("config.db_stats"))
-
-    @app.route("/sync")
-    def redirect_sync() -> Any:
-        """Redirect top-level sync path to configuration sync view."""
-        return redirect(url_for("config.background_sync"))
 
     @app.route("/api/ping")
     def ping() -> Dict[str, str]:

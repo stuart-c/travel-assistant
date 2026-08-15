@@ -465,7 +465,6 @@ def search_transfers_locations() -> Any:
     return jsonify({"results": results, "total": len(results)})
 
 
-@config_bp.route("/database", methods=["GET"])
 @config_bp.route("/db", methods=["GET"])
 def db_stats() -> Any:
     """Display SQLite database storage metrics and table row counts."""

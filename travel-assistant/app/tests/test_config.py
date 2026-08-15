@@ -528,25 +528,23 @@ def test_sync_db_table_endpoint_specific_error(
     assert data["status"] == "error"
 
 
-def test_db_and_sync_route_aliases_and_redirects(client: FlaskClient) -> None:
-    """Test /config/database alias and /db, /database, /sync redirects."""
-    # 1. Alias /config/database -> 200 (same template as /config/db)
-    res_alias = client.get("/config/database")
-    assert res_alias.status_code == 200
-    assert b"Database Size" in res_alias.data
+def test_db_and_sync_routes(client: FlaskClient) -> None:
+    """Test canonical /config/db and /config/sync endpoints."""
+    # 1. Canonical /config/db -> 200
+    res_db = client.get("/config/db")
+    assert res_db.status_code == 200
+    assert b"Database Size" in res_db.data
 
-    # 2. Redirects
-    res_db = client.get("/db", follow_redirects=False)
-    assert res_db.status_code == 302
-    assert res_db.headers["Location"].endswith("/config/db")
+    # 2. Canonical /config/sync -> 200
+    res_sync = client.get("/config/sync")
+    assert res_sync.status_code == 200
+    assert b"Background Sync" in res_sync.data
 
-    res_database = client.get("/database", follow_redirects=False)
-    assert res_database.status_code == 302
-    assert res_database.headers["Location"].endswith("/config/db")
-
-    res_sync = client.get("/sync", follow_redirects=False)
-    assert res_sync.status_code == 302
-    assert res_sync.headers["Location"].endswith("/config/sync")
+    # 3. Unprefixed routes should return 404
+    res_unprefixed_db = client.get("/db")
+    assert res_unprefixed_db.status_code == 404
+    res_unprefixed_sync = client.get("/sync")
+    assert res_unprefixed_sync.status_code == 404
 
 
 def test_sync_db_table_unmocked_integration(client: FlaskClient) -> None:
