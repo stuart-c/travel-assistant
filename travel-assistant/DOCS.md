@@ -17,12 +17,14 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 ## Timetable Architecture & Next Stages
 
 The timetable configuration subsystem operates across incremental stages:
-1. **Stage 1 (Complete)**: Web UI configuration page (`/config/timetables`) featuring a CDN-hosted Grid.js table, an accessible **Add Timetable** modal with asynchronous search autocomplete (`/api/timetables/search`), client-side staging, and atomic persistence to SQLite on **Save Changes**.
-2. **Stage 2 (Current)**: Automated background synchronisation workers and database tables connecting configured timetable entries to live datasets:
+1. **Stage 1 (Complete)**: Web UI configuration page (`/config/timetables`) featuring a CDN-hosted Grid.js table, an accessible **Add Timetable** modal, client-side staging, and atomic persistence to SQLite on **Save Changes**.
+2. **Stage 2 (Complete)**: Cached transit dataset integration and background synchronisation:
    - **Database Tables**: Schema tables for `bus_routes`, `bus_stops`, `stations`, and `sync_metadata`.
    - **Automated Schedule**: Periodic daemon thread running hourly freshness checks to trigger updates when records are older than 24 hours.
-   - **Bus feeds**: Integration with Bus Open Data Service (BODS) for bus routes and stop reference data using the configured Bus API key.
-   - **Rail feeds**: Ingestion of Darwin CIF station references from configured S3 storage and live Darwin Web Services (LDBWS) departures.
+   - **Cached Transit Timetable Configuration**:
+     - **Train Journeys**: Bi-directional rail journey selection between two stations via asynchronous search autocompletion against cached rail stations (`stations`), automatically formatting timetable names (`Station 1 ↔ Station 2`) and identifiers (`CRS1 ↔ CRS2`).
+     - **Bus Routes**: Two-step bus configuration workflow allowing users to choose a bus stop (`bus_stops`), followed by an associated bus route (`bus_routes`), automatically formatting timetable names (`Route [Route] at [Stop Name]`) and identifiers (`[Route]@[Stop ATCO Code]`).
+     - **Caching Prerequisites & Guidance**: Contextual guidance alerting users when transit datasets require synchronisation before adding timetables.
 3. **Stage 3 (Future)**: Real-time route planning, multi-modal interchange guidance, disruption alerts, and Home Assistant sensor entity publishing.
 
 

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Integrated cached transit datasets (`stations`, `bus_stops`, and `bus_routes`) with the Timetables configuration page (`/config/timetables`):
+  - **Train Journey Selection**: Two-station bi-directional journey picker with asynchronous autocomplete querying cached rail stations, automatically formulating timetable names (`Station 1 ↔ Station 2`) and identifiers (`CRS1 ↔ CRS2`).
+  - **Bus Stop & Route Selection**: Two-step bus picker workflow to select a bus stop from cached stops, followed by an associated bus route from cached routes, automatically formulating timetable names (`Route [Route] at [Stop Name]`) and identifiers (`[Route]@[Stop ATCO Code]`).
+  - **Dataset Cache Prerequisite Checks**: Contextual warning alerts and buttons directing users to Database Settings (`/config/db`) when datasets have not been synchronised.
+- Added asynchronous `search` query methods with ranking and substring matching to `StationRepository`, `BusStopRepository`, and `BusRouteRepository`.
+- Enhanced `GET /config/timetables/search` and `GET /api/timetables/search` supporting `type` filtering (`station`, `bus_stop`, `bus_route`, `status`), limit controls, and dataset cache availability reporting (`is_cached`, `cache_counts`).
+- Added RESTful API endpoint `POST /api/sync` and `POST /api/sync/<table_name>` for programmatic dataset synchronisation.
+- Database schema tables for transit datasets: `bus_routes`, `bus_stops`, `stations`, and `sync_metadata`.
+- Repositories in `app.db` (`BusRouteRepository`, `BusStopRepository`, `StationRepository`, and `SyncMetadataRepository`) with atomic bulk upserting, indexing, and lookup operations.
+- Background synchronisation daemon (`TransitBackgroundWorker`) running periodic hourly checks to automatically update transit datasets older than 24 hours (1 day).
+- Transit synchronisation provider engine (`app.sync`) integrating with Bus Open Data Service (BODS API) and Train S3 / Darwin credentials with graceful skipping when unconfigured.
+- Interactive Database configuration page (`/config/db`) enhancements:
+  - Added "Last Updated" timestamp column with status badges (`Synced`, `Syncing...`, `Unconfigured`, `Error`, `Managed`).
+  - Added on-demand refresh trigger buttons with animated spinning states and toast notifications per table.
+  - Added "Sync All Datasets" action button in the Database Storage Overview header.
 - Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
 - Settings navigation cog button in the web UI header.
 - Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.
@@ -22,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified left sidebar configuration layout (`config_base.html`) across `/config/*` sections with collapsible mobile drawer.
 - Unsaved changes protection manager (`ConfigDirtyManager`) intercepting page reloads, tab navigation, and breadcrumbs with warning prompts.
 - Standard action bar with dynamic **Save Changes** and **Discard Changes** across all configuration sections.
-- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, and configuration views with 100% code coverage.
+- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, and configuration views with 100% code coverage.
 
 
 

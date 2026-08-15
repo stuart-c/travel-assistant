@@ -858,3 +858,113 @@ def test_get_db_stats_operational_error_handling(temp_db_path: str) -> None:
     tbl = next(t for t in stats["tables"] if t["name"] == "test_op_err")
     assert tbl["last_updated_at"] is None
     conn.close()
+
+
+def test_transit_repositories_search(app: Flask) -> None:
+    """Test search operations across transit repositories (bus routes, stops, stations)."""
+    with app.app_context():
+        # 1. BusRouteRepository search
+        route_repo = BusRouteRepository()
+        route_repo.bulk_upsert(
+            [
+                {
+                    "route_number": "1",
+                    "operator_name": "Oxford Bus Company",
+                    "operator_code": "OXBC",
+                    "origin": "Blackbird Leys",
+                    "destination": "Oxford City Centre",
+                    "description": "City corridor",
+                },
+                {
+                    "route_number": "10",
+                    "operator_name": "Stagecoach Oxfordshire",
+                    "operator_code": "STAG",
+                    "origin": "JR Hospital",
+                    "destination": "Oxford City Centre",
+                    "description": "Hospital express",
+                },
+                {
+                    "route_number": "X5",
+                    "operator_name": "Stagecoach East",
+                    "operator_code": "STAGE",
+                    "origin": "Oxford",
+                    "destination": "Cambridge",
+                    "description": "Cross country",
+                },
+            ]
+        )
+
+        assert len(route_repo.search("", limit=2)) == 2
+        assert len(route_repo.search("1")) == 2
+        assert route_repo.search("Hospital")[0]["route_number"] == "10"
+        assert route_repo.search("Cambridge")[0]["route_number"] == "X5"
+        assert len(route_repo.search("NonexistentRoute")) == 0
+
+        # 2. BusStopRepository search
+        stop_repo = BusStopRepository()
+        stop_repo.bulk_upsert(
+            [
+                {
+                    "atco_code": "340000001",
+                    "naptan_code": "oxfapt1",
+                    "name": "High Street Stop T1",
+                    "indicator": "Stop T1",
+                    "locality": "Oxford",
+                    "latitude": 51.752,
+                    "longitude": -1.255,
+                },
+                {
+                    "atco_code": "340000002",
+                    "naptan_code": "oxfapt2",
+                    "name": "Blackbird Leys Leisure Centre",
+                    "indicator": "opp",
+                    "locality": "Blackbird Leys",
+                    "latitude": 51.725,
+                    "longitude": -1.215,
+                },
+            ]
+        )
+
+        assert len(stop_repo.search("", limit=1)) == 1
+        assert len(stop_repo.search("High Street")) == 1
+        assert stop_repo.search("340000002")[0]["locality"] == "Blackbird Leys"
+        assert stop_repo.search("oxfapt1")[0]["name"] == "High Street Stop T1"
+        assert stop_repo.search("opp")[0]["atco_code"] == "340000002"
+        assert len(stop_repo.search("Nowhere")) == 0
+
+        # 3. StationRepository search
+        station_repo = StationRepository()
+        station_repo.bulk_upsert(
+            [
+                {
+                    "crs_code": "OXF",
+                    "name": "Oxford",
+                    "tiploc_code": "OXFD",
+                    "latitude": 51.7534,
+                    "longitude": -1.2700,
+                    "operator": "GWR",
+                },
+                {
+                    "crs_code": "PAD",
+                    "name": "London Paddington",
+                    "tiploc_code": "PADTON",
+                    "latitude": 51.5154,
+                    "longitude": -0.1755,
+                    "operator": "Network Rail",
+                },
+                {
+                    "crs_code": "BHM",
+                    "name": "Birmingham New Street",
+                    "tiploc_code": "BHMNEW",
+                    "latitude": 52.4777,
+                    "longitude": -1.8989,
+                    "operator": "Avanti West Coast",
+                },
+            ]
+        )
+
+        assert len(station_repo.search("", limit=2)) == 2
+        assert station_repo.search("PAD")[0]["name"] == "London Paddington"
+        assert station_repo.search("Birmingham")[0]["crs_code"] == "BHM"
+        assert station_repo.search("Avanti")[0]["crs_code"] == "BHM"
+        assert len(station_repo.search("ZZZ")) == 0

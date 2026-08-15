@@ -255,6 +255,72 @@ class BusRouteRepository(BaseRepository):
             for row in rows
         ]
 
+    def search(self, query: str = "", limit: int = 25) -> List[Dict[str, Any]]:
+        """Search bus routes by route number, operator, origin, destination, or description."""
+        cursor = self.conn.cursor()
+        q = query.strip()
+        if not q:
+            cursor.execute(
+                """
+                SELECT id, route_number, operator_name, operator_code,
+                       origin, destination, description, updated_at
+                FROM bus_routes
+                ORDER BY route_number ASC, id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            pattern = f"%{q}%"
+            cursor.execute(
+                """
+                SELECT id, route_number, operator_name, operator_code,
+                       origin, destination, description, updated_at
+                FROM bus_routes
+                WHERE route_number LIKE ? OR operator_name LIKE ? OR operator_code LIKE ?
+                   OR origin LIKE ? OR destination LIKE ? OR description LIKE ?
+                ORDER BY
+                    (
+                        CASE
+                            WHEN route_number LIKE ? THEN 0
+                            WHEN route_number = ? THEN 0
+                            ELSE 1
+                        END
+                    ),
+                    route_number ASC
+                LIMIT ?
+                """,
+                (
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    pattern,
+                    f"{q}%",
+                    q,
+                    limit,
+                ),
+            )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "route_number": row["route_number"],
+                "operator_name": row["operator_name"],
+                "operator_code": row["operator_code"],
+                "origin": row["origin"],
+                "destination": row["destination"],
+                "description": row["description"],
+                "updated_at": (
+                    row["updated_at"].isoformat()
+                    if hasattr(row["updated_at"], "isoformat")
+                    else str(row["updated_at"])
+                ),
+            }
+            for row in rows
+        ]
+
     def bulk_upsert(self, routes: List[Dict[str, Any]]) -> int:
         """Atomically insert or update multiple bus routes."""
         if not routes:
@@ -354,6 +420,63 @@ class BusStopRepository(BaseRepository):
                 else str(row["updated_at"])
             ),
         }
+
+    def search(self, query: str = "", limit: int = 25) -> List[Dict[str, Any]]:
+        """Search bus stops by name, ATCO code, NAPTAN code, locality, or indicator."""
+        cursor = self.conn.cursor()
+        q = query.strip()
+        if not q:
+            cursor.execute(
+                """
+                SELECT id, atco_code, naptan_code, name, indicator,
+                       locality, latitude, longitude, updated_at
+                FROM bus_stops
+                ORDER BY name ASC, atco_code ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            pattern = f"%{q}%"
+            cursor.execute(
+                """
+                SELECT id, atco_code, naptan_code, name, indicator,
+                       locality, latitude, longitude, updated_at
+                FROM bus_stops
+                WHERE name LIKE ? OR atco_code LIKE ? OR naptan_code LIKE ?
+                   OR locality LIKE ? OR indicator LIKE ?
+                ORDER BY
+                    (
+                        CASE
+                            WHEN name LIKE ? THEN 0
+                            WHEN atco_code LIKE ? THEN 1
+                            ELSE 2
+                        END
+                    ),
+                    name ASC
+                LIMIT ?
+                """,
+                (pattern, pattern, pattern, pattern, pattern, f"{q}%", f"{q}%", limit),
+            )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "atco_code": row["atco_code"],
+                "naptan_code": row["naptan_code"],
+                "name": row["name"],
+                "indicator": row["indicator"],
+                "locality": row["locality"],
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                "updated_at": (
+                    row["updated_at"].isoformat()
+                    if hasattr(row["updated_at"], "isoformat")
+                    else str(row["updated_at"])
+                ),
+            }
+            for row in rows
+        ]
 
     def bulk_upsert(self, stops: List[Dict[str, Any]]) -> int:
         """Atomically insert or update multiple bus stops."""
@@ -461,6 +584,61 @@ class StationRepository(BaseRepository):
                 else str(row["updated_at"])
             ),
         }
+
+    def search(self, query: str = "", limit: int = 25) -> List[Dict[str, Any]]:
+        """Search rail stations by CRS code, name, or operator."""
+        cursor = self.conn.cursor()
+        q = query.strip()
+        if not q:
+            cursor.execute(
+                """
+                SELECT id, crs_code, name, tiploc_code,
+                       latitude, longitude, operator, updated_at
+                FROM stations
+                ORDER BY name ASC, crs_code ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            pattern = f"%{q}%"
+            cursor.execute(
+                """
+                SELECT id, crs_code, name, tiploc_code,
+                       latitude, longitude, operator, updated_at
+                FROM stations
+                WHERE crs_code LIKE ? OR name LIKE ? OR operator LIKE ?
+                ORDER BY
+                    (
+                        CASE
+                            WHEN crs_code LIKE ? THEN 0
+                            WHEN name LIKE ? THEN 1
+                            ELSE 2
+                        END
+                    ),
+                    name ASC
+                LIMIT ?
+                """,
+                (pattern, pattern, pattern, f"{q}%", f"{q}%", limit),
+            )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "crs_code": row["crs_code"],
+                "name": row["name"],
+                "tiploc_code": row["tiploc_code"],
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                "operator": row["operator"],
+                "updated_at": (
+                    row["updated_at"].isoformat()
+                    if hasattr(row["updated_at"], "isoformat")
+                    else str(row["updated_at"])
+                ),
+            }
+            for row in rows
+        ]
 
     def bulk_upsert(self, stations: List[Dict[str, Any]]) -> int:
         """Atomically insert or update multiple rail stations."""

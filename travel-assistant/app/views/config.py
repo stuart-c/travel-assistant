@@ -10,7 +10,14 @@ from flask import (
     url_for,
 )
 
-from app.db import SettingsRepository, TimetableRepository, get_db_stats
+from app.db import (
+    BusRouteRepository,
+    BusStopRepository,
+    SettingsRepository,
+    StationRepository,
+    TimetableRepository,
+    get_db_stats,
+)
 from app.sync import sync_all, sync_table
 from app.validators import validate_service_credentials
 
@@ -299,22 +306,74 @@ def timetables() -> Any:
 def search_timetables() -> Any:
     """Search and lookup timetable feeds, stations, and bus routes."""
     transport_type = request.args.get("type", "").lower().strip()
-    query = request.args.get("q", "").lower().strip()
+    query = request.args.get("q", "").strip()
+    limit_raw = request.args.get("limit", "25").strip()
+    try:
+        limit = max(1, min(int(limit_raw), 100))
+    except ValueError:
+        limit = 25
 
-    results: List[Dict[str, str]] = []
-    for item in SAMPLE_TIMETABLE_DATA:
-        if transport_type and item["transport_type"] != transport_type:
-            continue
-        if query:
-            match_name = query in item["name"].lower()
-            match_id = query in item["identifier"].lower()
-            match_desc = query in item["description"].lower()
-            if match_name or match_id or match_desc:
-                results.append(item)
+    station_repo = StationRepository()
+    stop_repo = BusStopRepository()
+    route_repo = BusRouteRepository()
+
+    stations_count = station_repo.count()
+    stops_count = stop_repo.count()
+    routes_count = route_repo.count()
+
+    cache_counts = {
+        "stations": stations_count,
+        "bus_stops": stops_count,
+        "bus_routes": routes_count,
+    }
+
+    results: List[Dict[str, Any]] = []
+    is_cached = True
+
+    if transport_type in ("station", "train", "stations"):
+        is_cached = stations_count > 0
+        if is_cached:
+            results = station_repo.search(query, limit=limit)
+    elif transport_type in ("bus_stop", "stop", "bus_stops", "stops"):
+        is_cached = stops_count > 0
+        if is_cached:
+            results = stop_repo.search(query, limit=limit)
+    elif transport_type in ("bus_route", "route", "bus_routes", "routes", "bus"):
+        is_cached = routes_count > 0
+        if is_cached:
+            results = route_repo.search(query, limit=limit)
+    elif transport_type in ("status", "status_check"):
+        is_cached = (stations_count > 0) or (stops_count > 0 and routes_count > 0)
+        results = []
+    else:
+        # Generic / fallback search
+        is_cached = (stations_count > 0) or (stops_count > 0) or (routes_count > 0)
+        if is_cached:
+            st_res = station_repo.search(query, limit=limit)
+            rt_res = route_repo.search(query, limit=limit)
+            results = st_res + rt_res
         else:
-            results.append(item)
+            for item in SAMPLE_TIMETABLE_DATA:
+                if transport_type and item["transport_type"] != transport_type:
+                    continue
+                if query:
+                    match_name = query.lower() in item["name"].lower()
+                    match_id = query.lower() in item["identifier"].lower()
+                    match_desc = query.lower() in item["description"].lower()
+                    if match_name or match_id or match_desc:
+                        results.append(item)
+                else:
+                    results.append(item)
 
-    return jsonify({"results": results, "total": len(results)})
+    return jsonify(
+        {
+            "results": results,
+            "total": len(results),
+            "is_cached": is_cached,
+            "cache_counts": cache_counts,
+            "type": transport_type,
+        }
+    )
 
 
 @config_bp.route("/db", methods=["GET"])
