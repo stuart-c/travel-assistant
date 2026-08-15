@@ -1,50 +1,43 @@
-<!DOCTYPE html>
-<html lang="en-GB">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ app_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <div class="container">
-    <header class="header">
-      <div class="title-row">
-        <h1>{{ app_name }}</h1>
-        <span class="badge">v{{ app_version }}</span>
-      </div>
-      <p class="subtitle">{{ message }}</p>
-    </header>
+{% extends "base.html" %}
 
-    <main>
-      <section class="card">
-        <h2 class="card-title">Service Status</h2>
-        <div class="status-indicator">
-          <span class="status-dot"></span>
-          <span>Online &amp; Operational</span>
-        </div>
-        <p>The Travel Assistant service is running and ready to handle route and transport requests.</p>
-        
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="info-label">Environment</div>
-            <div class="info-value">Home Assistant Add-on</div>
-          </div>
-          <div class="info-item">
-            <div class="info-label">Ingress Routing</div>
-            <div class="info-value">{{ 'Active' if ingress_path else 'Direct' }}</div>
-          </div>
-          <div class="info-item">
-            <div class="info-label">API Health</div>
-            <div class="info-value"><a href="{{ ingress_path }}/api/ping" style="color: inherit; text-decoration: underline;">/api/ping</a></div>
-          </div>
-        </div>
-      </section>
-    </main>
+{% block title %}{{ app_name }} - Overview{% endblock %}
 
-    <footer class="footer">
-      <p>&copy; 2026 Stuart C. Licensed under Apache 2.0.</p>
-    </footer>
+{% block subtitle %}
+<p class="subtitle">{{ message }}</p>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2 class="card-title">Service Status</h2>
+  <div class="status-indicator">
+    <span class="status-dot"></span>
+    <span>Online &amp; Operational</span>
   </div>
-</body>
-</html>
+  <p>The Travel Assistant service is running and ready to handle route and transport requests.</p>
+  
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="info-label">Environment</div>
+      <div class="info-value">Home Assistant Add-on</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Ingress Routing</div>
+      <div class="info-value">{{ 'Active' if ingress_path else 'Direct' }}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">API Health</div>
+      <div class="info-value"><a href="{{ ingress_path }}/api/ping" class="info-link">/api/ping</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Quick Configuration</h2>
+  <p>Manage your transit API keys, S3 storage buckets, live train tokens, and AI integration credentials.</p>
+  <div class="card-actions" style="margin-top: 1rem;">
+    <a href="{{ ingress_path }}/config/credentials" class="btn btn-secondary">
+      Configure API Credentials &rarr;
+    </a>
+  </div>
+</section>
+{% endblock %}

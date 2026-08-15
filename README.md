@@ -6,6 +6,8 @@ Home Assistant Add-on providing travel and transport intelligence powered by Pyt
 
 - **Home Assistant Ingress Support**: Integrated dashboard embedded into Home Assistant.
 - **Python & Flask Core**: Lightweight, extensible backend architecture.
+- **SQLite Configuration Store**: Persistent local database storage with typed settings repository.
+- **Web UI Settings & Credentials**: Configuration management pages (`/config/xxx`) using the Post/Redirect/Get pattern.
 - **Multi-Architecture Support**: Built for both `amd64` and `aarch64` architectures.
 - **Automated CI/CD & Releases**: Automated linting, testing, multi-arch container image publishing on GitHub Container Registry, and changelog drafting.
 
