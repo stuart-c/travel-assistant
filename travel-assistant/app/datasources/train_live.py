@@ -10,7 +10,7 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 DEFAULT_DARWIN_OPENAPI_ENDPOINT = (
     "https://api.nationalrail.co.uk/OpenLDBWS/api/20220120"
@@ -37,14 +37,16 @@ class TrainLiveClient(BaseDataSource):
         self.timeout = float(timeout)
 
     @classmethod
-    def from_settings(
-        cls, settings_repo: Optional[SettingsRepository] = None
-    ) -> "TrainLiveClient":
-        """Instantiate TrainLiveClient with credentials loaded from SettingsRepository."""
-        repo = settings_repo or SettingsRepository()
+    def from_settings(cls, settings: Optional[Any] = None) -> "TrainLiveClient":
+        """Instantiate TrainLiveClient with credentials loaded from Setting model or provider."""
+        getter = (
+            settings.get_val
+            if hasattr(settings, "get_val")
+            else (settings.get if hasattr(settings, "get") else Setting.get_val)
+        )
         return cls(
-            api_key=repo.get("train_live_api_key", ""),
-            endpoint=repo.get("train_live_endpoint", DEFAULT_DARWIN_ENDPOINT),
+            api_key=getter("train_live_api_key", ""),
+            endpoint=getter("train_live_endpoint", DEFAULT_DARWIN_ENDPOINT),
         )
 
     def validate_credentials(self) -> Dict[str, Any]:

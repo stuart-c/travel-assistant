@@ -15,17 +15,16 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 
 def test_train_live_from_settings(app: Flask) -> None:
-    """Test TrainLiveClient initialisation from SettingsRepository."""
+    """Test TrainLiveClient initialisation from Setting model."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_live_api_key", "test-live-key")
-        repo.set("train_live_endpoint", "https://custom.darwin/soap")
+        Setting.set_val("train_live_api_key", "test-live-key")
+        Setting.set_val("train_live_endpoint", "https://custom.darwin/soap")
 
-        client = TrainLiveClient.from_settings(repo)
+        client = TrainLiveClient.from_settings()
         assert client.api_key == "test-live-key"
         assert client.endpoint == "https://custom.darwin/soap"
         assert client.provider_name == "train_live"

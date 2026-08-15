@@ -7,8 +7,9 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
+from app.db import db, init_db
 from app.main import create_app
-from app.db import SettingsRepository, init_db
+from app.models.setting import Setting
 
 
 @pytest.fixture
@@ -18,7 +19,10 @@ def temp_db_path() -> Generator[str, None, None]:
     os.close(db_fd)
     yield db_path
     if os.path.exists(db_path):
-        os.unlink(db_path)
+        try:
+            os.unlink(db_path)
+        except OSError:
+            pass
 
 
 @pytest.fixture
@@ -36,6 +40,8 @@ def app(temp_db_path: str) -> Generator[Flask, None, None]:
     with test_app.app_context():
         init_db(test_app)
         yield test_app
+        if db.obj is not None and not db.obj.is_closed():
+            db.obj.close()
 
 
 @pytest.fixture
@@ -45,7 +51,7 @@ def client(app: Flask) -> FlaskClient:
 
 
 @pytest.fixture
-def repo(app: Flask) -> Generator[SettingsRepository, None, None]:
-    """Settings repository fixture with active application context."""
+def setting_model(app: Flask) -> Generator[type, None, None]:
+    """Setting model fixture with active application context."""
     with app.app_context():
-        yield SettingsRepository()
+        yield Setting

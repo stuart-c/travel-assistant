@@ -11,7 +11,7 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
-from app.db.settings import SettingsRepository
+from app.models.setting import Setting
 
 DEFAULT_BODS_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1/dataset"
 
@@ -32,13 +32,14 @@ class BodsClient(BaseDataSource):
         self.timeout = float(timeout)
 
     @classmethod
-    def from_settings(
-        cls, settings_repo: Optional[SettingsRepository] = None
-    ) -> "BodsClient":
-        """Instantiate BodsClient with credentials loaded from SettingsRepository."""
-        repo = settings_repo or SettingsRepository()
-        api_key = repo.get("bus_api_key", "")
-        return cls(api_key=api_key)
+    def from_settings(cls, settings: Optional[Any] = None) -> "BodsClient":
+        """Instantiate BodsClient with credentials loaded from Setting model or provider."""
+        getter = (
+            settings.get_val
+            if hasattr(settings, "get_val")
+            else (settings.get if hasattr(settings, "get") else Setting.get_val)
+        )
+        return cls(api_key=getter("bus_api_key", ""))
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Validate the BODS API key against the dataset endpoint."""

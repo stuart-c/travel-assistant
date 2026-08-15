@@ -1,111 +1,22 @@
-"""Database connection lifecycle, SQLite management, and schema initialisation."""
+"""Database connection lifecycle, Peewee SQLite management, and schema initialisation."""
 
 import os
-import sqlite3
 from typing import Any, Dict, List, Optional
-from flask import Flask, current_app, g
+from flask import Flask, current_app
+from peewee import DatabaseProxy, SqliteDatabase
+from playhouse.flask_utils import FlaskDB
+from playhouse.migrate import SqliteMigrator
 
-DEFAULT_SCHEMA = """
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT,
-    category TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+# Global database proxy for model bindings
+db = DatabaseProxy()
+flask_db = FlaskDB()
 
-CREATE TABLE IF NOT EXISTS timetables (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    transport_type TEXT NOT NULL,
-    name TEXT NOT NULL,
-    identifier TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS sync_metadata (
-    table_name TEXT PRIMARY KEY,
-    last_updated_at TIMESTAMP,
-    status TEXT NOT NULL DEFAULT 'idle',
-    error_message TEXT,
-    records_count INTEGER DEFAULT 0,
-    duration_seconds REAL DEFAULT 0.0,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS bus_routes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    route_number TEXT NOT NULL,
-    operator_name TEXT,
-    operator_code TEXT,
-    origin TEXT,
-    destination TEXT,
-    description TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS bus_stops (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    atco_code TEXT UNIQUE NOT NULL,
-    naptan_code TEXT,
-    name TEXT NOT NULL,
-    indicator TEXT,
-    locality TEXT,
-    latitude REAL,
-    longitude REAL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS stations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    crs_code TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    tiploc_code TEXT,
-    latitude REAL,
-    longitude REAL,
-    operator TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS location_transfers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_type TEXT NOT NULL,
-    from_id TEXT NOT NULL,
-    from_name TEXT NOT NULL,
-    to_type TEXT NOT NULL,
-    to_id TEXT NOT NULL,
-    to_name TEXT NOT NULL,
-    transfer_time_minutes INTEGER NOT NULL DEFAULT 5,
-    bidirectional INTEGER NOT NULL DEFAULT 1,
-    step_free INTEGER NOT NULL DEFAULT 0,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS platform_transfers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    location_type TEXT NOT NULL DEFAULT 'station',
-    location_id TEXT NOT NULL,
-    location_name TEXT NOT NULL,
-    from_platform TEXT NOT NULL,
-    to_platform TEXT NOT NULL,
-    transfer_time_minutes INTEGER NOT NULL DEFAULT 2,
-    bidirectional INTEGER NOT NULL DEFAULT 1,
-    step_free INTEGER NOT NULL DEFAULT 0,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_bus_routes_number ON bus_routes(route_number);
-CREATE INDEX IF NOT EXISTS idx_bus_stops_atco ON bus_stops(atco_code);
-CREATE INDEX IF NOT EXISTS idx_stations_crs ON stations(crs_code);
-CREATE INDEX IF NOT EXISTS idx_location_transfers_from ON location_transfers(from_type, from_id);
-CREATE INDEX IF NOT EXISTS idx_location_transfers_to ON location_transfers(to_type, to_id);
-CREATE INDEX IF NOT EXISTS idx_platform_transfers_loc
-ON platform_transfers(location_type, location_id);
-"""
+SQLITE_PRAGMAS = {
+    "journal_mode": "wal",
+    "foreign_keys": 1,
+    "busy_timeout": 5000,
+    "cache_size": -1024 * 64,  # 64MB cache
+}
 
 SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations")
 
@@ -146,70 +57,94 @@ def get_db_path(app: Optional[Flask] = None) -> str:
     return os.path.join(instance_dir, "travel_assistant.db")
 
 
-def get_db() -> sqlite3.Connection:
-    """Obtain or initialise a SQLite database connection for the current request."""
-    if "db" not in g:
-        db_path = get_db_path()
-        g.db = sqlite3.connect(
-            db_path,
-            detect_types=sqlite3.PARSE_DECLTYPES,
-        )
-        g.db.row_factory = sqlite3.Row
-    return g.db
-
-
-def close_db(e: Optional[BaseException] = None) -> None:
-    """Close the SQLite database connection at the end of the request."""
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
-
-
-def init_db(app: Optional[Flask] = None) -> None:
-    """Initialise database schema tables."""
-    db_path = get_db_path(app)
-    # Ensure parent directory exists if using a file path
+def create_sqlite_database(db_path: str) -> SqliteDatabase:
+    """Create a configured SqliteDatabase instance with WAL pragmas."""
     if db_path != ":memory:":
         parent_dir = os.path.dirname(db_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
-    conn = sqlite3.connect(db_path)
-    try:
-        with conn:
-            conn.executescript(DEFAULT_SCHEMA)
-    finally:
-        conn.close()
+    return SqliteDatabase(
+        db_path,
+        pragmas=SQLITE_PRAGMAS,
+        thread_safe=True,
+        autoconnect=True,
+    )
 
 
-def get_db_stats(
-    app: Optional[Flask] = None,
-    connection: Optional[sqlite3.Connection] = None,
-) -> Dict[str, Any]:
-    """Inspect and return SQLite database storage metrics and table row counts."""
+def run_migrations(database: SqliteDatabase) -> None:
+    """Execute schema migrations using SqliteMigrator if needed."""
+    from app.models.setting import Setting
+    from app.models.timetable import Timetable
+    from app.models.transfer import LocationTransfer, PlatformTransfer
+    from app.models.transit import BusRoute, BusStop, Station, SyncMetadata
+
+    all_models = [
+        Setting,
+        Timetable,
+        SyncMetadata,
+        BusRoute,
+        BusStop,
+        Station,
+        LocationTransfer,
+        PlatformTransfer,
+    ]
+
+    with database.bind_ctx(all_models):
+        database.create_tables(all_models, safe=True)
+
+    # Migrator instance for future column alterations
+    _ = SqliteMigrator(database)
+
+
+def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
+    """Initialise database, configure proxy, and create schema tables."""
     db_path = get_db_path(app)
-    own_connection = False
+    sqlite_db = create_sqlite_database(db_path)
+    db.initialize(sqlite_db)
+    run_migrations(sqlite_db)
+    if not sqlite_db.is_closed():
+        sqlite_db.close()
+    return sqlite_db
 
-    if connection is not None:
-        conn = connection
-    else:
-        try:
-            conn = get_db()
-        except RuntimeError:
-            # Outside of application context
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            own_connection = True
 
-    try:
-        cursor = conn.cursor()
+def init_app(app: Flask) -> None:
+    """Register database hooks with the Flask application."""
+    sqlite_db = init_db(app)
+    app.config["DATABASE"] = sqlite_db
 
-        # Query page size and page count
-        cursor.execute("PRAGMA page_size")
+    @app.before_request
+    def before_request() -> None:
+        if db.obj is not None and db.obj.is_closed():
+            db.obj.connect(reuse_if_open=True)
+
+    @app.teardown_request
+    def teardown_request(exc: Optional[BaseException] = None) -> None:
+        if db.obj is not None and not db.obj.is_closed():
+            db.obj.close()
+
+
+def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
+    """Inspect and return SQLite database storage metrics and table row counts."""
+    from app.models.setting import Setting
+    from app.models.timetable import Timetable
+    from app.models.transfer import LocationTransfer, PlatformTransfer
+    from app.models.transit import BusRoute, BusStop, Station, SyncMetadata
+
+    db_path = get_db_path(app)
+
+    # Ensure db proxy is initialized
+    if db.obj is None:
+        init_db(app)
+
+    database = db.obj
+
+    with database.connection_context():
+        cursor = database.execute_sql("PRAGMA page_size")
         page_size_row = cursor.fetchone()
         page_size = page_size_row[0] if page_size_row else 4096
 
-        cursor.execute("PRAGMA page_count")
+        cursor = database.execute_sql("PRAGMA page_count")
         page_count_row = cursor.fetchone()
         page_count = page_count_row[0] if page_count_row else 0
 
@@ -225,77 +160,75 @@ def get_db_stats(
 
         file_size_formatted = format_file_size(file_size_bytes)
 
-        # Discover all user tables (exclude internal sqlite_% metadata tables)
-        cursor.execute("""
+        # Discover all user tables
+        cursor = database.execute_sql("""
             SELECT name FROM sqlite_master
             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
             ORDER BY name ASC
-            """)
+        """)
         table_rows = cursor.fetchall()
 
-        # Retrieve sync metadata if table exists
+        # Build sync metadata map
         sync_meta_map: Dict[str, Dict[str, Any]] = {}
-        has_sync_meta = any(
-            (row[0] if isinstance(row, (tuple, list)) else row["name"])
-            == "sync_metadata"
-            for row in table_rows
-        )
+        has_sync_meta = any(row[0] == "sync_metadata" for row in table_rows)
         if has_sync_meta:
-            meta_cursor = conn.execute("""
-                SELECT table_name, last_updated_at, status, error_message,
-                       records_count, duration_seconds
-                FROM sync_metadata
-                """)
-            for m_row in meta_cursor.fetchall():
-                sync_meta_map[m_row["table_name"]] = {
+            for meta in SyncMetadata.select():
+                sync_meta_map[meta.table_name] = {
                     "last_updated_at": (
-                        m_row["last_updated_at"].isoformat()
-                        if hasattr(m_row["last_updated_at"], "isoformat")
-                        else (
-                            str(m_row["last_updated_at"])
-                            if m_row["last_updated_at"]
-                            else None
-                        )
+                        meta.last_updated_at.isoformat()
+                        if meta.last_updated_at
+                        else None
                     ),
-                    "status": m_row["status"],
-                    "error_message": m_row["error_message"],
-                    "records_count": m_row["records_count"] or 0,
-                    "duration_seconds": m_row["duration_seconds"] or 0.0,
+                    "status": meta.status,
+                    "error_message": meta.error_message,
+                    "records_count": meta.records_count or 0,
+                    "duration_seconds": meta.duration_seconds or 0.0,
                 }
+
+        # Model mapping
+        model_map = {
+            "settings": Setting,
+            "timetables": Timetable,
+            "sync_metadata": SyncMetadata,
+            "bus_routes": BusRoute,
+            "bus_stops": BusStop,
+            "stations": Station,
+            "location_transfers": LocationTransfer,
+            "platform_transfers": PlatformTransfer,
+        }
 
         tables: List[Dict[str, Any]] = []
         total_rows = 0
 
         for row in table_rows:
-            table_name = row[0] if isinstance(row, (tuple, list)) else row["name"]
+            table_name = row[0]
 
-            # Count rows
-            # Table name is sanitized by matching sqlite_master
-            count_cursor = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"')
-            row_count = count_cursor.fetchone()[0]
+            # Row count
+            model_cls = model_map.get(table_name)
+            if model_cls:
+                row_count = model_cls.select().count()
+            else:
+                c = database.execute_sql(f'SELECT COUNT(*) FROM "{table_name}"')
+                row_count = c.fetchone()[0]
 
-            # Fetch column metadata
-            info_cursor = conn.execute(f'PRAGMA table_info("{table_name}")')
-            col_rows = info_cursor.fetchall()
-            columns = [
-                col[1] if isinstance(col, (tuple, list)) else col["name"]
-                for col in col_rows
-            ]
+            # Columns
+            col_cursor = database.execute_sql(f'PRAGMA table_info("{table_name}")')
+            columns = [col[1] for col in col_cursor.fetchall()]
 
-            # Determine last update timestamp and sync status
+            # Determine sync status and last updated
             is_syncable = table_name in SYNCABLE_TABLE_NAMES
             last_updated_at = None
             sync_status = "idle" if is_syncable else "managed"
             error_message = None
 
             if table_name in sync_meta_map:
-                meta = sync_meta_map[table_name]
-                last_updated_at = meta.get("last_updated_at")
-                sync_status = meta.get("status", "idle")
-                error_message = meta.get("error_message")
+                meta_item = sync_meta_map[table_name]
+                last_updated_at = meta_item.get("last_updated_at")
+                sync_status = meta_item.get("status", "idle")
+                error_message = meta_item.get("error_message")
             elif "updated_at" in columns:
                 try:
-                    ts_cursor = conn.execute(
+                    ts_cursor = database.execute_sql(
                         f'SELECT MAX(updated_at) FROM "{table_name}"'
                     )
                     ts_row = ts_cursor.fetchone()
@@ -306,7 +239,7 @@ def get_db_stats(
                             if hasattr(raw_ts, "isoformat")
                             else str(raw_ts)
                         )
-                except sqlite3.OperationalError:
+                except Exception:
                     pass
 
             total_rows += row_count
@@ -333,12 +266,3 @@ def get_db_stats(
             "total_rows": total_rows,
             "tables": tables,
         }
-    finally:
-        if own_connection:
-            conn.close()
-
-
-def init_app(app: Flask) -> None:
-    """Register database functions with the Flask application."""
-    app.teardown_appcontext(close_db)
-    init_db(app)

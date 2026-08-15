@@ -12,26 +12,24 @@ from app.datasources import (
     TrainS3Client,
     get_datasource,
 )
-from app.db.settings import SettingsRepository
 
 
 def test_get_datasource_factory_known_services(app: Flask) -> None:
     """Test get_datasource instantiates correct client for each service key."""
     with app.app_context():
-        repo = SettingsRepository()
-        bods = get_datasource("bus", repo)
+        bods = get_datasource("bus")
         assert isinstance(bods, BodsClient)
 
-        s3 = get_datasource("train_s3", repo)
+        s3 = get_datasource("train_s3")
         assert isinstance(s3, TrainS3Client)
 
-        live = get_datasource("train_live", repo)
+        live = get_datasource("train_live")
         assert isinstance(live, TrainLiveClient)
 
-        openai = get_datasource("open_api", repo)
+        openai = get_datasource("open_api")
         assert isinstance(openai, OpenAIClient)
 
-        naptan = get_datasource("naptan", repo)
+        naptan = get_datasource("naptan")
         assert isinstance(naptan, NaptanClient)
 
 

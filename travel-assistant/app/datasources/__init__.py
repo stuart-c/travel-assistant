@@ -3,7 +3,7 @@
 Provides modular clients for external transit APIs, cloud storage, and AI providers.
 """
 
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from app.datasources.base import BaseDataSource
 from app.datasources.bods import BodsClient
@@ -18,7 +18,6 @@ from app.datasources.naptan import NaptanClient
 from app.datasources.openai import OpenAIClient, filter_chat_models
 from app.datasources.train_live import TrainLiveClient
 from app.datasources.train_s3 import TrainS3Client
-from app.db.settings import SettingsRepository
 
 DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
     "bus": BodsClient,
@@ -33,14 +32,12 @@ DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
 }
 
 
-def get_datasource(
-    service_name: str, settings_repo: Optional[SettingsRepository] = None
-) -> BaseDataSource:
+def get_datasource(service_name: str, settings: Optional[Any] = None) -> BaseDataSource:
     """Factory helper to obtain an instantiated datasource client by service key.
 
     Args:
         service_name: Service identifier (e.g. 'bus', 'train_s3', 'train_live', 'openai').
-        settings_repo: Optional SettingsRepository instance to load credentials from.
+        settings: Optional settings provider or dictionary to load credentials from.
 
     Returns:
         Configured BaseDataSource client.
@@ -55,7 +52,7 @@ def get_datasource(
         raise DataSourceConfigError(
             f"Unknown datasource service '{service_name}'. Supported services: {services_list}"
         )
-    return cls.from_settings(settings_repo)
+    return cls.from_settings(settings)
 
 
 __all__ = [

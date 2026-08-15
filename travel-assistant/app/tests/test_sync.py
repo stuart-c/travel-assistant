@@ -7,13 +7,12 @@ import requests
 from botocore.exceptions import ClientError
 from flask import Flask
 
-
-from app.db import (
-    BusRouteRepository,
-    BusStopRepository,
-    SettingsRepository,
-    StationRepository,
-    SyncMetadataRepository,
+from app.models import (
+    BusRoute,
+    BusStop,
+    Setting,
+    Station,
+    SyncMetadata,
 )
 from app.sync import (
     TransitBackgroundWorker,
@@ -37,14 +36,15 @@ def test_sync_bus_routes_missing_credentials(app: Flask) -> None:
         assert res["records"] == 0
         assert "not configured" in res["message"]
 
-        meta = SyncMetadataRepository().get("bus_routes")
-        assert meta["status"] == "skipped_no_credentials"
+        meta = SyncMetadata.get_meta("bus_routes")
+        assert meta is not None
+        assert meta.status == "skipped"
 
 
 def test_sync_bus_routes_auth_error(app: Flask) -> None:
     """Test sync_bus_routes handles 401/403 authentication failures."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "invalid-key")
+        Setting.set_val("bus_api_key", "invalid-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 401
@@ -53,14 +53,15 @@ def test_sync_bus_routes_auth_error(app: Flask) -> None:
             assert res["status"] == "error"
             assert "Invalid Bus API key" in res["message"]
 
-        meta = SyncMetadataRepository().get("bus_routes")
-        assert meta["status"] == "error"
+        meta = SyncMetadata.get_meta("bus_routes")
+        assert meta is not None
+        assert meta.status == "error"
 
 
 def test_sync_bus_routes_success_with_lines(app: Flask) -> None:
     """Test sync_bus_routes successfully ingests line records."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "valid-key")
+        Setting.set_val("bus_api_key", "valid-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -92,9 +93,9 @@ def test_sync_bus_routes_success_with_lines(app: Flask) -> None:
             assert res["status"] == "success"
             assert res["records"] == 3
 
-        routes = BusRouteRepository().get_all()
+        routes = list(BusRoute.select())
         assert len(routes) == 3
-        route_numbers = [r["route_number"] for r in routes]
+        route_numbers = [r.route_number for r in routes]
         assert "OX-TUBE" in route_numbers
         assert "1" in route_numbers
         assert "DS-999" in route_numbers
@@ -103,7 +104,7 @@ def test_sync_bus_routes_success_with_lines(app: Flask) -> None:
 def test_sync_bus_routes_request_exception(app: Flask) -> None:
     """Test sync_bus_routes handles network/requests exceptions."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "valid-key")
+        Setting.set_val("bus_api_key", "valid-key")
 
         with patch(
             "requests.get", side_effect=requests.exceptions.ConnectTimeout("Timeout")
@@ -116,7 +117,7 @@ def test_sync_bus_routes_request_exception(app: Flask) -> None:
 def test_sync_bus_routes_unexpected_exception(app: Flask) -> None:
     """Test sync_bus_routes handles general unexpected exceptions."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "valid-key")
+        Setting.set_val("bus_api_key", "valid-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -138,7 +139,7 @@ def test_sync_bus_stops_missing_credentials(app: Flask) -> None:
 def test_sync_bus_stops_auth_error(app: Flask) -> None:
     """Test sync_bus_stops handles authentication failures."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "bad-key")
+        Setting.set_val("bus_api_key", "bad-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 403
@@ -151,7 +152,7 @@ def test_sync_bus_stops_auth_error(app: Flask) -> None:
 def test_sync_bus_stops_success(app: Flask) -> None:
     """Test sync_bus_stops successfully parses feed items."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "good-key")
+        Setting.set_val("bus_api_key", "good-key")
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -174,15 +175,15 @@ def test_sync_bus_stops_success(app: Flask) -> None:
             assert res["status"] == "success"
             assert res["records"] == 2
 
-        stops = BusStopRepository().get_all()
+        stops = list(BusStop.select())
         assert len(stops) == 2
-        assert stops[0]["atco_code"] == "BODS-FEED-101"
+        assert stops[0].atco_code == "BODS-FEED-101"
 
 
 def test_sync_bus_stops_network_and_unexpected_exceptions(app: Flask) -> None:
     """Test sync_bus_stops exception capturing."""
     with app.app_context():
-        SettingsRepository().set("bus_api_key", "good-key")
+        Setting.set_val("bus_api_key", "good-key")
 
         with patch(
             "requests.get", side_effect=requests.exceptions.ConnectionError("Failed")
@@ -211,11 +212,10 @@ def test_sync_stations_missing_credentials(app: Flask) -> None:
 def test_sync_stations_s3_success_with_json(app: Flask) -> None:
     """Test sync_stations parses stations.json from configured S3 bucket."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_s3_bucket", "my-transit-bucket")
-        repo.set("train_s3_access_key", "AKIA12345")
-        repo.set("train_s3_secret_key", "secret123")
-        repo.set("train_s3_region", "eu-west-1")
+        Setting.set_val("train_s3_bucket", "my-transit-bucket")
+        Setting.set_val("train_s3_access_key", "AKIA12345")
+        Setting.set_val("train_s3_secret_key", "secret123")
+        Setting.set_val("train_s3_region", "eu-west-1")
 
         mock_s3 = MagicMock()
         mock_body = MagicMock()
@@ -250,18 +250,16 @@ def test_sync_stations_s3_success_with_json(app: Flask) -> None:
             assert res["status"] == "success"
             assert res["records"] == 2
 
-        st_repo = StationRepository()
-        assert st_repo.count() == 2
-        oxf = st_repo.get_by_crs("OXF")
+        assert Station.select().count() == 2
+        oxf = Station.get_by_crs("OXF")
         assert oxf is not None
-        assert oxf["name"] == "Oxford"
+        assert oxf.name == "Oxford"
 
 
 def test_sync_stations_s3_nosuchkey_fallback(app: Flask) -> None:
     """Test sync_stations registers bucket gateway hub when stations.json is not present."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_s3_bucket", "test-bucket")
+        Setting.set_val("train_s3_bucket", "test-bucket")
 
         mock_s3 = MagicMock()
         err_response = {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}
@@ -275,30 +273,28 @@ def test_sync_stations_s3_nosuchkey_fallback(app: Flask) -> None:
             assert res["status"] == "success"
             assert res["records"] == 1
 
-        st = StationRepository().get_by_crs("S3-HUB")
+        st = Station.get_by_crs("S3-HUB")
         assert st is not None
-        assert "test-bucket" in st["name"]
+        assert "test-bucket" in st.name
 
 
 def test_sync_stations_live_api_key_fallback(app: Flask) -> None:
     """Test sync_stations registers LDBWS live gateway hub when live API key is set."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_live_api_key", "token-xyz")
+        Setting.set_val("train_live_api_key", "token-xyz")
 
         res = sync_stations(app=app)
         assert res["status"] == "success"
         assert res["records"] == 1
 
-        st = StationRepository().get_by_crs("LDBWS-HUB")
+        st = Station.get_by_crs("LDBWS-HUB")
         assert st is not None
 
 
 def test_sync_stations_errors(app: Flask) -> None:
     """Test sync_stations handles AWS and unexpected errors."""
     with app.app_context():
-        repo = SettingsRepository()
-        repo.set("train_s3_bucket", "invalid-bucket")
+        Setting.set_val("train_s3_bucket", "invalid-bucket")
 
         mock_s3 = MagicMock()
         err_response = {"Error": {"Code": "AccessDenied", "Message": "Denied"}}
@@ -320,7 +316,7 @@ def test_sync_stations_errors(app: Flask) -> None:
         mock_s3.get_object.return_value = {"Body": mock_body}
         with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
             with patch.object(
-                StationRepository, "bulk_upsert", side_effect=RuntimeError("DB crash")
+                Station, "bulk_upsert", side_effect=RuntimeError("DB crash")
             ):
                 res = sync_stations(app=app)
                 assert res["status"] == "error"
@@ -370,9 +366,8 @@ def test_sync_all(app: Flask) -> None:
 def test_check_and_run_background_sync(app: Flask) -> None:
     """Test check_and_run_background_sync only triggers overdue tables."""
     with app.app_context():
-        sync_repo = SyncMetadataRepository()
         # bus_routes is up to date
-        sync_repo.record_sync_success("bus_routes", 10)
+        SyncMetadata.record_success("bus_routes", 10, 1.0)
         # bus_stops is not synced
         # stations is not synced
 

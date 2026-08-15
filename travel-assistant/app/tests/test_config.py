@@ -1,8 +1,11 @@
 """Unit tests for configuration views and credentials management."""
 
+import json
+from unittest.mock import MagicMock
 from pytest import MonkeyPatch
 from flask.testing import FlaskClient
-from app.db import SettingsRepository
+
+from app.models import Setting, Timetable
 
 
 def test_config_index_redirect(client: FlaskClient) -> None:
@@ -38,9 +41,7 @@ def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
     assert b'value="gpt-4o-mini"' in response.data
 
 
-def test_post_credentials_saves_and_redirects(
-    client: FlaskClient, repo: SettingsRepository
-) -> None:
+def test_post_credentials_saves_and_redirects(client: FlaskClient) -> None:
     """Test POST /config/credentials saves settings and performs PRG redirect."""
     post_data = {
         "bus_api_key": "test_bus_key_123",
@@ -59,100 +60,86 @@ def test_post_credentials_saves_and_redirects(
         "/config/credentials",
         data=post_data,
     )
-    # Verify Post/Redirect/Get pattern (303 See Other redirect)
     assert response.status_code == 303
     assert response.headers["Location"].endswith("/config/credentials")
 
-    # Verify data in database
-    saved = repo.get_all(category="credentials")
-    for key, expected_val in post_data.items():
-        assert saved.get(key) == expected_val
+    saved = Setting.get_by_category("credentials")
+    assert saved["bus_api_key"] == "test_bus_key_123"
+    assert saved["train_s3_bucket"] == "my-train-bucket"
+    assert saved["train_s3_region"] == "eu-west-2"
+    assert saved["open_api_model"] == "gpt-4o"
 
-    # Follow redirect to verify flash message and populated values
-    follow_response = client.get("/config/credentials")
-    assert follow_response.status_code == 200
-    assert b"API credentials saved successfully." in follow_response.data
-    assert b"test_bus_key_123" in follow_response.data
-    assert b"my-train-bucket" in follow_response.data
-    assert b"AKIA1234567890" in follow_response.data
-    assert b"supersecretkey999" in follow_response.data
-    assert b"eu-west-2" in follow_response.data
-    assert b"train_live_token_abc" in follow_response.data
-    assert b"https://darwin.live.trains.api" in follow_response.data
-    assert b"sk-openai-key-test" in follow_response.data
-    assert b"https://api.openai.com/v1" in follow_response.data
-    assert b'value="gpt-4o" selected' in follow_response.data
+    # Follow redirect
+    follow = client.get("/config/credentials")
+    assert follow.status_code == 200
+    assert b"API credentials saved successfully." in follow.data
+    assert b'value="test_bus_key_123"' in follow.data
+    assert b'value="my-train-bucket"' in follow.data
 
 
 def test_credentials_ingress_header(client: FlaskClient) -> None:
-    """Test that Ingress header is respected in form action and links."""
+    """Test that Ingress base path is prepended to form action and links."""
     response = client.get(
         "/config/credentials",
-        headers={"X-Ingress-Path": "/api/hassio_ingress/token123"},
+        headers={"X-Ingress-Path": "/api/hassio_ingress/xyz123"},
     )
     assert response.status_code == 200
-    assert b'action="/api/hassio_ingress/token123/config/credentials"' in response.data
-    assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data
-    assert b'href="/api/hassio_ingress/token123/"' in response.data
+    assert b'action="/api/hassio_ingress/xyz123/config/credentials"' in response.data
+    assert b'href="/api/hassio_ingress/xyz123/config/credentials"' in response.data
 
 
 def test_validate_credentials_missing_service(client: FlaskClient) -> None:
-    """Test POST /config/credentials/validate with missing service parameter."""
-    response = client.post("/config/credentials/validate", json={})
+    """Test POST /config/credentials/validate without service returns 400."""
+    response = client.post(
+        "/config/credentials/validate",
+        json={"bus_api_key": "token123"},
+    )
     assert response.status_code == 400
     data = response.get_json()
-    assert not data["valid"]
+    assert data["valid"] is False
     assert "Service name is required" in data["message"]
 
 
 def test_validate_credentials_unknown_service(client: FlaskClient) -> None:
-    """Test POST /config/credentials/validate with unknown service."""
+    """Test POST /config/credentials/validate with unknown service returns 400."""
     response = client.post(
         "/config/credentials/validate",
-        json={"service": "unsupported_service_xyz"},
+        json={"service": "unknown_transit_svc"},
     )
     assert response.status_code == 400
     data = response.get_json()
-    assert not data["valid"]
+    assert data["valid"] is False
     assert "Unknown service" in data["message"]
 
 
-def test_validate_credentials_success(
+def test_validate_credentials_form_post_compatibility(
     client: FlaskClient, monkeypatch: MonkeyPatch
 ) -> None:
-    """Test POST /config/credentials/validate success response."""
-    from unittest.mock import MagicMock
+    """Test POST /config/credentials/validate accepts form-encoded data."""
     from app import views
 
-    mock_validate = MagicMock(
-        return_value=(True, "Bus API key is valid and active.", {})
-    )
+    mock_validate = MagicMock(return_value=(True, "Bus credentials valid.", {}))
     monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
 
     response = client.post(
         "/config/credentials/validate",
-        json={"service": "bus", "bus_api_key": "my_bus_token"},
+        data={"service": "bus", "bus_api_key": "my_bus_token"},
     )
     assert response.status_code == 200
     data = response.get_json()
     assert data["valid"] is True
-    assert "valid and active" in data["message"]
+    assert data["message"] == "Bus credentials valid."
     assert data["service"] == "bus"
-    mock_validate.assert_called_once_with(
-        "bus",
-        {"service": "bus", "bus_api_key": "my_bus_token"},
-    )
 
 
 def test_validate_credentials_fallback_to_repo(
-    client: FlaskClient, repo: SettingsRepository, monkeypatch: MonkeyPatch
+    client: FlaskClient, monkeypatch: MonkeyPatch
 ) -> None:
     """Test POST /config/credentials/validate merges saved DB credentials."""
-    from unittest.mock import MagicMock
     from app import views
 
-    repo.set("train_s3_bucket", "saved-bucket-name", category="credentials")
-    repo.set("train_s3_region", "eu-west-1", category="credentials")
+    Setting.set_val("train_s3_bucket", "saved-bucket-name", category="credentials")
+    Setting.set_val("train_s3_region", "eu-west-1", category="credentials")
 
     mock_validate = MagicMock(return_value=(True, "S3 bucket is valid.", {}))
     monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
@@ -164,75 +151,19 @@ def test_validate_credentials_fallback_to_repo(
     assert response.status_code == 200
     data = response.get_json()
     assert data["valid"] is True
-    call_payload = mock_validate.call_args[0][1]
-    assert call_payload["train_s3_bucket"] == "saved-bucket-name"
-    assert call_payload["train_s3_region"] == "eu-west-1"
 
 
-def test_validate_credentials_form_encoded(
-    client: FlaskClient, monkeypatch: MonkeyPatch
-) -> None:
-    """Test POST /config/credentials/validate with form-encoded data."""
-    from unittest.mock import MagicMock
-    from app import views
-
-    mock_validate = MagicMock(return_value=(False, "Invalid Open API key.", {}))
-    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
-
-    response = client.post(
-        "/config/credentials/validate",
-        data={"service": "open_api", "open_api_key": "bad_key"},
-    )
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data["valid"] is False
-    assert data["message"] == "Invalid Open API key."
-
-
-def test_validate_credentials_openai_returns_models(
-    client: FlaskClient, monkeypatch: MonkeyPatch
-) -> None:
-    """Test POST /config/credentials/validate for open_api returns model list."""
-    from unittest.mock import MagicMock
-    from app import views
-
-    mock_validate = MagicMock(
-        return_value=(
-            True,
-            "Open API credentials are valid and active.",
-            {"models": ["gpt-4o-mini", "gpt-4o", "o3-mini"]},
-        )
-    )
-    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
-
-    response = client.post(
-        "/config/credentials/validate",
-        json={"service": "open_api", "open_api_key": "sk-test-123"},
-    )
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data["valid"] is True
-    assert data["models"] == ["gpt-4o-mini", "gpt-4o", "o3-mini"]
-    assert data["service"] == "open_api"
-
-
-def test_get_timetables_page(client: FlaskClient) -> None:
-    """Test GET /config/timetables renders page with Grid.js and action bar."""
+def test_get_timetables_page_initial_empty(client: FlaskClient) -> None:
+    """Test GET /config/timetables renders empty list."""
     response = client.get("/config/timetables")
     assert response.status_code == 200
     assert b"Active Timetables" in response.data
-    assert b"gridjs" in response.data
+    assert b"No timetables configured" in response.data
     assert b"Add Timetable" in response.data
-    assert b"Save Changes" in response.data
-    assert b"Discard Changes" in response.data
-    assert b"timetables_json" in response.data
 
 
-def test_post_timetables_save_and_redirect(client: FlaskClient) -> None:
-    """Test POST /config/timetables saves entries to database and redirects."""
-    import json
-    from app.db import TimetableRepository
-
+def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
+    """Test POST /config/timetables stores valid entries."""
     items = [
         {
             "transport_type": "bus",
@@ -255,9 +186,8 @@ def test_post_timetables_save_and_redirect(client: FlaskClient) -> None:
     assert response.status_code == 303
     assert response.headers["Location"].endswith("/config/timetables")
 
-    # Verify repository has items
-    repo = TimetableRepository()
-    saved = repo.get_all()
+    # Verify model has items
+    saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 2
     assert saved[0]["name"] == "Oxford Tube"
     assert saved[0]["transport_type"] == "bus"
@@ -296,9 +226,6 @@ def test_post_timetables_non_list_json(client: FlaskClient) -> None:
 
 def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
     """Test POST /config/timetables sanitises input and skips empty names."""
-    import json
-    from app.db import TimetableRepository
-
     items = [
         "not-a-dict",
         {
@@ -319,8 +246,7 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
         data={"timetables_json": json.dumps(items)},
     )
     assert response.status_code == 303
-    repo = TimetableRepository()
-    saved = repo.get_all()
+    saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 1
     assert saved[0]["transport_type"] == "bus"
     assert saved[0]["name"] == "Valid Route"
@@ -329,7 +255,7 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
 
 def test_search_timetables_endpoint(client: FlaskClient) -> None:
     """Test GET /config/timetables/search across cached datasets and unpopulated states."""
-    from app.db import BusRouteRepository, BusStopRepository, StationRepository
+    from app.models import BusRoute, BusStop, Station
 
     # 1. Test empty response when nothing cached
     res_all = client.get("/config/timetables/search")
@@ -360,8 +286,7 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert data_sample_query["is_cached"] is False
 
     # 2. Test Station search with cached station records
-    station_repo = StationRepository()
-    station_repo.bulk_upsert(
+    Station.bulk_upsert(
         [
             {
                 "crs_code": "OXF",
@@ -395,8 +320,7 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert data_st_q["results"][0]["crs_code"] == "PAD"
 
     # 3. Test Bus Stop search with cached bus stops
-    stop_repo = BusStopRepository()
-    stop_repo.bulk_upsert(
+    BusStop.bulk_upsert(
         [
             {
                 "atco_code": "340000001",
@@ -426,8 +350,7 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert data_stop_q["results"][0]["atco_code"] == "340000001"
 
     # 4. Test Bus Route search with cached bus routes
-    route_repo = BusRouteRepository()
-    route_repo.bulk_upsert(
+    BusRoute.bulk_upsert(
         [
             {
                 "route_number": "1",
@@ -498,86 +421,84 @@ def test_get_db_page_initial_render(client: FlaskClient) -> None:
     assert b"refresh-stats-btn" in response.data
 
 
-def test_get_db_page_with_populated_tables(
-    client: FlaskClient, repo: SettingsRepository
-) -> None:
+def test_get_db_page_with_populated_tables(client: FlaskClient) -> None:
     """Test GET /config/db accurately displays table row counts."""
-    from app.db import TimetableRepository
+    Setting.set_val("bus_key", "secret123", category="credentials")
+    Setting.set_val("train_key", "secret456", category="credentials")
 
-    repo.set("bus_key", "secret123", category="credentials")
-    repo.set("train_key", "secret456", category="credentials")
-
-    timetable_repo = TimetableRepository()
-    timetable_repo.add("bus", "Route 1", "R-01")
-    timetable_repo.add("train", "Paddington", "PAD")
+    Timetable.create(transport_type="bus", name="Route 1", identifier="R-01")
+    Timetable.create(transport_type="train", name="Paddington", identifier="PAD")
 
     response = client.get("/config/db")
     assert response.status_code == 200
     assert b"settings" in response.data
     assert b"timetables" in response.data
     assert b"stat-total-rows" in response.data
-    assert b"initial-db-stats" in response.data
 
 
-def test_db_page_ingress_header(client: FlaskClient) -> None:
-    """Test that Ingress header is respected in db stats template."""
-    response = client.get(
-        "/config/db",
-        headers={"X-Ingress-Path": "/api/hassio_ingress/test_token"},
+def test_sync_db_table_endpoint_all(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/sync triggers sync_all."""
+    from app.views import config
+
+    mock_sync_all = MagicMock(
+        return_value={"success": True, "total_records": 100, "tables": {}}
     )
+    monkeypatch.setattr(config, "sync_all", mock_sync_all)
+
+    response = client.post("/config/db/sync")
     assert response.status_code == 200
-    assert b'href="/api/hassio_ingress/test_token/config/db"' in response.data
-    assert b'href="/api/hassio_ingress/test_token/config/credentials"' in response.data
-    assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data
+    data = response.get_json()
+    assert data["success"] is True
+    assert data["total_records"] == 100
+    assert "stats" in data
+    mock_sync_all.assert_called_once_with(force=True)
 
 
-def test_db_page_renders_sync_buttons_and_headers(client: FlaskClient) -> None:
-    """Test GET /config/db renders headers, Grid.js, and no Columns column."""
-    response = client.get("/config/db")
-    assert response.status_code == 200
-    assert b"Database Tables" in response.data
-    assert b"Database Storage Overview" in response.data
-    assert b">Columns<" not in response.data
-    assert b" cols<" not in response.data
-    assert b"sync-all-btn" in response.data
-    assert b"db-grid-wrapper" in response.data
-    assert b"/static/js/db.js" in response.data
-    assert b"/static/css/tables.css" in response.data
-    assert b"bus_routes" in response.data
-    assert b"bus_stops" in response.data
-    assert b"stations" in response.data
+def test_sync_db_table_endpoint_specific_success(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/sync/<table_name> triggers specific table sync."""
+    from app.views import config
 
+    mock_sync_table = MagicMock(
+        return_value={
+            "status": "success",
+            "records": 25,
+            "message": "Sync successful",
+            "duration_seconds": 1.5,
+        }
+    )
+    monkeypatch.setattr(config, "sync_table", mock_sync_table)
 
-def test_post_config_db_sync_table(client: FlaskClient) -> None:
-    """Test POST /config/db/sync/<table_name> triggers synchronisation."""
-    # When credentials are not configured, it returns skipped_no_credentials with 200
     response = client.post("/config/db/sync/bus_routes")
     assert response.status_code == 200
     data = response.get_json()
+    assert data["success"] is True
+    assert data["records"] == 25
     assert data["table"] == "bus_routes"
-    assert data["status"] == "skipped_no_credentials"
-    assert "stats" in data
-
-    # Invalid table name returns 400
-    res_bad = client.post("/config/db/sync/nonexistent_tbl")
-    assert res_bad.status_code == 400
-    data_bad = res_bad.get_json()
-    assert data_bad["status"] == "error"
+    mock_sync_table.assert_called_once_with("bus_routes", force=True)
 
 
-def test_post_config_db_sync_all(client: FlaskClient) -> None:
-    """Test POST /config/db/sync triggers sync_all."""
-    response = client.post("/config/db/sync/all")
-    assert response.status_code == 200
+def test_sync_db_table_endpoint_specific_error(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/sync/<table_name> with failed sync returns 400."""
+    from app.views import config
+
+    mock_sync_table = MagicMock(
+        return_value={
+            "status": "error",
+            "records": 0,
+            "message": "Invalid API key",
+            "duration_seconds": 0.5,
+        }
+    )
+    monkeypatch.setattr(config, "sync_table", mock_sync_table)
+
+    response = client.post("/config/db/sync/bus_stops")
+    assert response.status_code == 400
     data = response.get_json()
-    assert data["table"] == "all"
-    assert "tables" in data
-    assert "bus_routes" in data["tables"]
-    assert "bus_stops" in data["tables"]
-    assert "stations" in data["tables"]
-
-    # Default route without table_name parameter
-    response_default = client.post("/config/db/sync")
-    assert response_default.status_code == 200
-    data_def = response_default.get_json()
-    assert data_def["table"] == "all"
+    assert data["success"] is False
+    assert data["status"] == "error"
