@@ -38,143 +38,6 @@ CREDENTIAL_FIELDS = [
 ]
 
 
-# Stage 1 sample dataset for timetable search lookup
-SAMPLE_TIMETABLE_DATA: List[Dict[str, str]] = [
-    {
-        "transport_type": "bus",
-        "name": "Oxford Tube (London Victoria - Oxford)",
-        "identifier": "OX-TUBE",
-        "description": "Express coach service via Hillingdon and Lewknor",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 1 (Blackbird Leys - Oxford City Centre)",
-        "identifier": "OX-01",
-        "description": "Oxford Bus Company frequent urban corridor",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 5 (Blackbird Leys - Oxford Rail Station)",
-        "identifier": "OX-05",
-        "description": "High frequency rail station link",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 7 (Woodstock - Kidlington - Oxford)",
-        "identifier": "OX-07",
-        "description": "Stagecoach Oxfordshire regional service",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 10 (JR Hospital - Oxford City Centre)",
-        "identifier": "OX-10",
-        "description": "Key hospital transit link",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route X5 (Oxford - Bicester - Bedford - Cambridge)",
-        "identifier": "STAGE-X5",
-        "description": "Cross-county inter-city express",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route S1 (Carterton - Witney - Oxford)",
-        "identifier": "STAGE-S1",
-        "description": "West Oxfordshire main line connector",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 24 (Hampstead Heath - Pimlico)",
-        "identifier": "LON-024",
-        "description": "Transport for London central electric bus route",
-    },
-    {
-        "transport_type": "bus",
-        "name": "Route 73 (Oxford Circus - Stoke Newington)",
-        "identifier": "LON-073",
-        "description": "TfL North-East London trunk route",
-    },
-    {
-        "transport_type": "train",
-        "name": "London Paddington (PAD) - Great Western Railway",
-        "identifier": "PAD",
-        "description": "Main western terminus with Elizabeth Line & Heathrow Express",
-    },
-    {
-        "transport_type": "train",
-        "name": "London Marylebone (MYB) - Chiltern Railways",
-        "identifier": "MYB",
-        "description": "Direct fast services to Oxford and Birmingham Moor St",
-    },
-    {
-        "transport_type": "train",
-        "name": "London Waterloo (WAT) - South Western Railway",
-        "identifier": "WAT",
-        "description": "Major southern mainline hub",
-    },
-    {
-        "transport_type": "train",
-        "name": "London King's Cross (KGX) - LNER / Great Northern",
-        "identifier": "KGX",
-        "description": "East Coast Main Line terminus to Yorkshire and Scotland",
-    },
-    {
-        "transport_type": "train",
-        "name": "London Euston (EUS) - Avanti West Coast",
-        "identifier": "EUS",
-        "description": "West Coast Main Line to West Midlands and North West",
-    },
-    {
-        "transport_type": "train",
-        "name": "London St Pancras Int (STP) - Thameslink / Eurostar",
-        "identifier": "STP",
-        "description": "Midland Main Line and international continental links",
-    },
-    {
-        "transport_type": "train",
-        "name": "Oxford (OXF) - GWR & Chiltern Railways",
-        "identifier": "OXF",
-        "description": "Central station connecting London, Birmingham, and Didcot",
-    },
-    {
-        "transport_type": "train",
-        "name": "Oxford Parkway (OXP) - Chiltern Railways",
-        "identifier": "OXP",
-        "description": "Park & ride station for London Marylebone services",
-    },
-    {
-        "transport_type": "train",
-        "name": "Reading (RDG) - Great Western Railway",
-        "identifier": "RDG",
-        "description": "High capacity interchange hub with Elizabeth line",
-    },
-    {
-        "transport_type": "train",
-        "name": "Didcot Parkway (DID) - Great Western Railway",
-        "identifier": "DID",
-        "description": "Thames Valley junction station",
-    },
-    {
-        "transport_type": "train",
-        "name": "Birmingham New Street (BHM) - CrossCountry / Avanti",
-        "identifier": "BHM",
-        "description": "Midlands interchange connecting North, South, East, and West",
-    },
-    {
-        "transport_type": "train",
-        "name": "Manchester Piccadilly (MAN) - TransPennine / Avanti",
-        "identifier": "MAN",
-        "description": "North West terminus and cross-regional gateway",
-    },
-    {
-        "transport_type": "train",
-        "name": "Bristol Temple Meads (BRI) - Great Western Railway",
-        "identifier": "BRI",
-        "description": "South West junction and main city hub",
-    },
-]
-
-
 @config_bp.route("")
 @config_bp.route("/")
 def index() -> Any:
@@ -347,46 +210,12 @@ def search_timetables() -> Any:
         is_cached = (stations_count > 0) or (stops_count > 0 and routes_count > 0)
         results = []
     else:
-        # Generic / fallback search
+        # Generic search across cached stations and bus routes
         is_cached = (stations_count > 0) or (stops_count > 0) or (routes_count > 0)
         if is_cached:
             st_res = station_repo.search(query, limit=limit)
             rt_res = route_repo.search(query, limit=limit)
             results = st_res + rt_res
-
-    # Fallback to SAMPLE_TIMETABLE_DATA if not cached from database
-    if not is_cached and transport_type not in ("status", "status_check"):
-        target_mode = (
-            "train"
-            if transport_type in ("station", "train", "stations")
-            else (
-                "bus"
-                if transport_type
-                in (
-                    "bus_stop",
-                    "stop",
-                    "bus_stops",
-                    "stops",
-                    "bus_route",
-                    "route",
-                    "bus_routes",
-                    "routes",
-                    "bus",
-                )
-                else ""
-            )
-        )
-        for item in SAMPLE_TIMETABLE_DATA:
-            if target_mode and item["transport_type"] != target_mode:
-                continue
-            if query:
-                match_name = query.lower() in item["name"].lower()
-                match_id = query.lower() in item["identifier"].lower()
-                match_desc = query.lower() in item["description"].lower()
-                if match_name or match_id or match_desc:
-                    results.append(item)
-            else:
-                results.append(item)
 
     return jsonify(
         {
@@ -397,73 +226,6 @@ def search_timetables() -> Any:
             "type": transport_type,
         }
     )
-
-
-SAMPLE_LOCATION_SEARCH_DATA: List[Dict[str, str]] = [
-    {
-        "type": "station",
-        "id": "OXF",
-        "name": "Oxford Rail Station",
-        "description": "National Rail Station (OXF)",
-        "indicator": "Platforms 1-4",
-    },
-    {
-        "type": "station",
-        "id": "PAD",
-        "name": "London Paddington",
-        "description": "National Rail & Elizabeth Line Terminus (PAD)",
-        "indicator": "Platforms 1-14",
-    },
-    {
-        "type": "station",
-        "id": "MYB",
-        "name": "London Marylebone",
-        "description": "Chiltern Railways Mainline Terminus (MYB)",
-        "indicator": "Platforms 1-6",
-    },
-    {
-        "type": "station",
-        "id": "BHM",
-        "name": "Birmingham New Street",
-        "description": "Major Midlands Interchange (BHM)",
-        "indicator": "Platforms 1-12",
-    },
-    {
-        "type": "station",
-        "id": "RDG",
-        "name": "Reading Rail Station",
-        "description": "Thames Valley Interchange (RDG)",
-        "indicator": "Platforms 1-15",
-    },
-    {
-        "type": "bus_stop",
-        "id": "340000001",
-        "name": "Oxford Frideswide Square (Stop R1)",
-        "description": "Frideswide Square / Rail Station Forecourt",
-        "indicator": "Stop R1",
-    },
-    {
-        "type": "bus_stop",
-        "id": "340000002",
-        "name": "Oxford Gloucester Green Bus Station",
-        "description": "Gloucester Green Coach & Bus Terminal",
-        "indicator": "Bays 1-8",
-    },
-    {
-        "type": "bus_stop",
-        "id": "340000003",
-        "name": "Oxford High Street (Stop T1)",
-        "description": "City Centre Interchange Corridor",
-        "indicator": "Stop T1",
-    },
-    {
-        "type": "bus_stop",
-        "id": "490000001",
-        "name": "London Victoria Coach Station",
-        "description": "Buckingham Palace Road Terminal",
-        "indicator": "Gates 1-20",
-    },
-]
 
 
 @config_bp.route("/transfers", methods=["GET", "POST"])
@@ -666,25 +428,6 @@ def search_transfers_locations() -> Any:
                     )
         except Exception:
             pass
-
-    # Supplement with sample data if query matches or result count is low
-    for item in SAMPLE_LOCATION_SEARCH_DATA:
-        if target_type and item["type"] != target_type:
-            continue
-        key = f"{item['type']}:{item['id']}"
-        if key in seen_keys:
-            continue
-
-        if query:
-            match_name = query in item["name"].lower()
-            match_id = query in item["id"].lower()
-            match_desc = query in item["description"].lower()
-            if match_name or match_id or match_desc:
-                results.append(item)
-                seen_keys.add(key)
-        elif len(results) < 10:
-            results.append(item)
-            seen_keys.add(key)
 
     return jsonify({"results": results, "total": len(results)})
 

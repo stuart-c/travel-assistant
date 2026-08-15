@@ -312,11 +312,19 @@ def test_sync_stations_errors(app: Flask) -> None:
             assert res["status"] == "error"
             assert "AWS S3 error" in res["message"]
 
-        mock_s3.get_object.side_effect = Exception("Crash")
+        mock_body = MagicMock()
+        mock_body.read.return_value = json.dumps(
+            [{"crs_code": "OXF", "name": "Oxford"}]
+        ).encode("utf-8")
+        mock_s3.get_object.side_effect = None
+        mock_s3.get_object.return_value = {"Body": mock_body}
         with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
-            res = sync_stations(app=app)
-            assert res["status"] == "error"
-            assert "Unexpected error" in res["message"]
+            with patch.object(
+                StationRepository, "bulk_upsert", side_effect=RuntimeError("DB crash")
+            ):
+                res = sync_stations(app=app)
+                assert res["status"] == "error"
+                assert "Unexpected error" in res["message"]
 
 
 def test_sync_table_dispatch(app: Flask) -> None:

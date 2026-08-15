@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modernised UI with responsive layout, automated dark mode support via `prefers-color-scheme`, and pulsing status animations.
 - Removed legacy `style.css` stylesheet.
 
+### Removed
+- Removed hardcoded sample timetable dataset (`SAMPLE_TIMETABLE_DATA`) and location search dataset (`SAMPLE_LOCATION_SEARCH_DATA`) from `app/views/config.py`, ensuring all search endpoints strictly query local cached SQLite datasets and return clean empty states when unpopulated.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added

@@ -1,5 +1,6 @@
 """Unit tests for the Travel Assistant Flask application."""
 
+from flask import Flask
 from flask.testing import FlaskClient
 
 
@@ -56,13 +57,57 @@ def test_page_404_html_response(client: FlaskClient) -> None:
     assert b"Page not found" in response.data
 
 
-def test_api_timetables_search_endpoint(client: FlaskClient) -> None:
-    """Test that /api/timetables/search returns search results."""
+def test_api_timetables_search_endpoint(client: FlaskClient, app: Flask) -> None:
+    """Test that /api/timetables/search returns search results and handles unpopulated states."""
+    from app.db import BusRouteRepository
+
+    # Unpopulated state
     response = client.get("/api/timetables/search?type=bus")
     assert response.status_code == 200
     data = response.get_json()
     assert "results" in data
-    assert len(data["results"]) > 0
+    assert data["results"] == []
+    assert data["total"] == 0
+
+    # Populated state
+    with app.app_context():
+        BusRouteRepository().bulk_upsert(
+            [
+                {
+                    "route_number": "1",
+                    "operator_name": "Oxford Bus Company",
+                    "origin": "Blackbird Leys",
+                    "destination": "Oxford City Centre",
+                }
+            ]
+        )
+
+    res_pop = client.get("/api/timetables/search?type=bus_route")
+    assert res_pop.status_code == 200
+    data_pop = res_pop.get_json()
+    assert len(data_pop["results"]) == 1
+    assert data_pop["results"][0]["route_number"] == "1"
+
+
+def test_api_sync_endpoints(client: FlaskClient) -> None:
+    """Test POST /api/sync and POST /api/sync/<table_name> endpoints."""
+    # 1. Sync all tables
+    res_all = client.post("/api/sync")
+    assert res_all.status_code == 200
+    data_all = res_all.get_json()
+    assert "success" in data_all
+
+    # 2. Sync specific valid table
+    res_table = client.post("/api/sync/bus_routes")
+    assert res_table.status_code == 200
+    data_table = res_table.get_json()
+    assert data_table["table"] == "bus_routes"
+
+    # 3. Sync invalid table
+    res_invalid = client.post("/api/sync/unknown_table_xyz")
+    assert res_invalid.status_code == 400
+    data_invalid = res_invalid.get_json()
+    assert data_invalid["status"] == "error"
 
 
 def test_static_assets_served(client: FlaskClient) -> None:
