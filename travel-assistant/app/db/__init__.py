@@ -17,6 +17,11 @@ from app.db.core import (
 )
 from app.db.settings import SettingsRepository
 from app.db.timetables import TimetableRepository
+from app.db.transfers import (
+    LocationTransferRepository,
+    PlatformTransferRepository,
+    TransferRepository,
+)
 from app.db.transit import (
     BusRouteRepository,
     BusStopRepository,
@@ -39,6 +44,9 @@ __all__ = [
     "BaseRepository",
     "SettingsRepository",
     "TimetableRepository",
+    "TransferRepository",
+    "LocationTransferRepository",
+    "PlatformTransferRepository",
     "SyncMetadataRepository",
     "BusRouteRepository",
     "BusStopRepository",

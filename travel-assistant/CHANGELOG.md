@@ -32,12 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External OpenAI model pricing documentation link on the credentials configuration page next to the model selection dropdown.
 - Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.
 - Timetables configuration page (`/config/timetables`) with CDN-hosted Grid.js table supporting client-side search, sorting, pagination, and deletion.
+- Transfers configuration page (`/config/transfers`) with stacked CDN-hosted Grid.js tables for managing inter-location walking links and intra-station platform transfers.
+- Dedicated location lookup and autocomplete endpoint (`GET /config/transfers/search`) querying local SQLite `stations` and `bus_stops` datasets with search deduplication and fallback support.
+- SQLite schema tables `location_transfers` and `platform_transfers` with index optimisations.
+- `LocationTransferRepository`, `PlatformTransferRepository`, and `TransferRepository` in `app/db/transfers.py` providing transactional batch replacement, CRUD helpers, and lifecycle management.
 - Search and lookup endpoint (`GET /api/timetables/search` and `/config/timetables/search`) for bus routes and rail stations with autocomplete in the Add Timetable modal.
 - `TimetableRepository` in SQLite for managing persisted timetable schedules.
 - Unified left sidebar configuration layout (`config_base.html`) across `/config/*` sections with collapsible mobile drawer.
 - Unsaved changes protection manager (`ConfigDirtyManager`) intercepting page reloads, tab navigation, and breadcrumbs with warning prompts.
 - Standard action bar with dynamic **Save Changes** and **Discard Changes** across all configuration sections.
-- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, and configuration views with 100% code coverage.
+- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, transfers management, and configuration views with 100% code coverage.
 
 
 
