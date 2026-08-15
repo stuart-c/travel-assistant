@@ -9,18 +9,22 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, and unsaved changes protection.
 - **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, and Open API credentials.
 - **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing bus routes and rail station departure feeds with client-side staging, search autocomplete, and atomic persistence.
-- **Database Statistics**: Dedicated storage statistics dashboard at `/config/db` showing total database file size, SQLite storage path, and per-table row counts with live refresh.
-- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and transport insights.
+- **Database Statistics & Transit Synchronisation**: Dedicated storage and sync dashboard at `/config/db` showing database file size, SQLite storage path, schema tables, per-table record counts, last updated timestamps, and on-demand refresh triggers.
+- **Automated Background Updates**: Background daemon worker (`TransitBackgroundWorker`) that automatically synchronises transit datasets (`bus_routes`, `bus_stops`, and `stations`) whenever data is older than 24 hours (1 day).
+- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>`).
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
 
 ## Timetable Architecture & Next Stages
 
 The timetable configuration subsystem operates across incremental stages:
-1. **Stage 1 (Current)**: Web UI configuration page (`/config/timetables`) featuring a CDN-hosted Grid.js table, an accessible **Add Timetable** modal with asynchronous search autocomplete (`/api/timetables/search`), client-side staging, and atomic persistence to SQLite on **Save Changes**.
-2. **Stage 2 (Upcoming)**: Automated background synchronization workers connecting configured timetable entries to live datasets:
-   - **Bus feeds**: Integration with Bus Open Data Service (BODS) for TransXChange / GTFS-RT timetable downloads and SIRI-VM vehicle location streaming.
-   - **Rail feeds**: Ingestion of Darwin CIF / Timetable Archives from configured S3 storage and live Darwin Web Services (LDBWS) departures.
+1. **Stage 1 (Complete)**: Web UI configuration page (`/config/timetables`) featuring a CDN-hosted Grid.js table, an accessible **Add Timetable** modal with asynchronous search autocomplete (`/api/timetables/search`), client-side staging, and atomic persistence to SQLite on **Save Changes**.
+2. **Stage 2 (Current)**: Automated background synchronisation workers and database tables connecting configured timetable entries to live datasets:
+   - **Database Tables**: Schema tables for `bus_routes`, `bus_stops`, `stations`, and `sync_metadata`.
+   - **Automated Schedule**: Periodic daemon thread running hourly freshness checks to trigger updates when records are older than 24 hours.
+   - **Bus feeds**: Integration with Bus Open Data Service (BODS) for bus routes and stop reference data using the configured Bus API key.
+   - **Rail feeds**: Ingestion of Darwin CIF station references from configured S3 storage and live Darwin Web Services (LDBWS) departures.
 3. **Stage 3 (Future)**: Real-time route planning, multi-modal interchange guidance, disruption alerts, and Home Assistant sensor entity publishing.
+
 
 ## Configuration
 
