@@ -147,6 +147,16 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Worktrees & git internal repo
+.worktrees/
+.git_repo/
+.gh_token
+
+# Local test data & artifacts
+test_data/
+test_media/
+data/
+
 # Environments
 .env
 .envrc

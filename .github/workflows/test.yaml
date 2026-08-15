@@ -1,0 +1,57 @@
+name: Test Backend
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: travel-assistant/app/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r travel-assistant/app/requirements.txt
+          pip install -r travel-assistant/app/requirements_test.txt
+
+      - name: Run linting (black)
+        run: black --check travel-assistant/app
+
+      - name: Run linting (flake8)
+        run: flake8 travel-assistant/app --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: Run unit tests (pytest)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/travel-assistant
+        run: |
+          pytest travel-assistant/app/tests \
+            --cov=travel-assistant/app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: code-coverage
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 14

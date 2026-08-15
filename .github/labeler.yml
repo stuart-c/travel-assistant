@@ -1,0 +1,20 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file: 'travel-assistant/app/**'
+
+addon-config:
+  - changed-files:
+      - any-glob-to-any-file: 'travel-assistant/*.yaml'
+      - any-glob-to-any-file: 'travel-assistant/Dockerfile'
+      - any-glob-to-any-file: 'travel-assistant/run.sh'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: '*.md'
+      - any-glob-to-any-file: 'travel-assistant/DOCS.md'
+      - any-glob-to-any-file: 'travel-assistant/CHANGELOG.md'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
+      - any-glob-to-any-file: 'scripts/**'

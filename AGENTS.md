@@ -1,0 +1,74 @@
+# Agent Workflow Guide
+
+This document defines the mandatory workflow for all AI agents and developers working on the `travel-assistant` repository. Following these rules ensures consistency, prevents conflicts, and maintains high code quality. All GitHub interactions **MUST** be performed using the GitHub CLI (`gh`) rather than the web browser where possible.
+
+## 0. Language Standard
+All documentation, UI labels, and internal code comments (where standards allow) **MUST** use **British English**.
+- Use `colour` instead of `color`.
+- Use `-ise` suffixes instead of `-ize` (e.g., `initialise`, `standardise`, `optimise`).
+- Use `greyscale` instead of `grayscale`.
+- Use `centre` instead of `center` (except in CSS property names).
+
+## 1. Documentation First
+Before making changes, agents **MUST** read all documentation in the root and relevant subdirectories:
+- `README.md`
+- `AGENTS.md` (this file)
+- `travel-assistant/DOCS.md`
+- `travel-assistant/CHANGELOG.md`
+
+## 2. Branch Naming
+All branches must be named according to [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat/`: New features
+- `fix/`: Bug fixes
+- `docs/`: Documentation changes
+- `style/`: Formatting, missing semicolons, etc; no code change
+- `refactor/`: Refactoring production code
+- `test/`: Adding missing tests, refactoring tests; no production code change
+- `chore/`: Updating build tasks, package manager configs, etc; no production code change
+
+Example: `feat/add-route-planner` or `fix/broken-ingress-links`.
+
+## 3. Git Worktrees for Parallel Work
+It is vitally important that git worktrees are used to allow multiple agents to work in parallel without overlap.
+- **The main directory must only ever contain the `main` branch.**
+- **All feature branch worktrees MUST reside in the `.worktrees/` directory.**
+- Never checkout a feature branch in the core repository directory.
+- Use `git worktree add .worktrees/<branch-name> <branch-name>` to create a new workspace for your task.
+
+## 4. Pre-Push Verification
+Tests and lints **MUST** be run locally before being pushed to GitHub. This is mandatory whenever Python or frontend code is modified.
+
+### Mandatory Verification Scripts
+- **Setup Environment**: `bash scripts/make_venv.sh`
+- **Run Tests & Lints**: `bash scripts/run_tests.sh`
+- **Full Verification**: `bash scripts/verify_all.sh`
+
+### Quality Targets
+- **Code Coverage**: Aim for 100% unit test code coverage for new backend code.
+- **Linting**: Ensure `black --check` and `flake8` pass with 0 warnings or errors.
+
+## 5. Pull Request Management
+- **Mergeability**: PRs **MUST** be rebased from the latest `main` branch before any review is requested.
+  ```bash
+  git fetch origin
+  git rebase origin/main
+  ```
+- **Local Verification**: Ensure all tests and lints pass locally via `./scripts/verify_all.sh`.
+- **PR Quality**: When creating a PR, provide a detailed title and description explaining:
+  - **Purpose**: Why are these changes being made?
+  - **Implementation**: How were the changes implemented? Highlight architectural decisions and patterns.
+- **Auto-Merge**: Enable auto-merge when creating a pull request:
+  ```bash
+  gh pr create --fill
+  gh pr merge --auto --merge
+  ```
+
+## 6. Post-Merge Cleanup
+When a PR is merged, tidy the local environment:
+1. Remove the worktree: `git worktree remove .worktrees/<branch-name>`
+2. Delete the local branch: `git branch -d <branch-name>`
+3. Update the local `main` branch: `git checkout main && git pull origin main`
+
+## 7. GitHub CLI Authentication
+To facilitate automated interactions, agents use a Personal Access Token (PAT) stored in a `.gh_token` file in the repository root or existing `gh` configuration.
+- The `.gh_token` file is included in `.gitignore` to prevent accidental commits. Never share or commit this file.

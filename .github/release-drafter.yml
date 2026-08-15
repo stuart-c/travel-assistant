@@ -1,0 +1,114 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+commitish: main
+categories:
+  - title: '💥 Breaking Changes'
+    labels:
+      - 'breaking change'
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'bug'
+      - 'fix'
+      - 'bugfix'
+  - title: '📖 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+  - title: '⚙️ Refactoring'
+    labels:
+      - 'refactor'
+  - title: '🧪 Testing'
+    labels:
+      - 'test'
+  - title: '🧰 Maintenance'
+    labels:
+      - 'chore'
+      - 'ci'
+      - 'style'
+      - 'dependencies'
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels:
+      - 'major'
+      - 'breaking change'
+  minor:
+    labels:
+      - 'minor'
+      - 'feature'
+      - 'enhancement'
+  patch:
+    labels:
+      - 'patch'
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+  default: patch
+template: |
+  ## Changes
+
+  $CHANGES
+
+autolabeler:
+  - label: 'breaking change'
+    title:
+      - '/\!:/'
+  - label: 'feature'
+    title:
+      - '/^feat:/i'
+      - '/feature/i'
+      - '/enhancement/i'
+    branch:
+      - '/^feature\//i'
+      - '/^feat\//i'
+      - '/^enhancement\//i'
+  - label: 'fix'
+    title:
+      - '/^fix:/i'
+      - '/bugfix/i'
+      - '/\bfix\b/i'
+    branch:
+      - '/^fix\//i'
+      - '/^bugfix\//i'
+  - label: 'chore'
+    title:
+      - '/^chore:/i'
+    branch:
+      - '/^chore\//i'
+  - label: 'ci'
+    title:
+      - '/^ci:/i'
+    branch:
+      - '/^ci\//i'
+  - label: 'test'
+    title:
+      - '/^test:/i'
+    branch:
+      - '/^test\//i'
+  - label: 'refactor'
+    title:
+      - '/^refactor:/i'
+    branch:
+      - '/^refactor\//i'
+  - label: 'documentation'
+    title:
+      - '/^docs:/i'
+      - '/documentation/i'
+    branch:
+      - '/^docs\//i'
+      - '/^documentation\//i'
+  - label: 'python'
+    files:
+      - 'travel-assistant/app/**/*.py'
+  - label: 'github_actions'
+    files:
+      - '.github/workflows/**/*'
+  - label: 'docker'
+    files:
+      - '**/Dockerfile'
+      - '**/build.yaml'

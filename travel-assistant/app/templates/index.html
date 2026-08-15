@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="title-row">
+        <h1>{{ app_name }}</h1>
+        <span class="badge">v{{ app_version }}</span>
+      </div>
+      <p class="subtitle">{{ message }}</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2 class="card-title">Service Status</h2>
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span>Online &amp; Operational</span>
+        </div>
+        <p>The Travel Assistant service is running and ready to handle route and transport requests.</p>
+        
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Environment</div>
+            <div class="info-value">Home Assistant Add-on</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Ingress Routing</div>
+            <div class="info-value">{{ 'Active' if ingress_path else 'Direct' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">API Health</div>
+            <div class="info-value"><a href="{{ ingress_path }}/api/ping" style="color: inherit; text-decoration: underline;">/api/ping</a></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>&copy; 2026 Stuart C. Licensed under Apache 2.0.</p>
+    </footer>
+  </div>
+</body>
+</html>

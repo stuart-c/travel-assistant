@@ -1,0 +1,19 @@
+name: "Travel Assistant"
+version: "0.1.0"
+slug: "travel_assistant"
+image: "ghcr.io/stuart-c/travel-assistant"
+description: "Home Assistant Add-on providing travel and transport intelligence"
+url: "https://github.com/stuart-c/travel-assistant"
+arch:
+  - aarch64
+  - amd64
+init: false
+panel_icon: "mdi:bus-clock"
+panel_title: "Travel Assistant"
+ingress: true
+ingress_port: 8099
+host_network: false
+options:
+  log_level: "info"
+schema:
+  log_level: "list(trace|debug|info|notice|warning|error|fatal|critical)?"
