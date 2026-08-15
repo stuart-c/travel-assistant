@@ -5,6 +5,7 @@ timetables, interchange transfers, and synchronization metadata.
 """
 
 from app.models.base import BaseModel
+from app.models.journey import Journey
 from app.models.location import Location
 from app.models.setting import Setting
 from app.models.timetable import Timetable
@@ -21,6 +22,7 @@ ALL_MODELS = [
     LocationTransfer,
     PlatformTransfer,
     Location,
+    Journey,
 ]
 
 __all__ = [
@@ -28,6 +30,7 @@ __all__ = [
     "Setting",
     "Timetable",
     "Location",
+    "Journey",
     "BusRoute",
     "BusStop",
     "Station",

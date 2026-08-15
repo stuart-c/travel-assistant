@@ -16,6 +16,7 @@ from app.db import get_db_stats
 from app.models import (
     BusRoute,
     BusStop,
+    Journey,
     Location,
     LocationTransfer,
     PlatformTransfer,
@@ -536,6 +537,217 @@ def search_transfers_locations() -> Any:
                             "name": f"{sp.name}{ind_text}",
                             "description": f"Bus Stop{loc_suffix} - {sp.atco_code}",
                             "indicator": sp.indicator or "Stop",
+                        }
+                    )
+        except Exception:
+            pass
+
+    return jsonify({"results": results, "total": len(results)})
+
+
+@config_bp.route("/journeys", methods=["GET", "POST"])
+def journeys() -> Any:
+    """Manage configured travel journeys and multi-time-window schedules."""
+    if request.method == "POST":
+        journeys_raw = request.form.get("journeys_json", "[]").strip()
+        try:
+            items = json.loads(journeys_raw)
+            if not isinstance(items, list):
+                raise ValueError("Payload must be a list of journey objects.")
+
+            cleaned_items: List[Dict[str, Any]] = []
+            for entry in items:
+                if not isinstance(entry, dict):
+                    continue
+
+                name = str(entry.get("name", "")).strip()
+                from_type = str(entry.get("from_type", "station")).strip().lower()
+                from_id = str(entry.get("from_id", "")).strip()
+                from_name = str(entry.get("from_name", "")).strip()
+                to_type = str(entry.get("to_type", "station")).strip().lower()
+                to_id = str(entry.get("to_id", "")).strip()
+                to_name = str(entry.get("to_name", "")).strip()
+
+                if not name:
+                    continue
+                if not (from_id and from_name and to_id and to_name):
+                    continue
+
+                raw_time_settings = entry.get("time_settings", [])
+                cleaned_time_settings: List[Dict[str, Any]] = []
+                if isinstance(raw_time_settings, list):
+                    for tw in raw_time_settings:
+                        if not isinstance(tw, dict):
+                            continue
+                        days = tw.get("days", [])
+                        if not isinstance(days, list):
+                            days = []
+                        valid_days = [
+                            str(d).lower().strip()
+                            for d in days
+                            if str(d).lower().strip()
+                            in (
+                                "mon",
+                                "tue",
+                                "wed",
+                                "thu",
+                                "fri",
+                                "sat",
+                                "sun",
+                                "bank_holiday",
+                            )
+                        ]
+                        mode = str(tw.get("mode", "depart")).lower().strip()
+                        if mode not in ("depart", "arrive"):
+                            mode = "depart"
+                        start_time = str(tw.get("start_time", "")).strip()
+                        end_time = str(tw.get("end_time", "")).strip()
+
+                        cleaned_time_settings.append(
+                            {
+                                "days": valid_days,
+                                "mode": mode,
+                                "start_time": start_time,
+                                "end_time": end_time,
+                            }
+                        )
+
+                cleaned_items.append(
+                    {
+                        "name": name,
+                        "from_type": from_type or "station",
+                        "from_id": from_id,
+                        "from_name": from_name,
+                        "to_type": to_type or "station",
+                        "to_id": to_id,
+                        "to_name": to_name,
+                        "time_settings": json.dumps(cleaned_time_settings),
+                    }
+                )
+
+            with Journey._meta.database.atomic():
+                Journey.delete().execute()
+                if cleaned_items:
+                    Journey.insert_many(cleaned_items).execute()
+
+            flash("Journeys saved successfully.", "success")
+        except Exception as e:
+            flash(f"Failed to save journeys: {str(e)}", "error")
+
+        return redirect(url_for("config.journeys"), code=303)
+
+    current_journeys = [j.to_dict() for j in Journey.select()]
+    return render_template(
+        "config_journeys.html",
+        journeys=current_journeys,
+        active_tab="journeys",
+    )
+
+
+@config_bp.route("/journeys/search", methods=["GET"])
+def search_journey_locations() -> Any:
+    """Search stations, bus stops, and custom/Home Assistant locations for journey configuration."""
+    target_type = request.args.get("type", "").lower().strip()
+    query = request.args.get("q", "").strip()
+    limit_raw = request.args.get("limit", "15").strip()
+    try:
+        limit = max(1, min(int(limit_raw), 50))
+    except ValueError:
+        limit = 15
+
+    results: List[Dict[str, Any]] = []
+    seen_keys = set()
+
+    # Query Rail Stations
+    if not target_type or target_type in ("station", "train", "rail"):
+        try:
+            st_list = (
+                Station.search(query, limit=limit)
+                if query
+                else list(Station.select().limit(limit))
+            )
+            for st in st_list:
+                key = f"station:{st.crs_code}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    op_suffix = f" ({st.operator})" if st.operator else ""
+                    results.append(
+                        {
+                            "type": "station",
+                            "id": st.crs_code,
+                            "name": st.name,
+                            "description": f"National Rail Station - {st.crs_code}{op_suffix}",
+                            "indicator": "Rail",
+                            "icon": "train",
+                        }
+                    )
+        except Exception:
+            pass
+
+    # Query Bus Stops
+    if not target_type or target_type in ("bus_stop", "bus", "stop"):
+        try:
+            stop_list = (
+                BusStop.search(query, limit=limit)
+                if query
+                else list(BusStop.select().limit(limit))
+            )
+            for sp in stop_list:
+                key = f"bus_stop:{sp.atco_code}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    loc_suffix = f", {sp.locality}" if sp.locality else ""
+                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
+                    results.append(
+                        {
+                            "type": "bus_stop",
+                            "id": sp.atco_code,
+                            "name": f"{sp.name}{ind_text}",
+                            "description": f"Bus Stop{loc_suffix} - {sp.atco_code}",
+                            "indicator": sp.indicator or "Bus Stop",
+                            "icon": "directions_bus",
+                        }
+                    )
+        except Exception:
+            pass
+
+    # Query Custom & Home Assistant Locations
+    if not target_type or target_type in (
+        "location",
+        "ha_location",
+        "custom_location",
+        "ha",
+        "custom",
+    ):
+        try:
+            loc_list = (
+                Location.search(query, limit=limit)
+                if query
+                else list(Location.select().limit(limit))
+            )
+            for loc in loc_list:
+                is_ha = bool(getattr(loc, "ha", False))
+                loc_type = "ha_location" if is_ha else "custom_location"
+                if target_type and target_type not in ("location", loc_type):
+                    continue
+
+                key = f"{loc_type}:{loc.id}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    icon = "home" if is_ha else "pin_drop"
+                    indicator = "Home Assistant" if is_ha else "Custom"
+                    desc = (
+                        f"{indicator} Location - "
+                        f"({loc.latitude:.4f}, {loc.longitude:.4f})"
+                    )
+                    results.append(
+                        {
+                            "type": loc_type,
+                            "id": str(loc.id),
+                            "name": loc.name,
+                            "description": desc,
+                            "indicator": indicator,
+                            "icon": icon,
                         }
                     )
         except Exception:
