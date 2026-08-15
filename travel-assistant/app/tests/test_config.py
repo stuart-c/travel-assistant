@@ -1,5 +1,6 @@
 """Unit tests for configuration views and credentials management."""
 
+from pytest import MonkeyPatch
 from flask.testing import FlaskClient
 from app.db import SettingsRepository
 
@@ -88,3 +89,94 @@ def test_credentials_ingress_header(client: FlaskClient) -> None:
     assert b'action="/api/hassio_ingress/token123/config/credentials"' in response.data
     assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data
     assert b'href="/api/hassio_ingress/token123/"' in response.data
+
+
+def test_validate_credentials_missing_service(client: FlaskClient) -> None:
+    """Test POST /config/credentials/validate with missing service parameter."""
+    response = client.post("/config/credentials/validate", json={})
+    assert response.status_code == 400
+    data = response.get_json()
+    assert not data["valid"]
+    assert "Service name is required" in data["message"]
+
+
+def test_validate_credentials_unknown_service(client: FlaskClient) -> None:
+    """Test POST /config/credentials/validate with unknown service."""
+    response = client.post(
+        "/config/credentials/validate",
+        json={"service": "unsupported_service_xyz"},
+    )
+    assert response.status_code == 400
+    data = response.get_json()
+    assert not data["valid"]
+    assert "Unknown service" in data["message"]
+
+
+def test_validate_credentials_success(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/credentials/validate success response."""
+    from unittest.mock import MagicMock
+    from app import views
+
+    mock_validate = MagicMock(return_value=(True, "Bus API key is valid and active."))
+    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+
+    response = client.post(
+        "/config/credentials/validate",
+        json={"service": "bus", "bus_api_key": "my_bus_token"},
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["valid"] is True
+    assert "valid and active" in data["message"]
+    assert data["service"] == "bus"
+    mock_validate.assert_called_once_with(
+        "bus",
+        {"service": "bus", "bus_api_key": "my_bus_token"},
+    )
+
+
+def test_validate_credentials_fallback_to_repo(
+    client: FlaskClient, repo: SettingsRepository, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/credentials/validate merges saved DB credentials."""
+    from unittest.mock import MagicMock
+    from app import views
+
+    repo.set("train_s3_bucket", "saved-bucket-name", category="credentials")
+    repo.set("train_s3_region", "eu-west-1", category="credentials")
+
+    mock_validate = MagicMock(return_value=(True, "S3 bucket is valid."))
+    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+
+    response = client.post(
+        "/config/credentials/validate",
+        json={"service": "train_s3"},
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["valid"] is True
+    call_payload = mock_validate.call_args[0][1]
+    assert call_payload["train_s3_bucket"] == "saved-bucket-name"
+    assert call_payload["train_s3_region"] == "eu-west-1"
+
+
+def test_validate_credentials_form_encoded(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/credentials/validate with form-encoded data."""
+    from unittest.mock import MagicMock
+    from app import views
+
+    mock_validate = MagicMock(return_value=(False, "Invalid Open API key."))
+    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+
+    response = client.post(
+        "/config/credentials/validate",
+        data={"service": "open_api", "open_api_key": "bad_key"},
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["valid"] is False
+    assert data["message"] == "Invalid Open API key."

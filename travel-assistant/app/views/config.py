@@ -5,9 +5,18 @@ credentials, and integration settings using the Post/Redirect/Get pattern.
 """
 
 from typing import Any, Dict
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from app.db import SettingsRepository
+from app.validators import validate_service_credentials
 
 config_bp = Blueprint("config", __name__, url_prefix="/config")
 
@@ -53,4 +62,44 @@ def credentials() -> Any:
         "config_credentials.html",
         credentials=current_credentials,
         active_tab="credentials",
+    )
+
+
+@config_bp.route("/credentials/validate", methods=["POST"])
+def validate_credentials() -> Any:
+    """Validate a specific credential configuration asynchronously."""
+    raw_payload = request.get_json(silent=True)
+    if not isinstance(raw_payload, dict):
+        raw_payload = request.form.to_dict()
+
+    service = raw_payload.get("service", "").strip()
+    if not service:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "message": "Service name is required for validation.",
+                }
+            ),
+            400,
+        )
+
+    # Fall back to saved repository credentials if fields are not present in payload
+    repo = SettingsRepository()
+    stored = repo.get_all(category="credentials")
+    merged_payload = dict(stored)
+    merged_payload.update(raw_payload)
+
+    is_valid, message = validate_service_credentials(service, merged_payload)
+    status_code = 400 if message.startswith("Unknown service") else 200
+
+    return (
+        jsonify(
+            {
+                "valid": is_valid,
+                "message": message,
+                "service": service,
+            }
+        ),
+        status_code,
     )
