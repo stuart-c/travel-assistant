@@ -54,3 +54,12 @@ def test_page_404_html_response(client: FlaskClient) -> None:
     response = client.get("/unknown-page")
     assert response.status_code == 404
     assert b"Page not found" in response.data
+
+
+def test_api_timetables_search_endpoint(client: FlaskClient) -> None:
+    """Test that /api/timetables/search returns search results."""
+    response = client.get("/api/timetables/search?type=bus")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "results" in data
+    assert len(data["results"]) > 0

@@ -1,0 +1,609 @@
+{% extends "config_base.html" %}
+
+{% block title %}Timetables - {{ app_name }}{% endblock %}
+
+{% block config_title %}Timetables{% endblock %}
+
+{% block subtitle %}
+<p class="text-base text-slate-600 dark:text-slate-400">Manage bus routes, rail station departure boards, and static schedule feeds.</p>
+{% endblock %}
+
+{% block config_content %}
+<!-- Grid.js Stylesheet (CDN) -->
+<link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
+
+<style>
+  /* Custom dark mode & theme styling for Grid.js */
+  .gridjs-container {
+    color: inherit;
+    font-family: inherit;
+  }
+  .gridjs-wrapper {
+    border-radius: 1rem;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: none;
+  }
+  .dark .gridjs-wrapper {
+    border-color: rgba(30, 41, 59, 0.9);
+    background-color: rgba(15, 23, 42, 0.6);
+  }
+  .gridjs-head {
+    padding-bottom: 1rem;
+  }
+  .gridjs-search {
+    float: left;
+    width: 100%;
+    max-width: 320px;
+  }
+  .gridjs-search-input {
+    width: 100%;
+    border-radius: 0.75rem !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 0.5rem 0.875rem !important;
+    font-size: 0.875rem !important;
+    outline: none !important;
+    transition: all 0.2s;
+  }
+  .dark .gridjs-search-input {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
+  }
+  .gridjs-search-input:focus {
+    border-color: #0ea5e9 !important;
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2) !important;
+  }
+  .gridjs-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .gridjs-th {
+    background-color: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    color: #64748b !important;
+  }
+  .dark .gridjs-th {
+    background-color: rgba(30, 41, 59, 0.7) !important;
+    border-bottom-color: #334155 !important;
+    color: #94a3b8 !important;
+  }
+  .gridjs-td {
+    background-color: #ffffff !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    padding: 0.875rem 1rem !important;
+    font-size: 0.875rem !important;
+    color: #334155 !important;
+  }
+  .dark .gridjs-td {
+    background-color: rgba(15, 23, 42, 0.4) !important;
+    border-bottom-color: #1e293b !important;
+    color: #cbd5e1 !important;
+  }
+  .gridjs-tr:hover .gridjs-td {
+    background-color: #f8fafc !important;
+  }
+  .dark .gridjs-tr:hover .gridjs-td {
+    background-color: rgba(30, 41, 59, 0.5) !important;
+  }
+  .gridjs-footer {
+    background-color: transparent !important;
+    border-top: 1px solid #e2e8f0 !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.8125rem !important;
+  }
+  .dark .gridjs-footer {
+    border-top-color: #334155 !important;
+    color: #94a3b8 !important;
+  }
+  .gridjs-pagination .gridjs-pages button {
+    border-radius: 0.5rem !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 0.25rem 0.625rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    margin: 0 0.125rem !important;
+    transition: all 0.15s;
+  }
+  .dark .gridjs-pagination .gridjs-pages button {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+  }
+  .gridjs-pagination .gridjs-pages button:hover {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+  .dark .gridjs-pagination .gridjs-pages button:hover {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+  }
+  .gridjs-pagination .gridjs-pages button.gridjs-currentPage {
+    background-color: #0284c7 !important;
+    border-color: #0284c7 !important;
+    color: #ffffff !important;
+  }
+</style>
+
+<div class="space-y-6">
+  <!-- Page Header & Action Bar -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Active Timetables</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          List of configured bus routes and train lines. Add or remove entries, then click <strong>Save Changes</strong>.
+        </p>
+      </div>
+
+      <div>
+        <button 
+          type="button" 
+          id="open-add-modal-btn" 
+          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
+        >
+          <span class="material-symbols-outlined text-base">add</span>
+          <span>Add Timetable</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid.js Container Mount Point -->
+    <div class="mt-6">
+      <div id="timetables-grid-wrapper"></div>
+      
+      <!-- Empty state container when 0 items -->
+      <div id="grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
+        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">departure_board</span>
+        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No timetables configured</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          Add bus routes or rail station departure feeds to populate your travel dashboard.
+        </p>
+        <button 
+          type="button" 
+          id="empty-add-btn" 
+          class="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
+        >
+          + Add First Timetable
+        </button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/timetables" class="config-main-form hidden" id="timetables-form">
+  <input type="hidden" name="timetables_json" id="timetables_json" value="">
+</form>
+
+<!-- Add Timetable Modal Dialog -->
+<dialog id="add-timetable-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-xl w-full mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+      <div class="flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl">add_circle</span>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white">Add New Timetable</h3>
+      </div>
+      <button 
+        type="button" 
+        id="close-add-modal-btn" 
+        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer p-1"
+        aria-label="Close dialog"
+      >
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+
+    <div class="space-y-4">
+      <!-- 1. Transport Type Segmented Radio -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Transport Mode</label>
+        <div class="grid grid-cols-2 gap-3" id="transport-type-selector">
+          <label class="flex items-center gap-3 p-3 rounded-xl border border-sky-500 bg-sky-50/50 dark:bg-sky-950/40 text-slate-900 dark:text-slate-100 cursor-pointer transport-type-label">
+            <input type="radio" name="modal_transport_type" value="bus" checked class="text-sky-600 focus:ring-sky-500">
+            <span class="material-symbols-outlined text-amber-500">directions_bus</span>
+            <span class="text-sm font-semibold">Bus Route</span>
+          </label>
+          <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 cursor-pointer transport-type-label">
+            <input type="radio" name="modal_transport_type" value="train" class="text-sky-600 focus:ring-sky-500">
+            <span class="material-symbols-outlined text-indigo-500">train</span>
+            <span class="text-sm font-semibold">Rail Station</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 2. Dynamic Search / Lookup -->
+      <div>
+        <label for="modal-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+          Search Feed / Station Lookup
+        </label>
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <span class="material-symbols-outlined text-lg">search</span>
+          </div>
+          <input 
+            type="text" 
+            id="modal-search-input" 
+            class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="Type to search (e.g., Oxford, London, Tube, Route 1, PAD)..."
+            autocomplete="off"
+          >
+          <div id="search-spinner" class="hidden absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <span class="inline-block w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
+          </div>
+        </div>
+
+        <!-- Autocomplete Suggestions List -->
+        <div id="search-suggestions" class="hidden mt-2 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-md dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60">
+        </div>
+      </div>
+
+      <!-- 3. Name & Identifier Fields -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        <div>
+          <label for="modal_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Display Name *</label>
+          <input 
+            type="text" 
+            id="modal_name" 
+            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="e.g. Oxford Tube Express"
+          >
+        </div>
+
+        <div>
+          <label for="modal_identifier" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Identifier / Code *</label>
+          <input 
+            type="text" 
+            id="modal_identifier" 
+            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="e.g. OX-TUBE or OXF"
+          >
+        </div>
+      </div>
+
+      <!-- 4. Status -->
+      <div>
+        <label for="modal_status" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Initial Status</label>
+        <select 
+          id="modal_status" 
+          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+        >
+          <option value="active" selected>Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      <div id="modal-validation-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
+        Please provide both a Display Name and Identifier.
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <button 
+        type="button" 
+        id="cancel-add-modal-btn" 
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+      >
+        Cancel
+      </button>
+      <button 
+        type="button" 
+        id="confirm-add-timetable-btn" 
+        class="px-5 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
+      >
+        Add to List
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Grid.js UMD Script (CDN) -->
+<script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const ingressPath = '{{ ingress_path }}';
+    const initialRaw = {{ timetables | tojson }};
+    
+    // In-memory staged state
+    let stagedTimetables = JSON.parse(JSON.stringify(initialRaw || []));
+    const initialSnapshot = JSON.stringify(stagedTimetables);
+
+    const hiddenInput = document.getElementById('timetables_json');
+    const emptyState = document.getElementById('grid-empty-state');
+    const gridContainer = document.getElementById('timetables-grid-wrapper');
+
+    // Modal elements
+    const addModal = document.getElementById('add-timetable-modal');
+    const openAddBtn = document.getElementById('open-add-modal-btn');
+    const emptyAddBtn = document.getElementById('empty-add-btn');
+    const closeAddBtn = document.getElementById('close-add-modal-btn');
+    const cancelAddBtn = document.getElementById('cancel-add-modal-btn');
+    const confirmAddBtn = document.getElementById('confirm-add-timetable-btn');
+    const modalSearchInput = document.getElementById('modal-search-input');
+    const searchSuggestions = document.getElementById('search-suggestions');
+    const searchSpinner = document.getElementById('search-spinner');
+    const modalNameInput = document.getElementById('modal_name');
+    const modalIdInput = document.getElementById('modal_identifier');
+    const modalStatusSelect = document.getElementById('modal_status');
+    const modalError = document.getElementById('modal-validation-error');
+
+    function getSelectedTransportType() {
+      const checked = document.querySelector('input[name="modal_transport_type"]:checked');
+      return checked ? checked.value : 'bus';
+    }
+
+    // Format data rows for Grid.js
+    function formatGridData(items) {
+      return items.map((item, index) => {
+        const typeIcon = item.transport_type === 'train' ? 'train' : 'directions_bus';
+        const typeBadgeColor = item.transport_type === 'train' 
+          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30' 
+          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
+        const typeLabel = item.transport_type === 'train' ? 'Train' : 'Bus';
+
+        const statusBadgeColor = item.status === 'active'
+          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
+        const statusLabel = item.status === 'active' ? 'Active' : 'Inactive';
+
+        return [
+          gridjs.html(`
+            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${typeBadgeColor}">
+              <span class="material-symbols-outlined text-xs leading-none">${typeIcon}</span>
+              ${typeLabel}
+            </span>
+          `),
+          gridjs.html(`<span class="font-medium text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</span>`),
+          gridjs.html(`<code class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-mono">${escapeHtml(item.identifier)}</code>`),
+          gridjs.html(`<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeColor}">${statusLabel}</span>`),
+          gridjs.html(`
+            <button 
+              type="button" 
+              class="remove-row-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+              data-index="${index}"
+              title="Remove from list"
+            >
+              <span class="material-symbols-outlined text-xs leading-none">delete</span>
+              Remove
+            </button>
+          `)
+        ];
+      });
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Initialise Grid.js
+    const grid = new gridjs.Grid({
+      columns: [
+        { name: 'Type', width: '110px' },
+        { name: 'Name', width: 'auto' },
+        { name: 'Identifier / Feed', width: '180px' },
+        { name: 'Status', width: '110px' },
+        { name: 'Actions', width: '110px', sort: false }
+      ],
+      data: formatGridData(stagedTimetables),
+      search: {
+        placeholder: 'Search timetables...'
+      },
+      sort: true,
+      pagination: {
+        limit: 8,
+        summary: true
+      },
+      language: {
+        search: {
+          placeholder: 'Search timetables...'
+        },
+        pagination: {
+          previous: 'Previous',
+          next: 'Next',
+          showing: 'Showing',
+          results: () => 'timetables'
+        }
+      }
+    }).render(gridContainer);
+
+    // Sync in-memory changes with hidden form input and dirty manager
+    function syncState() {
+      const currentJson = JSON.stringify(stagedTimetables);
+      if (hiddenInput) {
+        hiddenInput.value = currentJson;
+      }
+
+      // Update empty state vs grid visibility
+      if (stagedTimetables.length === 0) {
+        gridContainer.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+      } else {
+        gridContainer.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+      }
+
+      // Re-render Grid.js
+      grid.updateConfig({
+        data: formatGridData(stagedTimetables)
+      }).forceRender();
+
+      // Check dirty state
+      if (window.ConfigDirtyManager) {
+        if (currentJson !== initialSnapshot) {
+          window.ConfigDirtyManager.markDirty();
+        } else {
+          window.ConfigDirtyManager.clearDirty();
+        }
+      }
+    }
+
+    // Initial sync
+    syncState();
+
+    // Register discard handler
+    if (window.ConfigDirtyManager) {
+      window.ConfigDirtyManager.registerDiscardHandler(() => {
+        stagedTimetables = JSON.parse(initialSnapshot);
+        syncState();
+      });
+    }
+
+    // Delegate row removal clicks
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.remove-row-btn');
+      if (btn) {
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
+          stagedTimetables.splice(idx, 1);
+          syncState();
+        }
+      }
+    });
+
+    // Open Add Modal
+    function showAddModal() {
+      modalError.classList.add('hidden');
+      modalSearchInput.value = '';
+      modalNameInput.value = '';
+      modalIdInput.value = '';
+      modalStatusSelect.value = 'active';
+      searchSuggestions.innerHTML = '';
+      searchSuggestions.classList.add('hidden');
+      if (addModal && typeof addModal.showModal === 'function') {
+        addModal.showModal();
+      }
+    }
+
+    if (openAddBtn) openAddBtn.addEventListener('click', showAddModal);
+    if (emptyAddBtn) emptyAddBtn.addEventListener('click', showAddModal);
+
+    function closeAddModal() {
+      if (addModal && typeof addModal.close === 'function') {
+        addModal.close();
+      }
+    }
+
+    if (closeAddBtn) closeAddBtn.addEventListener('click', closeAddModal);
+    if (cancelAddBtn) cancelAddBtn.addEventListener('click', closeAddModal);
+
+    // Update styling when transport type radio changes
+    document.querySelectorAll('input[name="modal_transport_type"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        document.querySelectorAll('.transport-type-label').forEach(lbl => {
+          lbl.classList.remove('border-sky-500', 'bg-sky-50/50', 'dark:bg-sky-950/40');
+          lbl.classList.add('border-slate-200', 'dark:border-slate-800');
+        });
+        const activeLabel = radio.closest('.transport-type-label');
+        if (activeLabel) {
+          activeLabel.classList.remove('border-slate-200', 'dark:border-slate-800');
+          activeLabel.classList.add('border-sky-500', 'bg-sky-50/50', 'dark:bg-sky-950/40');
+        }
+        // Trigger fresh search with new transport mode
+        triggerSearch(modalSearchInput.value.trim());
+      });
+    });
+
+    // Dynamic autocomplete search querying /config/timetables/search
+    let searchDebounce = null;
+    async function triggerSearch(query) {
+      const type = getSelectedTransportType();
+      if (searchSpinner) searchSpinner.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`${ingressPath}/config/timetables/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        renderSuggestions(data.results || []);
+      } catch (err) {
+        console.error('Search lookup failed:', err);
+      } finally {
+        if (searchSpinner) searchSpinner.classList.add('hidden');
+      }
+    }
+
+    function renderSuggestions(results) {
+      if (!results || results.length === 0) {
+        searchSuggestions.innerHTML = `<div class="p-3 text-xs text-slate-500 dark:text-slate-400 text-center">No matching templates found. Enter custom details below.</div>`;
+        searchSuggestions.classList.remove('hidden');
+        return;
+      }
+
+      searchSuggestions.innerHTML = '';
+      results.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer rounded-lg transition-colors flex items-center justify-between gap-3';
+        div.innerHTML = `
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.identifier)}</div>
+          </div>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">${escapeHtml(item.identifier)}</span>
+        `;
+        div.addEventListener('click', () => {
+          modalNameInput.value = item.name;
+          modalIdInput.value = item.identifier;
+          searchSuggestions.classList.add('hidden');
+        });
+        searchSuggestions.appendChild(div);
+      });
+      searchSuggestions.classList.remove('hidden');
+    }
+
+    modalSearchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        triggerSearch(modalSearchInput.value.trim());
+      }, 250);
+    });
+
+    modalSearchInput.addEventListener('focus', () => {
+      if (searchSuggestions.children.length > 0) {
+        searchSuggestions.classList.remove('hidden');
+      } else {
+        triggerSearch(modalSearchInput.value.trim());
+      }
+    });
+
+    // Confirm adding new timetable to staged list
+    if (confirmAddBtn) {
+      confirmAddBtn.addEventListener('click', () => {
+        const name = modalNameInput.value.trim();
+        const identifier = modalIdInput.value.trim();
+        const transport_type = getSelectedTransportType();
+        const status = modalStatusSelect.value;
+
+        if (!name || !identifier) {
+          modalError.classList.remove('hidden');
+          return;
+        }
+
+        stagedTimetables.push({
+          transport_type,
+          name,
+          identifier,
+          status
+        });
+
+        syncState();
+        closeAddModal();
+      });
+    }
+  });
+</script>
+{% endblock %}

@@ -50,10 +50,16 @@
 
   <section class="rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm transition-all hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-none">
     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Quick Configuration</h2>
-    <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-6">Manage your transit API keys, S3 storage buckets, live train tokens, and AI integration credentials.</p>
-    <div>
+    <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-6">Manage transit API keys, S3 storage buckets, bus routes, and rail timetables.</p>
+    <div class="flex flex-wrap items-center gap-3">
       <a href="{{ ingress_path }}/config/credentials" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
-        <span>Configure API Credentials</span>
+        <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400">key</span>
+        <span>API Credentials</span>
+        <span>&rarr;</span>
+      </a>
+      <a href="{{ ingress_path }}/config/timetables" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
+        <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400">directions_bus</span>
+        <span>Manage Timetables</span>
         <span>&rarr;</span>
       </a>
     </div>

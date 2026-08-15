@@ -214,3 +214,152 @@ def test_validate_credentials_openai_returns_models(
     assert data["valid"] is True
     assert data["models"] == ["gpt-4o-mini", "gpt-4o", "o3-mini"]
     assert data["service"] == "open_api"
+
+
+def test_get_timetables_page(client: FlaskClient) -> None:
+    """Test GET /config/timetables renders page with Grid.js and action bar."""
+    response = client.get("/config/timetables")
+    assert response.status_code == 200
+    assert b"Active Timetables" in response.data
+    assert b"gridjs" in response.data
+    assert b"Add Timetable" in response.data
+    assert b"Save Changes" in response.data
+    assert b"Discard Changes" in response.data
+    assert b"timetables_json" in response.data
+
+
+def test_post_timetables_save_and_redirect(client: FlaskClient) -> None:
+    """Test POST /config/timetables saves entries to database and redirects."""
+    import json
+    from app.db import TimetableRepository
+
+    items = [
+        {
+            "transport_type": "bus",
+            "name": "Oxford Tube",
+            "identifier": "OX-TUBE",
+            "status": "active",
+        },
+        {
+            "transport_type": "train",
+            "name": "London Paddington",
+            "identifier": "PAD",
+            "status": "inactive",
+        },
+    ]
+
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items)},
+    )
+    assert response.status_code == 303
+    assert response.headers["Location"].endswith("/config/timetables")
+
+    # Verify repository has items
+    repo = TimetableRepository()
+    saved = repo.get_all()
+    assert len(saved) == 2
+    assert saved[0]["name"] == "Oxford Tube"
+    assert saved[0]["transport_type"] == "bus"
+    assert saved[1]["name"] == "London Paddington"
+    assert saved[1]["status"] == "inactive"
+
+    # Follow redirect
+    follow = client.get("/config/timetables")
+    assert follow.status_code == 200
+    assert b"Timetables saved successfully." in follow.data
+
+
+def test_post_timetables_malformed_json(client: FlaskClient) -> None:
+    """Test POST /config/timetables handles invalid JSON gracefully."""
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": "invalid-json-string{"},
+    )
+    assert response.status_code == 303
+    follow = client.get("/config/timetables")
+    assert follow.status_code == 200
+    assert b"Failed to save timetables" in follow.data
+
+
+def test_post_timetables_non_list_json(client: FlaskClient) -> None:
+    """Test POST /config/timetables handles JSON that is not a list."""
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": '{"key": "not-a-list"}'},
+    )
+    assert response.status_code == 303
+    follow = client.get("/config/timetables")
+    assert follow.status_code == 200
+    assert b"Failed to save timetables" in follow.data
+
+
+def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
+    """Test POST /config/timetables sanitises input and skips empty names."""
+    import json
+    from app.db import TimetableRepository
+
+    items = [
+        "not-a-dict",
+        {
+            "transport_type": "plane",  # Unknown type should fallback to bus
+            "name": "Valid Route",
+            "identifier": "VR-1",
+            "status": "unknown_status",  # Should fallback to active
+        },
+        {
+            "transport_type": "bus",
+            "name": "",  # Empty name should be skipped
+            "identifier": "NO-NAME",
+        },
+    ]
+
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items)},
+    )
+    assert response.status_code == 303
+    repo = TimetableRepository()
+    saved = repo.get_all()
+    assert len(saved) == 1
+    assert saved[0]["transport_type"] == "bus"
+    assert saved[0]["name"] == "Valid Route"
+    assert saved[0]["status"] == "active"
+
+
+def test_search_timetables_endpoint(client: FlaskClient) -> None:
+    """Test GET /config/timetables/search filters results."""
+    # Test all results
+    res_all = client.get("/config/timetables/search")
+    assert res_all.status_code == 200
+    data_all = res_all.get_json()
+    assert data_all["total"] > 0
+
+    # Test bus filter
+    res_bus = client.get("/config/timetables/search?type=bus")
+    assert res_bus.status_code == 200
+    data_bus = res_bus.get_json()
+    assert all(item["transport_type"] == "bus" for item in data_bus["results"])
+
+    # Test train filter
+    res_train = client.get("/config/timetables/search?type=train")
+    assert res_train.status_code == 200
+    data_train = res_train.get_json()
+    assert all(item["transport_type"] == "train" for item in data_train["results"])
+
+    # Test search query
+    res_query = client.get("/config/timetables/search?q=Oxford")
+    assert res_query.status_code == 200
+    data_query = res_query.get_json()
+    assert any("Oxford" in item["name"] for item in data_query["results"])
+
+
+def test_timetables_ingress_header(client: FlaskClient) -> None:
+    """Test that Ingress header is respected in timetables template."""
+    response = client.get(
+        "/config/timetables",
+        headers={"X-Ingress-Path": "/api/hassio_ingress/token123"},
+    )
+    assert response.status_code == 200
+    assert b'action="/api/hassio_ingress/token123/config/timetables"' in response.data
+    assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data

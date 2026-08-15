@@ -194,3 +194,141 @@ def test_settings_repository_with_explicit_connection(
     repo.set("custom_conn_key", "custom_val")
     assert repo.get("custom_conn_key") == "custom_val"
     conn.close()
+
+
+def test_timetable_repository_crud(app: Flask) -> None:
+    """Test TimetableRepository add, get, update, delete, and get_all."""
+    from app.db import TimetableRepository
+
+    with app.app_context():
+        repo = TimetableRepository()
+
+        # Initial get_all should be empty
+        assert repo.get_all() == []
+        assert repo.get(999) is None
+
+        # Add timetable items
+        bus_id = repo.add("bus", "Oxford Tube", "OX-TUBE", "active")
+        assert bus_id > 0
+
+        train_id = repo.add("train", "London Paddington", "PAD", "inactive")
+        assert train_id > 0
+
+        # Get single timetable
+        item = repo.get(bus_id)
+        assert item is not None
+        assert item["id"] == bus_id
+        assert item["transport_type"] == "bus"
+        assert item["name"] == "Oxford Tube"
+        assert item["identifier"] == "OX-TUBE"
+        assert item["status"] == "active"
+        assert "created_at" in item
+
+        # Update timetable
+        updated = repo.update(
+            bus_id, "bus", "Oxford Tube Express", "OX-TUBE-EXP", "active"
+        )
+        assert updated is True
+        item_updated = repo.get(bus_id)
+        assert item_updated["name"] == "Oxford Tube Express"
+        assert item_updated["identifier"] == "OX-TUBE-EXP"
+
+        # Update nonexistent timetable
+        assert repo.update(888, "bus", "Fake", "F1", "active") is False
+
+        # Get all timetables
+        all_items = repo.get_all()
+        assert len(all_items) == 2
+        assert all_items[0]["id"] == bus_id
+        assert all_items[1]["id"] == train_id
+
+        # Delete timetable
+        assert repo.delete(bus_id) is True
+        assert repo.get(bus_id) is None
+        assert len(repo.get_all()) == 1
+        assert repo.delete(999) is False
+
+
+def test_timetable_repository_replace_all(app: Flask) -> None:
+    """Test TimetableRepository replace_all replaces dataset atomically."""
+    from app.db import TimetableRepository
+
+    with app.app_context():
+        repo = TimetableRepository()
+
+        repo.add("bus", "Old Bus", "OLD-1", "active")
+        assert len(repo.get_all()) == 1
+
+        new_dataset = [
+            {
+                "transport_type": "bus",
+                "name": "Route 1",
+                "identifier": "OX-01",
+                "status": "active",
+            },
+            {
+                "transport_type": "train",
+                "name": "Oxford Station",
+                "identifier": "OXF",
+                "status": "active",
+            },
+            {
+                "transport_type": "train",
+                "name": "Reading",
+                "identifier": "RDG",
+                "status": "inactive",
+            },
+        ]
+
+        repo.replace_all(new_dataset)
+        items = repo.get_all()
+        assert len(items) == 3
+        assert items[0]["name"] == "Route 1"
+        assert items[1]["identifier"] == "OXF"
+        assert items[2]["status"] == "inactive"
+
+        # Replace with empty list
+        repo.replace_all([])
+        assert repo.get_all() == []
+
+
+def test_timetable_repository_explicit_connection(temp_db_path: str) -> None:
+    """Test TimetableRepository with manually supplied connection."""
+    from app.db import TimetableRepository
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS timetables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transport_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                identifier TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+    repo = TimetableRepository(connection=conn)
+    tid = repo.add("bus", "Custom Route", "CR-1")
+    item = repo.get(tid)
+    assert item["name"] == "Custom Route"
+    conn.close()
+
+
+def test_db_module_exports() -> None:
+    """Test that app.db exports SettingsRepository, TimetableRepository, and core helpers."""
+    from app.db.settings import SettingsRepository as DirectSettingsRepo
+    from app.db.timetables import TimetableRepository as DirectTimetableRepo
+    from app.db.core import get_db as DirectGetDb
+    from app.db import (
+        SettingsRepository as DbSettingsRepo,
+        TimetableRepository as DbTimetableRepo,
+        get_db as DbGetDb,
+    )
+
+    assert DirectSettingsRepo is DbSettingsRepo
+    assert DirectTimetableRepo is DbTimetableRepo
+    assert DirectGetDb is DbGetDb

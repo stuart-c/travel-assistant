@@ -5,11 +5,21 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 ## Features
 
 - **Ingress Dashboard**: Directly accessible from the Home Assistant sidebar.
-- **SQLite Storage**: Persistent database storage for application settings, credentials, and cache.
-- **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern.
+- **SQLite Storage**: Persistent database storage for application settings, credentials, timetable entries, and cache.
+- **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, and unsaved changes protection.
 - **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, and Open API credentials.
-- **RESTful API**: Endpoints for service status, ping checks, and transport insights.
+- **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing bus routes and rail station departure feeds with client-side staging, search autocomplete, and atomic persistence.
+- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and transport insights.
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
+
+## Timetable Architecture & Next Stages
+
+The timetable configuration subsystem operates across incremental stages:
+1. **Stage 1 (Current)**: Web UI configuration page (`/config/timetables`) featuring a CDN-hosted Grid.js table, an accessible **Add Timetable** modal with asynchronous search autocomplete (`/api/timetables/search`), client-side staging, and atomic persistence to SQLite on **Save Changes**.
+2. **Stage 2 (Upcoming)**: Automated background synchronization workers connecting configured timetable entries to live datasets:
+   - **Bus feeds**: Integration with Bus Open Data Service (BODS) for TransXChange / GTFS-RT timetable downloads and SIRI-VM vehicle location streaming.
+   - **Rail feeds**: Ingestion of Darwin CIF / Timetable Archives from configured S3 storage and live Darwin Web Services (LDBWS) departures.
+3. **Stage 3 (Future)**: Real-time route planning, multi-modal interchange guidance, disruption alerts, and Home Assistant sensor entity publishing.
 
 ## Configuration
 
@@ -34,3 +44,4 @@ This add-on supports Home Assistant Ingress. When started, click **Open Web UI**
 ## Support
 
 For issues, feature requests, or questions, please visit the [GitHub Repository](https://github.com/stuart-c/travel-assistant).
+

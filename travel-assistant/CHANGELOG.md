@@ -16,15 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI chat model dropdown (`open_api_model`) auto-populated from discovered endpoint models on credential validation, with chat model filtering and standard fallback choices.
 - External OpenAI model pricing documentation link on the credentials configuration page next to the model selection dropdown.
 - Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.
-- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, and configuration views with 100% code coverage.
+- Timetables configuration page (`/config/timetables`) with CDN-hosted Grid.js table supporting client-side search, sorting, pagination, and deletion.
+- Search and lookup endpoint (`GET /api/timetables/search` and `/config/timetables/search`) for bus routes and rail stations with autocomplete in the Add Timetable modal.
+- `TimetableRepository` in SQLite for managing persisted timetable schedules.
+- Unified left sidebar configuration layout (`config_base.html`) across `/config/*` sections with collapsible mobile drawer.
+- Unsaved changes protection manager (`ConfigDirtyManager`) intercepting page reloads, tab navigation, and breadcrumbs with warning prompts.
+- Standard action bar with dynamic **Save Changes** and **Discard Changes** across all configuration sections.
+- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, and configuration views with 100% code coverage.
+
+
 
 ### Changed
+- Refactored `app/db` into a modular package with per-table repository modules (`app/db/settings.py` and `app/db/timetables.py`) and connection lifecycle management in `app/db/core.py`, while maintaining top-level `app.db` exports.
 - Migrated frontend styling from custom vanilla CSS to Tailwind CSS v4 via Browser CDN.
 - Modernised UI with responsive layout, automated dark mode support via `prefers-color-scheme`, and pulsing status animations.
 - Removed legacy `style.css` stylesheet.
-
-### Fixed
-- Fixed Bus Open Data Service (BODS) API key validation by querying the BODS REST endpoint directly, avoiding schema validation failures on null end dates in `bods-client`.
 
 ## [0.1.0] - 2026-08-15
 
