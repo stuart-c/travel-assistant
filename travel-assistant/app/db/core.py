@@ -22,7 +22,57 @@ CREATE TABLE IF NOT EXISTS timetables (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS sync_metadata (
+    table_name TEXT PRIMARY KEY,
+    last_updated_at TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'idle',
+    error_message TEXT,
+    records_count INTEGER DEFAULT 0,
+    duration_seconds REAL DEFAULT 0.0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bus_routes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    route_number TEXT NOT NULL,
+    operator_name TEXT,
+    operator_code TEXT,
+    origin TEXT,
+    destination TEXT,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bus_stops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    atco_code TEXT UNIQUE NOT NULL,
+    naptan_code TEXT,
+    name TEXT NOT NULL,
+    indicator TEXT,
+    locality TEXT,
+    latitude REAL,
+    longitude REAL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crs_code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    tiploc_code TEXT,
+    latitude REAL,
+    longitude REAL,
+    operator TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_bus_routes_number ON bus_routes(route_number);
+CREATE INDEX IF NOT EXISTS idx_bus_stops_atco ON bus_stops(atco_code);
+CREATE INDEX IF NOT EXISTS idx_stations_crs ON stations(crs_code);
 """
+
+SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations")
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -148,6 +198,36 @@ def get_db_stats(
             """)
         table_rows = cursor.fetchall()
 
+        # Retrieve sync metadata if table exists
+        sync_meta_map: Dict[str, Dict[str, Any]] = {}
+        has_sync_meta = any(
+            (row[0] if isinstance(row, (tuple, list)) else row["name"])
+            == "sync_metadata"
+            for row in table_rows
+        )
+        if has_sync_meta:
+            meta_cursor = conn.execute("""
+                SELECT table_name, last_updated_at, status, error_message,
+                       records_count, duration_seconds
+                FROM sync_metadata
+                """)
+            for m_row in meta_cursor.fetchall():
+                sync_meta_map[m_row["table_name"]] = {
+                    "last_updated_at": (
+                        m_row["last_updated_at"].isoformat()
+                        if hasattr(m_row["last_updated_at"], "isoformat")
+                        else (
+                            str(m_row["last_updated_at"])
+                            if m_row["last_updated_at"]
+                            else None
+                        )
+                    ),
+                    "status": m_row["status"],
+                    "error_message": m_row["error_message"],
+                    "records_count": m_row["records_count"] or 0,
+                    "duration_seconds": m_row["duration_seconds"] or 0.0,
+                }
+
         tables: List[Dict[str, Any]] = []
         total_rows = 0
 
@@ -167,6 +247,33 @@ def get_db_stats(
                 for col in col_rows
             ]
 
+            # Determine last update timestamp and sync status
+            is_syncable = table_name in SYNCABLE_TABLE_NAMES
+            last_updated_at = None
+            sync_status = "idle" if is_syncable else "managed"
+            error_message = None
+
+            if table_name in sync_meta_map:
+                meta = sync_meta_map[table_name]
+                last_updated_at = meta.get("last_updated_at")
+                sync_status = meta.get("status", "idle")
+                error_message = meta.get("error_message")
+            elif "updated_at" in columns:
+                try:
+                    ts_cursor = conn.execute(
+                        f'SELECT MAX(updated_at) FROM "{table_name}"'
+                    )
+                    ts_row = ts_cursor.fetchone()
+                    if ts_row and ts_row[0]:
+                        raw_ts = ts_row[0]
+                        last_updated_at = (
+                            raw_ts.isoformat()
+                            if hasattr(raw_ts, "isoformat")
+                            else str(raw_ts)
+                        )
+                except sqlite3.OperationalError:
+                    pass
+
             total_rows += row_count
             tables.append(
                 {
@@ -174,6 +281,10 @@ def get_db_stats(
                     "row_count": row_count,
                     "column_count": len(columns),
                     "columns": columns,
+                    "syncable": is_syncable,
+                    "last_updated_at": last_updated_at,
+                    "sync_status": sync_status,
+                    "error_message": error_message,
                 }
             )
 

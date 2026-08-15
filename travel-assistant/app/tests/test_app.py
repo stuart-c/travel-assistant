@@ -63,3 +63,24 @@ def test_api_timetables_search_endpoint(client: FlaskClient) -> None:
     data = response.get_json()
     assert "results" in data
     assert len(data["results"]) > 0
+
+
+def test_api_sync_endpoints(client: FlaskClient) -> None:
+    """Test /api/sync and /api/sync/<table_name> endpoints."""
+    # Specific table
+    res = client.post("/api/sync/bus_routes")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["table"] == "bus_routes"
+
+    # All tables
+    res_all = client.post("/api/sync")
+    assert res_all.status_code == 200
+    data_all = res_all.get_json()
+    assert "tables" in data_all
+
+    # Invalid table
+    res_bad = client.post("/api/sync/invalid_table_name")
+    assert res_bad.status_code == 400
+    data_bad = res_bad.get_json()
+    assert data_bad["status"] == "error"

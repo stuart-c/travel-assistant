@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Database schema tables for transit datasets: `bus_routes`, `bus_stops`, `stations`, and `sync_metadata`.
+- Repositories in `app.db` (`BusRouteRepository`, `BusStopRepository`, `StationRepository`, and `SyncMetadataRepository`) with atomic bulk upserting, indexing, and lookup operations.
+- Background synchronisation daemon (`TransitBackgroundWorker`) running periodic hourly checks to automatically update transit datasets older than 24 hours (1 day).
+- Transit synchronisation provider engine (`app.sync`) integrating with Bus Open Data Service (BODS API) and Train S3 / Darwin credentials with graceful skipping when unconfigured.
+- Interactive Database configuration page (`/config/db`) enhancements:
+  - Added "Last Updated" timestamp column with status badges (`Synced`, `Syncing...`, `Unconfigured`, `Error`, `Managed`).
+  - Added on-demand refresh trigger buttons with animated spinning states and toast notifications per table.
+  - Added "Sync All Datasets" action button in the Database Storage Overview header.
+- RESTful API endpoints `POST /api/sync/<table_name>` and `POST /api/sync` for programmatic dataset update triggering.
 - Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
+
 - Settings navigation cog button in the web UI header.
 - Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.
 - API credentials management page (`/config/credentials`) supporting Bus API keys, Train S3 bucket details, Train live credentials, and Open API credentials.

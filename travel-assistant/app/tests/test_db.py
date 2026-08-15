@@ -2,8 +2,10 @@
 
 import os
 import sqlite3
+from unittest.mock import MagicMock
 import pytest
 from flask import Flask, g
+
 
 from app.db import (
     get_db_path,
@@ -11,7 +13,12 @@ from app.db import (
     close_db,
     init_db,
     init_app,
+    get_db_stats,
     SettingsRepository,
+    SyncMetadataRepository,
+    BusRouteRepository,
+    BusStopRepository,
+    StationRepository,
 )
 
 
@@ -376,7 +383,7 @@ def test_get_db_stats_in_app_context(app: Flask) -> None:
         assert (
             "KB" in stats["file_size_formatted"] or "B" in stats["file_size_formatted"]
         )
-        assert stats["total_tables"] == 2
+        assert stats["total_tables"] == 6
         assert stats["total_rows"] == 3
 
         table_dict = {t["name"]: t for t in stats["tables"]}
@@ -473,4 +480,353 @@ def test_get_db_stats_filters_internal_tables(temp_db_path: str) -> None:
     assert "auto_tbl" in table_names
     assert "sqlite_sequence" not in table_names
     assert stats["total_tables"] == 1
+    conn.close()
+
+
+def test_sync_metadata_repository_lifecycle(app: Flask) -> None:
+    """Test SyncMetadataRepository CRUD and state recording."""
+    with app.app_context():
+        repo = SyncMetadataRepository()
+        assert repo.get("bus_routes") is None
+        assert repo.get_all() == {}
+
+        # Record start
+        repo.record_sync_start("bus_routes")
+        meta = repo.get("bus_routes")
+        assert meta is not None
+        assert meta["status"] == "syncing"
+        assert meta["records_count"] == 0
+
+        # Record success
+        repo.record_sync_success("bus_routes", 42, duration_seconds=1.23)
+        meta = repo.get("bus_routes")
+        assert meta["status"] == "success"
+        assert meta["records_count"] == 42
+        assert meta["duration_seconds"] == 1.23
+        assert meta["last_updated_at"] is not None
+        assert meta["error_message"] is None
+
+        # Record skipped
+        repo.record_sync_skipped("bus_stops", "API key missing")
+        meta_stops = repo.get("bus_stops")
+        assert meta_stops["status"] == "skipped_no_credentials"
+        assert meta_stops["error_message"] == "API key missing"
+
+        # Record error
+        repo.record_sync_error("stations", "Network timeout", duration_seconds=0.5)
+        meta_stations = repo.get("stations")
+        assert meta_stations["status"] == "error"
+        assert meta_stations["error_message"] == "Network timeout"
+        assert meta_stations["duration_seconds"] == 0.5
+
+        all_meta = repo.get_all()
+        assert len(all_meta) == 3
+        assert "bus_routes" in all_meta
+        assert "bus_stops" in all_meta
+        assert "stations" in all_meta
+
+
+def test_sync_metadata_is_due_for_update(app: Flask) -> None:
+    """Test is_due_for_update threshold calculations."""
+    with app.app_context():
+        repo = SyncMetadataRepository()
+        # Never synced is due
+        assert repo.is_due_for_update("bus_routes") is True
+
+        # Synced just now is not due
+        repo.record_sync_success("bus_routes", 10)
+        assert repo.is_due_for_update("bus_routes", max_age_seconds=3600) is False
+
+        # If updated over 10 seconds ago and max_age_seconds=5
+        conn = get_db()
+        with conn:
+            conn.execute("""
+                UPDATE sync_metadata
+                SET last_updated_at = datetime('now', '-25 hours')
+                WHERE table_name = 'bus_routes'
+                """)
+        assert repo.is_due_for_update("bus_routes", max_age_seconds=86400) is True
+
+        # Test with invalid / weird timestamp fallback
+        with conn:
+            conn.execute("""
+                UPDATE sync_metadata
+                SET last_updated_at = 12345
+                WHERE table_name = 'bus_routes'
+                """)
+        assert repo.is_due_for_update("bus_routes") is True
+
+
+def test_bus_route_repository(app: Flask) -> None:
+    """Test BusRouteRepository querying, bulk upsert, count, and clearing."""
+    with app.app_context():
+        repo = BusRouteRepository()
+        assert repo.count() == 0
+        assert repo.get_all() == []
+
+        # Empty upsert
+        assert repo.bulk_upsert([]) == 0
+
+        # Upsert routes
+        routes = [
+            {
+                "route_number": "1",
+                "operator_name": "Oxford Bus Company",
+                "operator_code": "OBC",
+                "origin": "Blackbird Leys",
+                "destination": "City Centre",
+                "description": "City service",
+            },
+            {
+                "route_number": "5",
+                "operator_name": "Oxford Bus Company",
+                "operator_code": "OBC",
+                "origin": "Blackbird Leys",
+                "destination": "Rail Station",
+                "description": "Station link",
+            },
+        ]
+        inserted = repo.bulk_upsert(routes)
+        assert inserted == 2
+        assert repo.count() == 2
+
+        all_routes = repo.get_all()
+        assert len(all_routes) == 2
+        assert all_routes[0]["route_number"] == "1"
+
+        # Search by number
+        match = repo.get_by_number("5")
+        assert len(match) == 1
+        assert match[0]["destination"] == "Rail Station"
+
+        repo.clear()
+        assert repo.count() == 0
+
+
+def test_bus_stop_repository(app: Flask) -> None:
+    """Test BusStopRepository querying, bulk upsert, count, and clearing."""
+    with app.app_context():
+        repo = BusStopRepository()
+        assert repo.count() == 0
+        assert repo.get_all() == []
+
+        assert repo.bulk_upsert([]) == 0
+
+        stops = [
+            {
+                "atco_code": "340000001",
+                "naptan_code": "oxf123",
+                "name": "High Street T1",
+                "indicator": "Stop T1",
+                "locality": "Oxford",
+                "latitude": 51.752,
+                "longitude": -1.257,
+            },
+            {
+                "atco_code": "340000002",
+                "naptan_code": "oxf124",
+                "name": "Broad Street B1",
+                "indicator": "Stop B1",
+                "locality": "Oxford",
+                "latitude": 51.754,
+                "longitude": -1.256,
+            },
+        ]
+        inserted = repo.bulk_upsert(stops)
+        assert inserted == 2
+        assert repo.count() == 2
+
+        all_stops = repo.get_all()
+        assert len(all_stops) == 2
+
+        stop = repo.get_by_atco("340000001")
+        assert stop is not None
+        assert stop["name"] == "High Street T1"
+
+        # Nonexistent stop
+        assert repo.get_by_atco("999999999") is None
+
+        # Re-upsert with conflict update
+        stops[0]["name"] = "High Street T1 (Updated)"
+        repo.bulk_upsert([stops[0]])
+        assert repo.count() == 2
+        assert repo.get_by_atco("340000001")["name"] == "High Street T1 (Updated)"
+
+        repo.clear()
+        assert repo.count() == 0
+
+
+def test_station_repository(app: Flask) -> None:
+    """Test StationRepository querying, bulk upsert, count, and clearing."""
+    with app.app_context():
+        repo = StationRepository()
+        assert repo.count() == 0
+        assert repo.get_all() == []
+
+        assert repo.bulk_upsert([]) == 0
+
+        stations = [
+            {
+                "crs_code": "OXF",
+                "name": "Oxford",
+                "tiploc_code": "OXFD",
+                "latitude": 51.7534,
+                "longitude": -1.2700,
+                "operator": "GWR",
+            },
+            {
+                "crs_code": "PAD",
+                "name": "London Paddington",
+                "tiploc_code": "PADTON",
+                "latitude": 51.5154,
+                "longitude": -0.1755,
+                "operator": "Network Rail",
+            },
+        ]
+        inserted = repo.bulk_upsert(stations)
+        assert inserted == 2
+        assert repo.count() == 2
+
+        all_st = repo.get_all()
+        assert len(all_st) == 2
+
+        st = repo.get_by_crs("oxf")
+        assert st is not None
+        assert st["name"] == "Oxford"
+
+        assert repo.get_by_crs("XYZ") is None
+
+        # Conflict update
+        stations[0]["name"] = "Oxford Central"
+        repo.bulk_upsert([stations[0]])
+        assert repo.count() == 2
+        assert repo.get_by_crs("OXF")["name"] == "Oxford Central"
+
+        repo.clear()
+        assert repo.count() == 0
+
+
+def test_get_db_stats_with_sync_metadata(app: Flask) -> None:
+    """Test get_db_stats correctly surfaces sync metadata and syncable flags."""
+    with app.app_context():
+        sync_repo = SyncMetadataRepository()
+        sync_repo.record_sync_success("bus_routes", 15, duration_seconds=0.8)
+        sync_repo.record_sync_skipped("bus_stops", "No key")
+
+        stats = get_db_stats()
+        tables_by_name = {t["name"]: t for t in stats["tables"]}
+
+        assert "bus_routes" in tables_by_name
+        assert tables_by_name["bus_routes"]["syncable"] is True
+        assert tables_by_name["bus_routes"]["sync_status"] == "success"
+        assert tables_by_name["bus_routes"]["last_updated_at"] is not None
+
+        assert "bus_stops" in tables_by_name
+        assert tables_by_name["bus_stops"]["syncable"] is True
+        assert tables_by_name["bus_stops"]["sync_status"] == "skipped_no_credentials"
+        assert tables_by_name["bus_stops"]["error_message"] == "No key"
+
+        assert "stations" in tables_by_name
+        assert tables_by_name["stations"]["syncable"] is True
+        assert tables_by_name["stations"]["sync_status"] == "idle"
+
+        assert "settings" in tables_by_name
+        assert tables_by_name["settings"]["syncable"] is False
+
+
+def test_transit_repositories_explicit_connection(temp_db_path: str) -> None:
+    """Test passing explicit sqlite3 connection to transit repositories."""
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    init_db_conn = sqlite3.connect(temp_db_path)
+    from app.db import DEFAULT_SCHEMA
+
+    with init_db_conn:
+        init_db_conn.executescript(DEFAULT_SCHEMA)
+    init_db_conn.close()
+
+    sync_repo = SyncMetadataRepository(connection=conn)
+    route_repo = BusRouteRepository(connection=conn)
+    stop_repo = BusStopRepository(connection=conn)
+    station_repo = StationRepository(connection=conn)
+
+    assert sync_repo.conn is conn
+    assert route_repo.conn is conn
+    assert stop_repo.conn is conn
+    assert station_repo.conn is conn
+
+    sync_repo.record_sync_success("bus_routes", 1)
+    assert sync_repo.get("bus_routes")["records_count"] == 1
+
+    route_repo.bulk_upsert([{"route_number": "10"}])
+    assert route_repo.count() == 1
+
+    stop_repo.bulk_upsert([{"atco_code": "STOP1", "name": "Stop One"}])
+    assert stop_repo.count() == 1
+
+    station_repo.bulk_upsert([{"crs_code": "STN1", "name": "Station One"}])
+    assert station_repo.count() == 1
+
+    conn.close()
+
+
+def test_sync_metadata_datetime_object_parsing(app: Flask) -> None:
+    """Test is_due_for_update when last_updated_at is a datetime object or timezone naive."""
+    import datetime
+
+    with app.app_context():
+        # Mock connection to return datetime objects
+        mock_conn = MagicMock()
+
+        mock_cursor = MagicMock()
+        dt_naive = datetime.datetime(2026, 1, 1, 12, 0, 0)
+        mock_cursor.fetchone.return_value = {"last_updated_at": dt_naive}
+        mock_conn.cursor.return_value = mock_cursor
+
+        repo_mock = SyncMetadataRepository(connection=mock_conn)
+        assert repo_mock.is_due_for_update("bus_routes", max_age_seconds=3600) is True
+
+        dt_recent = datetime.datetime.now(datetime.timezone.utc)
+        mock_cursor.fetchone.return_value = {"last_updated_at": dt_recent}
+        assert repo_mock.is_due_for_update("bus_routes", max_age_seconds=3600) is False
+
+        # String datetime standard SQLite format
+        mock_cursor.fetchone.return_value = {"last_updated_at": "2026-08-15 14:00:00"}
+        assert repo_mock.is_due_for_update("bus_routes", max_age_seconds=86400) is False
+
+        # Unparseable string fallback
+        mock_cursor.fetchone.return_value = {
+            "last_updated_at": "invalid-datetime-string"
+        }
+        assert repo_mock.is_due_for_update("bus_routes") is True
+
+        # Non string / non datetime fallback
+        mock_cursor.fetchone.return_value = {"last_updated_at": 123456789}
+        assert repo_mock.is_due_for_update("bus_routes") is True
+
+
+def test_get_db_stats_operational_error_handling(temp_db_path: str) -> None:
+    """Test get_db_stats gracefully handles operational error during updated_at inspection."""
+    conn = sqlite3.connect(temp_db_path)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        conn.execute("CREATE TABLE test_op_err (id INT, updated_at TEXT)")
+        conn.execute("INSERT INTO test_op_err VALUES (1, '2026-08-15')")
+
+    class FailingExecuteWrapper:
+        def __init__(self, real_conn):
+            self._real = real_conn
+
+        def cursor(self):
+            return self._real.cursor()
+
+        def execute(self, query, *args):
+            if "SELECT MAX(updated_at)" in query:
+                raise sqlite3.OperationalError("Simulated query failure")
+            return self._real.execute(query, *args)
+
+    wrapped = FailingExecuteWrapper(conn)
+    stats = get_db_stats(connection=wrapped)  # type: ignore
+    tbl = next(t for t in stats["tables"] if t["name"] == "test_op_err")
+    assert tbl["last_updated_at"] is None
     conn.close()

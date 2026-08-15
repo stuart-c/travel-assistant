@@ -5,7 +5,7 @@
 {% block config_title %}Database{% endblock %}
 
 {% block subtitle %}
-<p class="text-base text-slate-600 dark:text-slate-400">View SQLite storage metrics and per-table row counts.</p>
+<p class="text-base text-slate-600 dark:text-slate-400">View SQLite storage metrics, per-table record counts, and transit dataset synchronisation status.</p>
 {% endblock %}
 
 {% block config_content %}
@@ -27,19 +27,33 @@
         </p>
       </div>
 
-      <div>
+      <div class="flex items-center gap-2.5">
+        <button 
+          type="button" 
+          id="sync-all-btn" 
+          onclick="triggerSync('all')" 
+          class="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors shadow-sm cursor-pointer" 
+          title="Synchronise all transit tables now"
+        >
+          <span class="material-symbols-outlined text-sm leading-none" id="sync-all-icon" aria-hidden="true">sync</span>
+          <span id="sync-all-text">Sync All Datasets</span>
+        </button>
+
         <button 
           type="button" 
           id="refresh-stats-btn" 
           onclick="window.location.reload()" 
           class="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm cursor-pointer" 
-          title="Refresh database statistics"
+          title="Refresh database metrics"
         >
           <span class="material-symbols-outlined text-sm leading-none" aria-hidden="true">refresh</span>
           <span>Refresh</span>
         </button>
       </div>
     </div>
+
+    <!-- Notification Toast Box -->
+    <div id="sync-toast-box" class="hidden mb-6 p-4 rounded-xl text-xs font-medium border transition-all"></div>
 
     <!-- Metric Summary Grid -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -87,13 +101,13 @@
     </div>
   </section>
 
-  <!-- Table Breakdown -->
+  <!-- Table Breakdown & Synchronisation Controls -->
   <section class="rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
     <div class="p-6 border-b border-slate-200/80 dark:border-slate-800">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 class="text-base font-semibold text-slate-900 dark:text-white">Database Tables</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Summary of tables and record counts.</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Summary of schema tables, record counts, and last background update timestamps.</p>
         </div>
         <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
           {{ stats.tables|length }} {% if stats.tables|length == 1 %}table{% else %}tables{% endif %}
@@ -108,30 +122,100 @@
           <tr class="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <th scope="col" class="py-3.5 px-6">Table Name</th>
             <th scope="col" class="py-3.5 px-6">Columns</th>
+            <th scope="col" class="py-3.5 px-6">Last Updated</th>
             <th scope="col" class="py-3.5 px-6 text-right">Row Count</th>
+            <th scope="col" class="py-3.5 px-6 text-right">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-200/70 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
           {% for tbl in stats.tables %}
           <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors" id="table-row-{{ tbl.name }}">
-            <td class="py-4 px-6 font-medium text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-base text-slate-400 dark:text-slate-500">table_rows</span>
-              <code class="font-mono text-sm font-semibold">{{ tbl.name }}</code>
+            <td class="py-4 px-6 font-medium text-slate-900 dark:text-white">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-base text-slate-400 dark:text-slate-500">
+                  {% if tbl.name == 'bus_routes' %}alt_route
+                  {% elif tbl.name == 'bus_stops' %}directions_bus
+                  {% elif tbl.name == 'stations' %}train
+                  {% elif tbl.name == 'sync_metadata' %}sync
+                  {% elif tbl.name == 'timetables' %}schedule
+                  {% elif tbl.name == 'settings' %}tune
+                  {% else %}table_rows{% endif %}
+                </span>
+                <code class="font-mono text-sm font-semibold">{{ tbl.name }}</code>
+              </div>
             </td>
+
             <td class="py-4 px-6 text-xs text-slate-500 dark:text-slate-400">
               <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                 {{ tbl.column_count }} cols
               </span>
               {% if tbl.columns %}
-              <span class="ml-2 text-slate-400 dark:text-slate-500 hidden sm:inline truncate max-w-xs" title="{{ tbl.columns|join(', ') }}">
+              <span class="ml-2 text-slate-400 dark:text-slate-500 hidden lg:inline truncate max-w-xs" title="{{ tbl.columns|join(', ') }}">
                 ({{ tbl.columns|join(', ') }})
               </span>
               {% endif %}
             </td>
+
+            <td class="py-4 px-6 text-xs">
+              <div class="space-y-1" id="last-updated-container-{{ tbl.name }}">
+                {% if tbl.last_updated_at %}
+                  <div class="font-medium text-slate-700 dark:text-slate-300" id="last-updated-ts-{{ tbl.name }}">
+                    {{ tbl.last_updated_at }}
+                  </div>
+                {% else %}
+                  <div class="text-slate-400 dark:text-slate-500 italic" id="last-updated-ts-{{ tbl.name }}">
+                    Never / Not updated
+                  </div>
+                {% endif %}
+
+                <!-- Status Pill Badge -->
+                <div id="sync-badge-{{ tbl.name }}">
+                  {% if tbl.sync_status == 'success' %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Synced
+                    </span>
+                  {% elif tbl.sync_status == 'syncing' %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Syncing...
+                    </span>
+                  {% elif tbl.sync_status == 'skipped_no_credentials' %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" title="{{ tbl.error_message or 'Credentials unconfigured' }}">
+                      <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Unconfigured
+                    </span>
+                  {% elif tbl.sync_status == 'error' %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300" title="{{ tbl.error_message or 'Sync error' }}">
+                      <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Error
+                    </span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                      <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Managed
+                    </span>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+
             <td class="py-4 px-6 text-right font-semibold text-slate-900 dark:text-white">
-              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/60 dark:border-sky-800/40">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/60 dark:border-sky-800/40" id="row-count-{{ tbl.name }}">
                 {{ "{:,}".format(tbl.row_count) }}
               </span>
+            </td>
+
+            <td class="py-4 px-6 text-right">
+              {% if tbl.syncable %}
+              <button 
+                type="button" 
+                id="sync-btn-{{ tbl.name }}" 
+                onclick="triggerSync('{{ tbl.name }}')" 
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-sky-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-sky-400 transition-colors shadow-xs cursor-pointer"
+                title="Trigger immediate refresh for {{ tbl.name }}"
+              >
+                <span class="material-symbols-outlined text-sm leading-none" id="sync-icon-{{ tbl.name }}">sync</span>
+                <span>Refresh</span>
+              </button>
+              {% else %}
+              <span class="text-xs text-slate-400 dark:text-slate-500 italic">Static</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -145,6 +229,133 @@
     {% endif %}
   </section>
 </div>
+
+<script>
+  /**
+   * Trigger on-demand synchronisation for a transit table or all tables.
+   */
+  async function triggerSync(tableName) {
+    const isAll = tableName === 'all';
+    const syncAllBtn = document.getElementById('sync-all-btn');
+    const syncAllIcon = document.getElementById('sync-all-icon');
+    const syncAllText = document.getElementById('sync-all-text');
+    const toastBox = document.getElementById('sync-toast-box');
+
+    let btn = isAll ? syncAllBtn : document.getElementById(`sync-btn-${tableName}`);
+    let icon = isAll ? syncAllIcon : document.getElementById(`sync-icon-${tableName}`);
+
+    // Update UI button to active spinning state
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add('animate-spin');
+    if (isAll && syncAllText) syncAllText.textContent = 'Syncing All...';
+
+    // Show syncing badge if single table
+    if (!isAll) {
+      const badge = document.getElementById(`sync-badge-${tableName}`);
+      if (badge) {
+        badge.innerHTML = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Syncing...</span>';
+      }
+    }
+
+    try {
+      const ingressPath = "{{ ingress_path }}";
+      const targetUrl = `${ingressPath}/config/db/sync/${tableName}`;
+
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      // Show toast notification
+      if (toastBox) {
+        toastBox.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-900', 'border-emerald-200', 'bg-amber-50', 'text-amber-900', 'border-amber-200', 'bg-rose-50', 'text-rose-900', 'border-rose-200', 'dark:bg-emerald-950/60', 'dark:text-emerald-200', 'dark:bg-amber-950/60', 'dark:text-amber-200', 'dark:bg-rose-950/60', 'dark:text-rose-200');
+
+        if (isAll) {
+          toastBox.classList.add('bg-emerald-50', 'text-emerald-900', 'border-emerald-200', 'dark:bg-emerald-950/60', 'dark:text-emerald-200');
+          toastBox.innerHTML = `<strong>Synchronisation complete:</strong> Updated all transit datasets.`;
+        } else if (data.status === 'success') {
+          toastBox.classList.add('bg-emerald-50', 'text-emerald-900', 'border-emerald-200', 'dark:bg-emerald-950/60', 'dark:text-emerald-200');
+          toastBox.innerHTML = `<strong>Success (${tableName}):</strong> ${data.message || 'Synchronisation finished successfully.'}`;
+        } else if (data.status === 'skipped_no_credentials') {
+          toastBox.classList.add('bg-amber-50', 'text-amber-900', 'border-amber-200', 'dark:bg-amber-950/60', 'dark:text-amber-200');
+          toastBox.innerHTML = `<strong>Notice (${tableName}):</strong> ${data.message || 'Skipped because API credentials are not configured.'}`;
+        } else {
+          toastBox.classList.add('bg-rose-50', 'text-rose-900', 'border-rose-200', 'dark:bg-rose-950/60', 'dark:text-rose-200');
+          toastBox.innerHTML = `<strong>Error (${tableName}):</strong> ${data.message || 'Failed to synchronise dataset.'}`;
+        }
+      }
+
+      // Update table stats dynamically if returned in response
+      if (data.stats) {
+        updateStatsUI(data.stats);
+      }
+    } catch (err) {
+      if (toastBox) {
+        toastBox.classList.remove('hidden');
+        toastBox.classList.add('bg-rose-50', 'text-rose-900', 'border-rose-200', 'dark:bg-rose-950/60', 'dark:text-rose-200');
+        toastBox.innerHTML = `<strong>Request Failed:</strong> ${err.message || 'Could not trigger synchronisation.'}`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+      if (icon) icon.classList.remove('animate-spin');
+      if (isAll && syncAllText) syncAllText.textContent = 'Sync All Datasets';
+    }
+  }
+
+  /**
+   * Update table rows, metrics, and badges dynamically without page refresh.
+   */
+  function updateStatsUI(stats) {
+    if (!stats) return;
+
+    if (stats.file_size_formatted) {
+      const sizeEl = document.getElementById('stat-db-size');
+      if (sizeEl) sizeEl.textContent = stats.file_size_formatted;
+    }
+    if (stats.total_rows !== undefined) {
+      const totalEl = document.getElementById('stat-total-rows');
+      if (totalEl) totalEl.textContent = Number(stats.total_rows).toLocaleString();
+    }
+
+    if (Array.isArray(stats.tables)) {
+      stats.tables.forEach(tbl => {
+        // Update row count
+        const rowCountEl = document.getElementById(`row-count-${tbl.name}`);
+        if (rowCountEl) {
+          rowCountEl.textContent = Number(tbl.row_count).toLocaleString();
+        }
+
+        // Update timestamp
+        const tsEl = document.getElementById(`last-updated-ts-${tbl.name}`);
+        if (tsEl) {
+          tsEl.textContent = tbl.last_updated_at || 'Never / Not updated';
+          tsEl.className = tbl.last_updated_at ? 'font-medium text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500 italic';
+        }
+
+        // Update status badge
+        const badgeEl = document.getElementById(`sync-badge-${tbl.name}`);
+        if (badgeEl) {
+          if (tbl.sync_status === 'success') {
+            badgeEl.innerHTML = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Synced</span>';
+          } else if (tbl.sync_status === 'skipped_no_credentials') {
+            badgeEl.innerHTML = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" title="${tbl.error_message || 'Credentials unconfigured'}"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Unconfigured</span>`;
+          } else if (tbl.sync_status === 'error') {
+            badgeEl.innerHTML = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300" title="${tbl.error_message || 'Sync error'}"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Error</span>`;
+          } else if (tbl.sync_status === 'syncing') {
+            badgeEl.innerHTML = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Syncing...</span>';
+          } else {
+            badgeEl.innerHTML = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Managed</span>';
+          }
+        }
+      });
+    }
+  }
+</script>
 {% endblock %}
 
 {% block action_bar %}

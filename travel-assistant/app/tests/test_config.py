@@ -410,3 +410,50 @@ def test_db_page_ingress_header(client: FlaskClient) -> None:
     assert b'href="/api/hassio_ingress/test_token/config/db"' in response.data
     assert b'href="/api/hassio_ingress/test_token/config/credentials"' in response.data
     assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data
+
+
+def test_db_page_renders_sync_buttons_and_columns(client: FlaskClient) -> None:
+    """Test GET /config/db renders Last Updated columns and Action trigger buttons."""
+    response = client.get("/config/db")
+    assert response.status_code == 200
+    assert b"Last Updated" in response.data
+    assert b"Actions" in response.data
+    assert b"sync-all-btn" in response.data
+    assert b"sync-btn-bus_routes" in response.data
+    assert b"sync-btn-bus_stops" in response.data
+    assert b"sync-btn-stations" in response.data
+
+
+def test_post_config_db_sync_table(client: FlaskClient) -> None:
+    """Test POST /config/db/sync/<table_name> triggers synchronisation."""
+    # When credentials are not configured, it returns skipped_no_credentials with 200
+    response = client.post("/config/db/sync/bus_routes")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["table"] == "bus_routes"
+    assert data["status"] == "skipped_no_credentials"
+    assert "stats" in data
+
+    # Invalid table name returns 400
+    res_bad = client.post("/config/db/sync/nonexistent_tbl")
+    assert res_bad.status_code == 400
+    data_bad = res_bad.get_json()
+    assert data_bad["status"] == "error"
+
+
+def test_post_config_db_sync_all(client: FlaskClient) -> None:
+    """Test POST /config/db/sync triggers sync_all."""
+    response = client.post("/config/db/sync/all")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["table"] == "all"
+    assert "tables" in data
+    assert "bus_routes" in data["tables"]
+    assert "bus_stops" in data["tables"]
+    assert "stations" in data["tables"]
+
+    # Default route without table_name parameter
+    response_default = client.post("/config/db/sync")
+    assert response_default.status_code == 200
+    data_def = response_default.get_json()
+    assert data_def["table"] == "all"
