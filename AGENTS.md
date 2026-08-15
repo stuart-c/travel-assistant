@@ -65,7 +65,7 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
 - **Auto-Merge**: Enable auto-merge when creating a pull request:
   ```bash
   gh pr create --fill
-  gh pr merge --auto --merge
+  gh pr merge --auto --squash
   ```
 
 ## 6. Post-Merge Cleanup
