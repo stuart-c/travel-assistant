@@ -509,40 +509,81 @@ def test_post_transfers_sanitisation_and_defaults(
         assert plats[0]["step_free"] is True
 
 
-def test_search_transfers_locations_all(client: FlaskClient) -> None:
-    """Test GET /config/transfers/search returns location results."""
+def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None:
+    """Test GET /config/transfers/search returns empty when unpopulated and records when cached."""
+    # 1. Unpopulated test
+    response_empty = client.get("/config/transfers/search")
+    assert response_empty.status_code == 200
+    data_empty = response_empty.get_json()
+    assert data_empty["total"] == 0
+    assert data_empty["results"] == []
+
+    # 2. Populated test
+    with app.app_context():
+        StationRepository().bulk_upsert(
+            [{"crs_code": "PAD", "name": "London Paddington"}]
+        )
+        BusStopRepository().bulk_upsert(
+            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        )
+
     response = client.get("/config/transfers/search")
     assert response.status_code == 200
     data = response.get_json()
     assert "results" in data
     assert "total" in data
-    assert data["total"] > 0
+    assert data["total"] == 2
     types = [item["type"] for item in data["results"]]
-    assert "station" in types or "bus_stop" in types
+    assert "station" in types and "bus_stop" in types
 
 
-def test_search_transfers_locations_station_filter(client: FlaskClient) -> None:
+def test_search_transfers_locations_station_filter(
+    client: FlaskClient, app: Flask
+) -> None:
     """Test GET /config/transfers/search with type=station filter."""
+    with app.app_context():
+        StationRepository().bulk_upsert(
+            [{"crs_code": "PAD", "name": "London Paddington"}]
+        )
+        BusStopRepository().bulk_upsert(
+            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        )
+
     response = client.get("/config/transfers/search?type=station")
     assert response.status_code == 200
     data = response.get_json()
+    assert data["total"] == 1
     for item in data["results"]:
         assert item["type"] == "station"
 
 
 def test_search_transfers_locations_bus_stop_filter(
-    client: FlaskClient,
+    client: FlaskClient, app: Flask
 ) -> None:
     """Test GET /config/transfers/search with type=bus_stop filter."""
+    with app.app_context():
+        StationRepository().bulk_upsert(
+            [{"crs_code": "PAD", "name": "London Paddington"}]
+        )
+        BusStopRepository().bulk_upsert(
+            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        )
+
     response = client.get("/config/transfers/search?type=bus_stop")
     assert response.status_code == 200
     data = response.get_json()
+    assert data["total"] == 1
     for item in data["results"]:
         assert item["type"] == "bus_stop"
 
 
-def test_search_transfers_locations_query(client: FlaskClient) -> None:
+def test_search_transfers_locations_query(client: FlaskClient, app: Flask) -> None:
     """Test GET /config/transfers/search with matching and non-matching queries."""
+    with app.app_context():
+        StationRepository().bulk_upsert(
+            [{"crs_code": "OXF", "name": "Oxford Rail Station"}]
+        )
+
     res_match = client.get("/config/transfers/search?q=Oxford")
     assert res_match.status_code == 200
     data = res_match.get_json()
@@ -596,7 +637,6 @@ def test_search_transfers_locations_with_db_records(
     assert any("Cardiff Central" in n for n in names)
     assert any("Cardiff Bay" in n for n in names)
 
-    # Test deduplication when DB record matches sample dataset key
     res_oxf = client.get("/config/transfers/search?q=OXF")
     assert res_oxf.status_code == 200
     data_oxf = res_oxf.get_json()
@@ -623,4 +663,5 @@ def test_search_transfers_locations_db_exception_fallback(
     response = client.get("/config/transfers/search?q=London")
     assert response.status_code == 200
     data = response.get_json()
-    assert data["total"] > 0
+    assert data["total"] == 0
+    assert data["results"] == []
