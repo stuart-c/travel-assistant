@@ -23,10 +23,91 @@ from openai import (
     APIError as OpenAIError,
 )
 
-# Standard default endpoints
+# Standard default endpoints and models
 DEFAULT_BODS_BASE = "https://data.bus-data.dft.gov.uk/api/v1"
 DEFAULT_LDBWS_BASE = "https://realtime.nationalrail.co.uk/LDBWS"
 DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+    "o3-mini",
+    "gpt-4-turbo",
+    "gpt-3.5-turbo",
+]
+
+EXCLUDED_MODEL_PREFIXES = (
+    "text-embedding-",
+    "whisper-",
+    "tts-",
+    "dall-e-",
+    "text-moderation-",
+    "omni-moderation-",
+    "davinci-",
+    "babbage-",
+    "canary-",
+)
+
+EXCLUDED_MODEL_SUBSTRINGS = (
+    "embedding",
+    "moderation",
+    "tts",
+    "whisper",
+    "realtime",
+    "audio",
+)
+
+PRIORITY_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+    "o3-mini",
+    "o1",
+    "o1-mini",
+    "o1-preview",
+    "gpt-4-turbo",
+    "gpt-4",
+    "gpt-3.5-turbo",
+]
+
+
+def filter_chat_models(raw_models: list[str]) -> list[str]:
+    """Filter and prioritise conversational / chat completion models.
+
+    Excludes embedding, audio, TTS, whisper, and moderation models, while
+    prioritising standard conversational models.
+
+    Args:
+        raw_models: List of model ID strings returned by the API.
+
+    Returns:
+        Sorted list of chat-compatible model ID strings.
+    """
+    if not raw_models:
+        return []
+
+    filtered: list[str] = []
+    for model_id in raw_models:
+        cleaned_id = model_id.strip()
+        if not cleaned_id:
+            continue
+        lower_id = cleaned_id.lower()
+
+        if any(lower_id.startswith(p) for p in EXCLUDED_MODEL_PREFIXES):
+            continue
+        if any(sub in lower_id for sub in EXCLUDED_MODEL_SUBSTRINGS):
+            continue
+        filtered.append(cleaned_id)
+
+    candidates = filtered if filtered else [m.strip() for m in raw_models if m.strip()]
+
+    def sort_key(model_name: str) -> Tuple[int, str]:
+        lower = model_name.lower()
+        if lower in PRIORITY_MODELS:
+            return (PRIORITY_MODELS.index(lower), lower)
+        if lower.startswith("gpt-") or lower.startswith("o"):
+            return (len(PRIORITY_MODELS), lower)
+        return (len(PRIORITY_MODELS) + 1, lower)
+
+    return sorted(list(dict.fromkeys(candidates)), key=sort_key)
 
 
 def validate_bus_api_key(
@@ -256,8 +337,8 @@ def validate_open_api_key(
     api_key: str,
     base_url: Optional[str] = None,
     timeout: float = 5.0,
-) -> Tuple[bool, str]:
-    """Validate OpenAI or OpenAI-compatible API key.
+) -> Tuple[bool, str, list[str]]:
+    """Validate OpenAI or OpenAI-compatible API key and retrieve chat models.
 
     Args:
         api_key: The API secret key.
@@ -265,11 +346,11 @@ def validate_open_api_key(
         timeout: Request timeout in seconds.
 
     Returns:
-        A tuple of (is_valid, message).
+        A tuple of (is_valid, message, chat_models).
     """
     cleaned_key = (api_key or "").strip()
     if not cleaned_key:
-        return False, "Open API key is empty."
+        return False, "Open API key is empty.", []
 
     cleaned_base = (base_url or "").strip() or None
 
@@ -279,27 +360,40 @@ def validate_open_api_key(
             base_url=cleaned_base,
             timeout=timeout,
         )
-        # Attempt to list models to confirm token validity
-        client.models.list()
-        return True, "Open API credentials are valid and active."
+        # Attempt to list models to confirm token validity and extract model options
+        models_response = client.models.list()
+        raw_models: list[str] = []
+        for model in models_response:
+            model_id = getattr(model, "id", None)
+            if model_id:
+                raw_models.append(str(model_id))
+
+        filtered_models = filter_chat_models(raw_models)
+        models = filtered_models if filtered_models else DEFAULT_OPENAI_MODELS
+
+        return True, "Open API credentials are valid and active.", models
     except OpenAIAuthError:
-        return False, "Invalid Open API key or unauthorised access."
+        return False, "Invalid Open API key or unauthorised access.", []
     except OpenAITimeoutError:
-        return False, "Connection timed out connecting to Open API service."
+        return False, "Connection timed out connecting to Open API service.", []
     except OpenAIConnError:
         endpoint_display = cleaned_base or DEFAULT_OPENAI_BASE
-        return False, f"Unable to connect to Open API endpoint ({endpoint_display})."
+        return (
+            False,
+            f"Unable to connect to Open API endpoint ({endpoint_display}).",
+            [],
+        )
     except OpenAIError as exc:
-        return False, f"Open API error: {getattr(exc, 'message', str(exc))}"
+        return False, f"Open API error: {getattr(exc, 'message', str(exc))}", []
     except Exception as exc:
-        return False, f"Open API validation error: {str(exc)}"
+        return False, f"Open API validation error: {str(exc)}", []
 
 
 def validate_service_credentials(
     service: str,
     payload: Dict[str, Any],
     timeout: float = 5.0,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, Dict[str, Any]]:
     """Dispatch credential validation to the appropriate service handler.
 
     Args:
@@ -308,38 +402,42 @@ def validate_service_credentials(
         timeout: Network timeout in seconds.
 
     Returns:
-        A tuple of (is_valid, message).
+        A tuple of (is_valid, message, extra_data).
     """
     service_normalised = (service or "").lower().strip()
 
     if service_normalised == "bus":
-        return validate_bus_api_key(
+        valid, msg = validate_bus_api_key(
             api_key=payload.get("bus_api_key", ""),
             base_url=payload.get("bus_api_base_url"),
             timeout=timeout,
         )
+        return valid, msg, {}
 
     if service_normalised in ("train_s3", "train-s3", "s3"):
-        return validate_train_s3_bucket(
+        valid, msg = validate_train_s3_bucket(
             bucket=payload.get("train_s3_bucket", ""),
             region=payload.get("train_s3_region"),
             access_key=payload.get("train_s3_access_key"),
             secret_key=payload.get("train_s3_secret_key"),
             timeout=timeout,
         )
+        return valid, msg, {}
 
     if service_normalised in ("train_live", "train-live", "ldbws"):
-        return validate_train_live_token(
+        valid, msg = validate_train_live_token(
             api_key=payload.get("train_live_api_key", ""),
             endpoint=payload.get("train_live_endpoint"),
             timeout=timeout,
         )
+        return valid, msg, {}
 
     if service_normalised in ("open_api", "open-api", "openai"):
-        return validate_open_api_key(
+        valid, msg, models = validate_open_api_key(
             api_key=payload.get("open_api_key", ""),
             base_url=payload.get("open_api_base_url"),
             timeout=timeout,
         )
+        return valid, msg, {"models": models}
 
-    return False, f"Unknown service: '{service}'."
+    return False, f"Unknown service: '{service}'.", {}

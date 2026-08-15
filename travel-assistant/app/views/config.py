@@ -30,6 +30,7 @@ CREDENTIAL_FIELDS = [
     "train_live_endpoint",
     "open_api_key",
     "open_api_base_url",
+    "open_api_model",
 ]
 
 
@@ -57,6 +58,8 @@ def credentials() -> Any:
 
     stored = repo.get_all(category="credentials")
     current_credentials = {field: stored.get(field, "") for field in CREDENTIAL_FIELDS}
+    if not current_credentials.get("open_api_model"):
+        current_credentials["open_api_model"] = "gpt-4o-mini"
 
     return render_template(
         "config_credentials.html",
@@ -90,16 +93,20 @@ def validate_credentials() -> Any:
     merged_payload = dict(stored)
     merged_payload.update(raw_payload)
 
-    is_valid, message = validate_service_credentials(service, merged_payload)
+    is_valid, message, extra_data = validate_service_credentials(
+        service, merged_payload
+    )
     status_code = 400 if message.startswith("Unknown service") else 200
 
+    response_body = {
+        "valid": is_valid,
+        "message": message,
+        "service": service,
+    }
+    if extra_data:
+        response_body.update(extra_data)
+
     return (
-        jsonify(
-            {
-                "valid": is_valid,
-                "message": message,
-                "service": service,
-            }
-        ),
+        jsonify(response_body),
         status_code,
     )

@@ -17,7 +17,7 @@ def test_config_index_redirect(client: FlaskClient) -> None:
 
 
 def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
-    """Test GET /config/credentials renders empty form fields initially."""
+    """Test GET /config/credentials renders empty form fields initially with default model."""
     response = client.get("/config/credentials")
     assert response.status_code == 200
     assert b"1. Bus API Key" in response.data
@@ -33,6 +33,8 @@ def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
     assert b'name="train_live_endpoint"' in response.data
     assert b'name="open_api_key"' in response.data
     assert b'name="open_api_base_url"' in response.data
+    assert b'name="open_api_model"' in response.data
+    assert b'value="gpt-4o-mini"' in response.data
 
 
 def test_post_credentials_saves_and_redirects(
@@ -49,6 +51,7 @@ def test_post_credentials_saves_and_redirects(
         "train_live_endpoint": "https://darwin.live.trains.api",
         "open_api_key": "sk-openai-key-test",
         "open_api_base_url": "https://api.openai.com/v1",
+        "open_api_model": "gpt-4o",
     }
 
     response = client.post(
@@ -77,6 +80,7 @@ def test_post_credentials_saves_and_redirects(
     assert b"https://darwin.live.trains.api" in follow_response.data
     assert b"sk-openai-key-test" in follow_response.data
     assert b"https://api.openai.com/v1" in follow_response.data
+    assert b'value="gpt-4o" selected' in follow_response.data
 
 
 def test_credentials_ingress_header(client: FlaskClient) -> None:
@@ -119,7 +123,9 @@ def test_validate_credentials_success(
     from unittest.mock import MagicMock
     from app import views
 
-    mock_validate = MagicMock(return_value=(True, "Bus API key is valid and active."))
+    mock_validate = MagicMock(
+        return_value=(True, "Bus API key is valid and active.", {})
+    )
     monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
 
     response = client.post(
@@ -147,7 +153,7 @@ def test_validate_credentials_fallback_to_repo(
     repo.set("train_s3_bucket", "saved-bucket-name", category="credentials")
     repo.set("train_s3_region", "eu-west-1", category="credentials")
 
-    mock_validate = MagicMock(return_value=(True, "S3 bucket is valid."))
+    mock_validate = MagicMock(return_value=(True, "S3 bucket is valid.", {}))
     monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
 
     response = client.post(
@@ -169,7 +175,7 @@ def test_validate_credentials_form_encoded(
     from unittest.mock import MagicMock
     from app import views
 
-    mock_validate = MagicMock(return_value=(False, "Invalid Open API key."))
+    mock_validate = MagicMock(return_value=(False, "Invalid Open API key.", {}))
     monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
 
     response = client.post(
@@ -180,3 +186,30 @@ def test_validate_credentials_form_encoded(
     data = response.get_json()
     assert data["valid"] is False
     assert data["message"] == "Invalid Open API key."
+
+
+def test_validate_credentials_openai_returns_models(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/credentials/validate for open_api returns model list."""
+    from unittest.mock import MagicMock
+    from app import views
+
+    mock_validate = MagicMock(
+        return_value=(
+            True,
+            "Open API credentials are valid and active.",
+            {"models": ["gpt-4o-mini", "gpt-4o", "o3-mini"]},
+        )
+    )
+    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+
+    response = client.post(
+        "/config/credentials/validate",
+        json={"service": "open_api", "open_api_key": "sk-test-123"},
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["valid"] is True
+    assert data["models"] == ["gpt-4o-mini", "gpt-4o", "o3-mini"]
+    assert data["service"] == "open_api"
