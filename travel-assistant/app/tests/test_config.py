@@ -412,12 +412,16 @@ def test_db_page_ingress_header(client: FlaskClient) -> None:
     assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data
 
 
-def test_db_page_renders_sync_buttons_and_columns(client: FlaskClient) -> None:
-    """Test GET /config/db renders Last Updated columns and Action trigger buttons."""
+def test_db_page_renders_sync_buttons_and_headers(client: FlaskClient) -> None:
+    """Test GET /config/db renders Last Updated, Row Count, Actions, and no Columns column."""
     response = client.get("/config/db")
     assert response.status_code == 200
+    assert b"Table Name" in response.data
     assert b"Last Updated" in response.data
+    assert b"Row Count" in response.data
     assert b"Actions" in response.data
+    assert b">Columns<" not in response.data
+    assert b" cols<" not in response.data
     assert b"sync-all-btn" in response.data
     assert b"sync-btn-bus_routes" in response.data
     assert b"sync-btn-bus_stops" in response.data
