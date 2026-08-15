@@ -363,3 +363,50 @@ def test_timetables_ingress_header(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b'action="/api/hassio_ingress/token123/config/timetables"' in response.data
     assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data
+
+
+def test_get_db_page_initial_render(client: FlaskClient) -> None:
+    """Test GET /config/db renders database stats page correctly."""
+    response = client.get("/config/db")
+    assert response.status_code == 200
+    assert b"Database Storage Overview" in response.data
+    assert b"Database Size" in response.data
+    assert b"User Tables" in response.data
+    assert b"Total Records" in response.data
+    assert b"Database Tables" in response.data
+    assert b"settings" in response.data
+    assert b"timetables" in response.data
+    assert b"nav-link-db" in response.data
+    assert b"refresh-stats-btn" in response.data
+
+
+def test_get_db_page_with_populated_tables(
+    client: FlaskClient, repo: SettingsRepository
+) -> None:
+    """Test GET /config/db accurately displays table row counts."""
+    from app.db import TimetableRepository
+
+    repo.set("bus_key", "secret123", category="credentials")
+    repo.set("train_key", "secret456", category="credentials")
+
+    timetable_repo = TimetableRepository()
+    timetable_repo.add("bus", "Route 1", "R-01")
+    timetable_repo.add("train", "Paddington", "PAD")
+
+    response = client.get("/config/db")
+    assert response.status_code == 200
+    assert b"table-row-settings" in response.data
+    assert b"table-row-timetables" in response.data
+    assert b"stat-total-rows" in response.data
+
+
+def test_db_page_ingress_header(client: FlaskClient) -> None:
+    """Test that Ingress header is respected in db stats template."""
+    response = client.get(
+        "/config/db",
+        headers={"X-Ingress-Path": "/api/hassio_ingress/test_token"},
+    )
+    assert response.status_code == 200
+    assert b'href="/api/hassio_ingress/test_token/config/db"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/credentials"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data

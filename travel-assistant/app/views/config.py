@@ -10,7 +10,7 @@ from flask import (
     url_for,
 )
 
-from app.db import SettingsRepository, TimetableRepository
+from app.db import SettingsRepository, TimetableRepository, get_db_stats
 from app.validators import validate_service_credentials
 
 config_bp = Blueprint("config", __name__, url_prefix="/config")
@@ -314,3 +314,14 @@ def search_timetables() -> Any:
             results.append(item)
 
     return jsonify({"results": results, "total": len(results)})
+
+
+@config_bp.route("/db", methods=["GET"])
+def db_stats() -> Any:
+    """Display SQLite database storage metrics and table row counts."""
+    stats = get_db_stats()
+    return render_template(
+        "config_db.html",
+        stats=stats,
+        active_tab="db",
+    )
