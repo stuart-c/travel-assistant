@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Timetables configuration page (`/config/timetables`) with CDN-hosted Grid.js table supporting client-side search, sorting, pagination, and deletion.
 - Transfers configuration page (`/config/transfers`) with stacked CDN-hosted Grid.js tables for managing inter-location walking links and intra-station platform transfers.
 - Locations configuration page (`/config/locations`) with Grid.js table and Leaflet interactive map modal dialogue supporting add, edit, delete, and two-way coordinate synchronisation.
+- Journeys configuration page (`/config/journeys`) with CDN-hosted Grid.js table, live search autocompletion for 4 location types (Train, Bus, Home Assistant, and Custom), and multi-time-window modal dialogue.
+- Peewee database model `Journey` and schema table `journeys` for persisting journeys and structured JSON time settings.
+- Location lookup endpoint (`GET /config/journeys/search`) supporting rail stations, bus stops, Home Assistant locations, and custom locations with visual indicators and icons.
 - Home Assistant location synchronisation (`ha_locations`) importing all Home Assistant zones (`zone.*` entities) daily and on-demand.
 - Boolean flag `ha` on `Location` model and schema migration for `locations` table to distinguish Home Assistant synchronised locations from manual entries.
 - UI protections and read-only View modal dialogue on `/config/locations` preventing direct editing or deletion of Home Assistant synchronised locations.

@@ -1,0 +1,253 @@
+{% extends "config_base.html" %}
+
+{% block title %}Journeys - {{ app_name }}{% endblock %}
+
+{% block config_title %}Journeys{% endblock %}
+
+{% block subtitle %}
+<p class="text-base text-slate-600 dark:text-slate-400">Configure multi-modal travel journeys, origin/destination waypoints, and scheduled time windows.</p>
+{% endblock %}
+
+{% block config_content %}
+<!-- Grid.js Stylesheet (CDN) and Custom Theme -->
+<link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+
+<div class="space-y-6">
+  <!-- Page Header & Action Bar -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Configured Journeys</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          Named travel routes between waypoints with optional days and time windows. Add or modify entries, then click <strong>Save Changes</strong>.
+        </p>
+      </div>
+
+      <div>
+        <button 
+          type="button" 
+          id="open-add-journey-modal-btn" 
+          class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
+          title="Add Journey"
+          aria-label="Add Journey"
+        >
+          <span class="material-symbols-outlined text-xl">add</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid.js Container Mount Point -->
+    <div class="mt-6">
+      <div id="journeys-grid-wrapper"></div>
+      
+      <!-- Empty state container when 0 items -->
+      <div id="journeys-grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
+        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">route</span>
+        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No journeys configured</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          Add frequent travel routes such as your daily commute or regular weekend trips.
+        </p>
+        <button 
+          type="button" 
+          id="empty-add-journey-btn" 
+          class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
+        >
+          + Add First Journey
+        </button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
+<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/journeys/search">
+  <input type="hidden" name="journeys_json" id="journeys_json" value="">
+  <script id="initial-journeys-data" type="application/json">{{ journeys | tojson }}</script>
+</form>
+
+<!-- Add / Edit Journey Modal Dialogue -->
+<dialog id="journey-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-2xl w-full mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+      <div class="flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl" id="journey-modal-icon">route</span>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white" id="journey-modal-title">Add New Journey</h3>
+      </div>
+      <button 
+        type="button" 
+        id="close-journey-modal-btn" 
+        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer p-1"
+        aria-label="Close dialogue"
+      >
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+
+    <input type="hidden" id="edit-journey-index" value="-1">
+
+    <div class="space-y-4">
+      <!-- Journey Name -->
+      <div>
+        <label for="journey_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+          Journey Name *
+        </label>
+        <input 
+          type="text" 
+          id="journey_name" 
+          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+          placeholder="e.g. Morning Commute, Weekend London Trip"
+          autocomplete="off"
+        >
+      </div>
+
+      <!-- Start & End Locations Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Origin Location Search & Autocomplete -->
+        <div class="relative">
+          <label for="from-journey-search" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            Start Location *
+          </label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="from-journey-search" 
+              class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+              placeholder="Search station, bus stop, location..." 
+              autocomplete="off"
+            >
+            <span class="material-symbols-outlined absolute left-2.5 top-2.5 text-slate-400 text-lg">search</span>
+          </div>
+
+          <!-- Hidden Selected State -->
+          <input type="hidden" id="from_journey_type" value="">
+          <input type="hidden" id="from_journey_id" value="">
+          <input type="hidden" id="from_journey_name" value="">
+
+          <!-- Selected Origin Chip Preview -->
+          <div id="from-selected-preview" class="hidden mt-2 p-2.5 rounded-xl border border-sky-200 bg-sky-50/60 dark:border-sky-800/80 dark:bg-sky-950/40 flex items-center justify-between">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400 shrink-0" id="from-preview-icon">location_on</span>
+              <div class="truncate text-xs">
+                <span class="font-semibold text-slate-900 dark:text-slate-100" id="from-preview-name"></span>
+                <span class="text-slate-500 dark:text-slate-400 ml-1 font-mono text-[11px]" id="from-preview-id"></span>
+              </div>
+            </div>
+            <button type="button" id="clear-from-selection" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs shrink-0 cursor-pointer p-0.5" title="Clear selection">
+              <span class="material-symbols-outlined text-base">close</span>
+            </button>
+          </div>
+
+          <!-- Dropdown Suggestions Container -->
+          <div 
+            id="from-journey-suggestions" 
+            class="hidden absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 py-1 divide-y divide-slate-100 dark:divide-slate-700/50"
+          ></div>
+        </div>
+
+        <!-- Destination Location Search & Autocomplete -->
+        <div class="relative">
+          <label for="to-journey-search" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+            End Location *
+          </label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="to-journey-search" 
+              class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+              placeholder="Search station, bus stop, location..." 
+              autocomplete="off"
+            >
+            <span class="material-symbols-outlined absolute left-2.5 top-2.5 text-slate-400 text-lg">search</span>
+          </div>
+
+          <!-- Hidden Selected State -->
+          <input type="hidden" id="to_journey_type" value="">
+          <input type="hidden" id="to_journey_id" value="">
+          <input type="hidden" id="to_journey_name" value="">
+
+          <!-- Selected Destination Chip Preview -->
+          <div id="to-selected-preview" class="hidden mt-2 p-2.5 rounded-xl border border-sky-200 bg-sky-50/60 dark:border-sky-800/80 dark:bg-sky-950/40 flex items-center justify-between">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400 shrink-0" id="to-preview-icon">location_on</span>
+              <div class="truncate text-xs">
+                <span class="font-semibold text-slate-900 dark:text-slate-100" id="to-preview-name"></span>
+                <span class="text-slate-500 dark:text-slate-400 ml-1 font-mono text-[11px]" id="to-preview-id"></span>
+              </div>
+            </div>
+            <button type="button" id="clear-to-selection" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs shrink-0 cursor-pointer p-0.5" title="Clear selection">
+              <span class="material-symbols-outlined text-base">close</span>
+            </button>
+          </div>
+
+          <!-- Dropdown Suggestions Container -->
+          <div 
+            id="to-journey-suggestions" 
+            class="hidden absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 py-1 divide-y divide-slate-100 dark:divide-slate-700/50"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Multiple Time Windows / Schedules Section -->
+      <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Time Windows & Schedule (Optional)
+            </h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Specify active days and depart/arrive time ranges. If none are added, the journey applies anytime on all days.
+            </p>
+          </div>
+          <button 
+            type="button" 
+            id="add-time-window-btn" 
+            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer shrink-0"
+          >
+            <span class="material-symbols-outlined text-sm">add</span>
+            <span>Add Time Window</span>
+          </button>
+        </div>
+
+        <!-- Time Windows List Container -->
+        <div id="time-windows-list" class="space-y-3 mt-3">
+          <!-- Populated dynamically by journeys.js -->
+        </div>
+
+        <!-- Empty Time Windows Notice -->
+        <div id="time-windows-empty-notice" class="text-center py-4 px-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            No time windows configured. Journey will apply on <strong>all days & anytime</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div id="journey-modal-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
+        Please enter a journey name and select valid start and end locations.
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <button 
+        type="button" 
+        id="cancel-journey-modal-btn" 
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+      >
+        Cancel
+      </button>
+      <button 
+        type="button" 
+        id="confirm-journey-btn" 
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
+      >
+        Save Journey
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Dependencies: Grid.js and Journeys Controller -->
+<script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/journeys.js"></script>
+{% endblock %}
