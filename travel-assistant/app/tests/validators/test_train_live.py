@@ -13,7 +13,7 @@ def test_validate_train_live_token_empty() -> None:
     assert "token is empty" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_success(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation success."""
     mock_resp = MagicMock()
@@ -25,7 +25,7 @@ def test_validate_train_live_openapi_success(mock_get: MagicMock) -> None:
     assert "valid and active" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_custom_endpoint(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS validation with custom endpoint URL."""
     mock_resp = MagicMock()
@@ -43,7 +43,7 @@ def test_validate_train_live_openapi_custom_endpoint(mock_get: MagicMock) -> Non
     )
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_unauthorised(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation unauthorised 401."""
     mock_resp = MagicMock()
@@ -55,67 +55,69 @@ def test_validate_train_live_openapi_unauthorised(mock_get: MagicMock) -> None:
     assert "Invalid train live token or unauthorised access" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_not_found(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation 404 endpoint not found."""
     mock_resp = MagicMock()
     mock_resp.status_code = 404
     mock_get.return_value = mock_resp
 
-    valid, message = validate_train_live_token("token_404")
+    valid, message = validate_train_live_token("some_token")
     assert not valid
-    assert "endpoint not found (404)" in message
+    assert "OpenAPI endpoint not found (404)" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_other_error(mock_get: MagicMock) -> None:
-    """Test OpenAPI LDBWS live train validation other status code error."""
+    """Test OpenAPI LDBWS live train validation unexpected status code."""
     mock_resp = MagicMock()
-    mock_resp.status_code = 500
-    mock_resp.text = "Internal error on upstream server"
+    mock_resp.status_code = 503
     mock_get.return_value = mock_resp
 
-    valid, message = validate_train_live_token("token_500")
+    valid, message = validate_train_live_token("some_token")
     assert not valid
-    assert "Train live API error (500)" in message
+    assert "unexpected status code 503" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_timeout(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation timeout."""
-    mock_get.side_effect = requests.exceptions.Timeout("Connection timed out")
+    mock_get.side_effect = requests.exceptions.Timeout("Timeout")
 
-    valid, message = validate_train_live_token("token_timeout")
+    valid, message = validate_train_live_token("some_token", timeout=2.5)
     assert not valid
-    assert "timed out" in message.lower()
+    assert "timed out after 2.5s" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_conn_error(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation connection error."""
-    mock_get.side_effect = requests.exceptions.ConnectionError("Failed connection")
+    mock_get.side_effect = requests.exceptions.ConnectionError("Refused")
 
-    valid, message = validate_train_live_token("token_conn_err")
+    valid, message = validate_train_live_token("some_token")
     assert not valid
-    assert "Unable to connect to Live Train API" in message
+    assert "Network error during train live validation" in message
 
 
-@patch("app.validators.train_live.requests.get")
+@patch("app.datasources.train_live.requests.get")
 def test_validate_train_live_openapi_generic_exception(mock_get: MagicMock) -> None:
     """Test OpenAPI LDBWS live train validation generic exception."""
-    mock_get.side_effect = RuntimeError("Unexpected runtime failure")
+    mock_get.side_effect = RuntimeError("Fatal OpenAPI crash")
 
-    valid, message = validate_train_live_token("token_generic_err")
+    valid, message = validate_train_live_token("some_token")
     assert not valid
-    assert "Train live validation error" in message
+    assert "Unexpected error during train live validation" in message
 
 
-@patch("app.validators.train_live.requests.post")
+@patch("app.datasources.train_live.requests.post")
 def test_validate_train_live_soap_success(mock_post: MagicMock) -> None:
-    """Test SOAP OpenLDBWS live train validation success."""
+    """Test Darwin SOAP live train validation success."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.text = "<GetStationBoardResult>...</GetStationBoardResult>"
+    mock_resp.text = (
+        "<GetStationBoardResult><StationName>"
+        "Paddington</StationName></GetStationBoardResult>"
+    )
     mock_post.return_value = mock_resp
 
     valid, message = validate_train_live_token(
@@ -123,62 +125,65 @@ def test_validate_train_live_soap_success(mock_post: MagicMock) -> None:
         endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
     )
     assert valid
-    assert "valid and active" in message
+    assert "valid and active (SOAP)" in message
 
 
-@patch("app.validators.train_live.requests.post")
+@patch("app.datasources.train_live.requests.post")
 def test_validate_train_live_soap_invalid_token(mock_post: MagicMock) -> None:
-    """Test SOAP OpenLDBWS live train validation with invalid token."""
+    """Test Darwin SOAP live train validation invalid token response body."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "<faultstring>Invalid token value or unauthorised</faultstring>"
+    mock_post.return_value = mock_resp
+
+    valid, message = validate_train_live_token(
+        "invalid_soap_token",
+        endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
+    )
+    assert not valid
+    assert "Invalid train live token (SOAP authentication failed)" in message
+
+
+@patch("app.datasources.train_live.requests.post")
+def test_validate_train_live_soap_other_status(mock_post: MagicMock) -> None:
+    """Test Darwin SOAP live train validation unexpected status code."""
     mock_resp = MagicMock()
     mock_resp.status_code = 500
-    mock_resp.text = "<soap:Fault><faultstring>Invalid Token</faultstring></soap:Fault>"
+    mock_resp.text = "Internal Server Error"
     mock_post.return_value = mock_resp
 
     valid, message = validate_train_live_token(
-        "bad_soap_token",
+        "bad_token",
         endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
     )
     assert not valid
-    assert "Invalid train live token or unauthorised access" in message
+    assert "unexpected status code 500" in message
 
 
-@patch("app.validators.train_live.requests.post")
-def test_validate_train_live_soap_other_status(mock_post: MagicMock) -> None:
-    """Test SOAP OpenLDBWS live train validation status code error."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 502
-    mock_resp.text = "Bad Gateway"
-    mock_post.return_value = mock_resp
-
-    valid, message = validate_train_live_token(
-        "soap_token_502",
-        endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
-    )
-    assert not valid
-    assert "status 502" in message
-
-
-@patch("app.validators.train_live.requests.post")
+@patch("app.datasources.train_live.requests.post")
 def test_validate_train_live_soap_timeout(mock_post: MagicMock) -> None:
-    """Test SOAP OpenLDBWS live train validation timeout."""
-    mock_post.side_effect = requests.exceptions.Timeout("Timeout")
+    """Test Darwin SOAP live train validation timeout."""
+    mock_post.side_effect = requests.exceptions.Timeout("SOAP Timeout")
 
     valid, message = validate_train_live_token(
-        "soap_token",
+        "token",
         endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
+        timeout=1.5,
     )
     assert not valid
-    assert "timed out" in message.lower()
+    assert "timed out after 1.5s" in message
 
 
-@patch("app.validators.train_live.requests.post")
+@patch("app.datasources.train_live.requests.post")
 def test_validate_train_live_soap_conn_error(mock_post: MagicMock) -> None:
-    """Test SOAP OpenLDBWS live train validation connection error."""
-    mock_post.side_effect = requests.exceptions.ConnectionError("Conn failed")
+    """Test Darwin SOAP live train validation network error."""
+    mock_post.side_effect = requests.exceptions.ConnectionError(
+        "SOAP Connection refused"
+    )
 
     valid, message = validate_train_live_token(
-        "soap_token",
+        "token",
         endpoint="https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx",
     )
     assert not valid
-    assert "Unable to connect to train live service" in message
+    assert "Network error during train live SOAP validation" in message

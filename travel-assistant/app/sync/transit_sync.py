@@ -1,13 +1,23 @@
-import json
+"""Transit dataset synchronisation manager and orchestrator.
+
+Orchestrates background and on-demand synchronisation for bus routes,
+bus stops, and rail station datasets using modular datasource clients.
+"""
+
 import time
 from typing import Any, Dict, List, Optional
-import requests
-import boto3
-from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
 from flask import Flask
+import requests
 
-
+from app.datasources import (
+    BodsClient,
+    DataSourceAuthError,
+    DataSourceConfigError,
+    DataSourceConnectionError,
+    DataSourceError,
+    TrainLiveClient,
+    TrainS3Client,
+)
 from app.db import (
     BusRouteRepository,
     BusStopRepository,
@@ -17,8 +27,6 @@ from app.db import (
     SYNCABLE_TABLES,
 )
 
-DEFAULT_BODS_BASE = "https://data.bus-data.dft.gov.uk/api/v1"
-
 
 def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
     """Synchronise bus routes using configured Bus Open Data Service (BODS) credentials."""
@@ -27,8 +35,8 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
     sync_repo = SyncMetadataRepository()
     route_repo = BusRouteRepository()
 
-    api_key = settings_repo.get("bus_api_key", "").strip()
-    if not api_key:
+    client = BodsClient.from_settings(settings_repo)
+    if not client.api_key:
         msg = "Bus API Key not configured in Settings > API Credentials"
         sync_repo.record_sync_skipped("bus_routes", msg)
         return {
@@ -42,67 +50,7 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
     sync_repo.record_sync_start("bus_routes")
 
     try:
-        url = f"{DEFAULT_BODS_BASE}/dataset/"
-        params = {"api_key": api_key, "limit": 25, "status": "published"}
-        response = requests.get(url, params=params, timeout=15)
-
-        if response.status_code == 401 or response.status_code == 403:
-            err_msg = (
-                f"BODS authentication failed (HTTP {response.status_code}): "
-                "Invalid Bus API key."
-            )
-            duration = round(time.time() - start_time, 2)
-            sync_repo.record_sync_error("bus_routes", err_msg, duration)
-
-            return {
-                "table": "bus_routes",
-                "status": "error",
-                "records": 0,
-                "message": err_msg,
-                "duration_seconds": duration,
-            }
-
-        response.raise_for_status()
-        data = response.json()
-        results = data.get("results", [])
-
-        routes_to_upsert: List[Dict[str, Any]] = []
-        for item in results:
-            name = item.get("name", "").strip()
-            nocs = item.get("noc", [])
-            operator_code = nocs[0] if nocs and isinstance(nocs, list) else None
-            description = item.get("description", "") or item.get("comment", "")
-            operator_name = item.get("operator_name")
-
-            # Extract line names or routes if available
-            lines = item.get("lines", [])
-            if lines and isinstance(lines, list):
-                for line in lines:
-                    line_name = line if isinstance(line, str) else str(line)
-                    routes_to_upsert.append(
-                        {
-                            "route_number": line_name.strip(),
-                            "operator_name": operator_name or name,
-                            "operator_code": operator_code,
-                            "origin": item.get("origin"),
-                            "destination": item.get("destination"),
-                            "description": description,
-                        }
-                    )
-            else:
-                # Use dataset name as route group identifier
-                route_id = f"DS-{item.get('id', 'UK')}"
-                routes_to_upsert.append(
-                    {
-                        "route_number": route_id,
-                        "operator_name": operator_name or name,
-                        "operator_code": operator_code,
-                        "origin": item.get("origin"),
-                        "destination": item.get("destination"),
-                        "description": description or name,
-                    }
-                )
-
+        routes_to_upsert = client.fetch_routes(limit=25)
         if routes_to_upsert:
             route_repo.bulk_upsert(routes_to_upsert)
 
@@ -116,7 +64,18 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
             "message": f"Successfully synchronised {count} bus route datasets from BODS.",
             "duration_seconds": duration,
         }
-    except requests.exceptions.RequestException as exc:
+    except (DataSourceAuthError, DataSourceConfigError) as exc:
+        duration = round(time.time() - start_time, 2)
+        err_msg = str(exc)
+        sync_repo.record_sync_error("bus_routes", err_msg, duration)
+        return {
+            "table": "bus_routes",
+            "status": "error",
+            "records": 0,
+            "message": err_msg,
+            "duration_seconds": duration,
+        }
+    except DataSourceConnectionError as exc:
         duration = round(time.time() - start_time, 2)
         err_msg = f"Network or API error while contacting BODS: {str(exc)}"
         sync_repo.record_sync_error("bus_routes", err_msg, duration)
@@ -147,8 +106,8 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
     sync_repo = SyncMetadataRepository()
     stop_repo = BusStopRepository()
 
-    api_key = settings_repo.get("bus_api_key", "").strip()
-    if not api_key:
+    client = BodsClient.from_settings(settings_repo)
+    if not client.api_key:
         msg = "Bus API Key not configured in Settings > API Credentials"
         sync_repo.record_sync_skipped("bus_stops", msg)
         return {
@@ -162,18 +121,17 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
     sync_repo.record_sync_start("bus_stops")
 
     try:
-        url = f"{DEFAULT_BODS_BASE}/datafeed/"
-        params = {"api_key": api_key, "limit": 25}
-        response = requests.get(url, params=params, timeout=15)
+        url = f"{client.base_url}/datafeed/"
+        params = {"api_key": client.api_key, "limit": 25}
+        response = requests.get(url, params=params, timeout=client.timeout)
 
-        if response.status_code == 401 or response.status_code == 403:
+        if response.status_code in (401, 403):
             err_msg = (
                 f"BODS authentication failed (HTTP {response.status_code}): "
                 "Invalid Bus API key."
             )
             duration = round(time.time() - start_time, 2)
             sync_repo.record_sync_error("bus_stops", err_msg, duration)
-
             return {
                 "table": "bus_stops",
                 "status": "error",
@@ -190,7 +148,6 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
         for item in results:
             feed_id = str(item.get("id", ""))
             operator_name = item.get("operator_name", "") or item.get("name", "")
-            # Generate reference stop records from feed metadata if full stop stream not loaded
             atco_code = f"BODS-FEED-{feed_id}"
             stops_to_upsert.append(
                 {
@@ -248,13 +205,10 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
     sync_repo = SyncMetadataRepository()
     station_repo = StationRepository()
 
-    s3_bucket = settings_repo.get("train_s3_bucket", "").strip()
-    s3_access = settings_repo.get("train_s3_access_key", "").strip()
-    s3_secret = settings_repo.get("train_s3_secret_key", "").strip()
-    s3_region = settings_repo.get("train_s3_region", "eu-west-1").strip()
-    live_api_key = settings_repo.get("train_live_api_key", "").strip()
+    s3_client = TrainS3Client.from_settings(settings_repo)
+    live_client = TrainLiveClient.from_settings(settings_repo)
 
-    if not s3_bucket and not live_api_key:
+    if not s3_client.bucket_name and not live_client.api_key:
         msg = (
             "Train credentials (S3 bucket or Live API key) not configured in "
             "Settings > API Credentials"
@@ -273,49 +227,15 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
     try:
         stations_to_upsert: List[Dict[str, Any]] = []
 
-        if s3_bucket:
-            s3_kwargs: Dict[str, Any] = {
-                "region_name": s3_region or "eu-west-1",
-                "config": Config(connect_timeout=5, read_timeout=10),
-            }
-            if s3_access and s3_secret:
-                s3_kwargs["aws_access_key_id"] = s3_access
-                s3_kwargs["aws_secret_access_key"] = s3_secret
-
-            s3_client = boto3.client("s3", **s3_kwargs)
-
-            # Try to fetch stations.json or inspect bucket station references
+        if s3_client.bucket_name:
             try:
-                obj = s3_client.get_object(Bucket=s3_bucket, Key="stations.json")
-                body = obj["Body"].read().decode("utf-8")
-                raw_data = json.loads(body)
-                if isinstance(raw_data, list):
-                    for st in raw_data:
-                        if (
-                            isinstance(st, dict)
-                            and st.get("crs_code")
-                            and st.get("name")
-                        ):
-                            stations_to_upsert.append(
-                                {
-                                    "crs_code": str(st.get("crs_code", ""))
-                                    .upper()
-                                    .strip(),
-                                    "name": str(st.get("name", "")).strip(),
-                                    "tiploc_code": st.get("tiploc_code"),
-                                    "latitude": st.get("latitude"),
-                                    "longitude": st.get("longitude"),
-                                    "operator": st.get("operator"),
-                                }
-                            )
-            except ClientError as ce:
-                error_code = ce.response.get("Error", {}).get("Code", "")
-                if error_code in ("NoSuchKey", "404"):
-                    # Bucket accessible but stations.json not present; record bucket entry
+                stations_to_upsert = s3_client.fetch_stations(key="stations.json")
+            except DataSourceError as de:
+                if "NoSuchKey" in str(de) or "404" in str(de):
                     stations_to_upsert.append(
                         {
                             "crs_code": "S3-HUB",
-                            "name": f"S3 Darwin Feed ({s3_bucket})",
+                            "name": f"S3 Darwin Feed ({s3_client.bucket_name})",
                             "tiploc_code": None,
                             "latitude": None,
                             "longitude": None,
@@ -323,9 +243,8 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
                         }
                     )
                 else:
-                    raise ce
-        elif live_api_key:
-            # When live API key is configured, register National Rail live gateway hub
+                    raise de
+        elif live_client.api_key:
             stations_to_upsert.append(
                 {
                     "crs_code": "LDBWS-HUB",
@@ -350,7 +269,7 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
             "message": f"Successfully synchronised {count} rail station records.",
             "duration_seconds": duration,
         }
-    except (BotoCoreError, ClientError) as exc:
+    except DataSourceError as exc:
         duration = round(time.time() - start_time, 2)
         err_msg = f"AWS S3 error while reading station records: {str(exc)}"
         sync_repo.record_sync_error("stations", err_msg, duration)

@@ -242,7 +242,10 @@ def test_sync_stations_s3_success_with_json(app: Flask) -> None:
         mock_body.read.return_value = station_json
         mock_s3.get_object.return_value = {"Body": mock_body}
 
-        with patch("boto3.client", return_value=mock_s3):
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_s3
+
+        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
             res = sync_stations(app=app)
             assert res["status"] == "success"
             assert res["records"] == 2
@@ -264,7 +267,10 @@ def test_sync_stations_s3_nosuchkey_fallback(app: Flask) -> None:
         err_response = {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}
         mock_s3.get_object.side_effect = ClientError(err_response, "GetObject")
 
-        with patch("boto3.client", return_value=mock_s3):
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_s3
+
+        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
             res = sync_stations(app=app)
             assert res["status"] == "success"
             assert res["records"] == 1
@@ -298,13 +304,16 @@ def test_sync_stations_errors(app: Flask) -> None:
         err_response = {"Error": {"Code": "AccessDenied", "Message": "Denied"}}
         mock_s3.get_object.side_effect = ClientError(err_response, "GetObject")
 
-        with patch("boto3.client", return_value=mock_s3):
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_s3
+
+        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
             res = sync_stations(app=app)
             assert res["status"] == "error"
             assert "AWS S3 error" in res["message"]
 
         mock_s3.get_object.side_effect = Exception("Crash")
-        with patch("boto3.client", return_value=mock_s3):
+        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
             res = sync_stations(app=app)
             assert res["status"] == "error"
             assert "Unexpected error" in res["message"]

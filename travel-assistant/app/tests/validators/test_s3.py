@@ -18,7 +18,7 @@ def test_validate_train_s3_bucket_empty() -> None:
     assert "bucket name is required" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_success(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation success."""
     mock_client = MagicMock()
@@ -37,7 +37,7 @@ def test_validate_train_s3_bucket_success(mock_session_cls: MagicMock) -> None:
     mock_client.head_bucket.assert_called_once_with(Bucket="my-bucket")
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_not_found(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation with 404 NoSuchBucket error."""
     mock_client = MagicMock()
@@ -52,7 +52,7 @@ def test_validate_train_s3_bucket_not_found(mock_session_cls: MagicMock) -> None
     assert "does not exist (404)" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_access_denied(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation with 403 AccessDenied error."""
     mock_client = MagicMock()
@@ -68,7 +68,7 @@ def test_validate_train_s3_bucket_access_denied(mock_session_cls: MagicMock) -> 
     assert "403" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_redirect(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation with 301 PermanentRedirect error."""
     mock_client = MagicMock()
@@ -83,7 +83,7 @@ def test_validate_train_s3_bucket_redirect(mock_session_cls: MagicMock) -> None:
     assert "exists in a different region" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_other_client_error(
     mock_session_cls: MagicMock,
 ) -> None:
@@ -100,7 +100,7 @@ def test_validate_train_s3_bucket_other_client_error(
     assert "S3 bucket error (500)" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_timeout(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation connection timeout."""
     mock_client = MagicMock()
@@ -116,7 +116,7 @@ def test_validate_train_s3_bucket_timeout(mock_session_cls: MagicMock) -> None:
     assert "Connection timed out" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_endpoint_conn_error(
     mock_session_cls: MagicMock,
 ) -> None:
@@ -134,7 +134,7 @@ def test_validate_train_s3_bucket_endpoint_conn_error(
     assert "Unable to connect to AWS S3 endpoint" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_botocore_error(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation BotoCoreError."""
     mock_client = MagicMock()
@@ -148,7 +148,7 @@ def test_validate_train_s3_bucket_botocore_error(mock_session_cls: MagicMock) ->
     assert "AWS S3 error" in message
 
 
-@patch("app.validators.s3.boto3.Session")
+@patch("app.datasources.train_s3.boto3.Session")
 def test_validate_train_s3_bucket_generic_error(mock_session_cls: MagicMock) -> None:
     """Test S3 bucket validation generic error."""
     mock_session_cls.side_effect = RuntimeError("Session init failure")
