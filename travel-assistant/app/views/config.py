@@ -41,6 +41,8 @@ CREDENTIAL_FIELDS = [
     "open_api_key",
     "open_api_base_url",
     "open_api_model",
+    "google_maps_api_key",
+    "google_maps_region",
 ]
 
 
@@ -68,6 +70,8 @@ def credentials() -> Any:
     current_credentials = {field: stored.get(field, "") for field in CREDENTIAL_FIELDS}
     if not current_credentials.get("open_api_model"):
         current_credentials["open_api_model"] = "gpt-4o-mini"
+    if not current_credentials.get("google_maps_region"):
+        current_credentials["google_maps_region"] = "uk"
 
     return render_template(
         "config_credentials.html",

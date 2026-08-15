@@ -20,13 +20,15 @@ def test_config_index_redirect(client: FlaskClient) -> None:
 
 
 def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
-    """Test GET /config/credentials renders empty form fields initially with default model."""
+    """Test GET /config/credentials renders empty form fields with default model and region."""
+
     response = client.get("/config/credentials")
     assert response.status_code == 200
     assert b"Bus API Key" in response.data
     assert b"Train S3 Bucket Details" in response.data
     assert b"Train Live Credentials" in response.data
     assert b"OpenAI &amp; LLM Credentials" in response.data
+    assert b"Google Maps API" in response.data
     assert b"1. Bus API Key" not in response.data
     assert b'name="bus_api_key"' in response.data
     assert b'name="train_s3_bucket"' in response.data
@@ -38,8 +40,11 @@ def test_get_credentials_page_initial_empty(client: FlaskClient) -> None:
     assert b'name="open_api_key"' in response.data
     assert b'name="open_api_base_url"' in response.data
     assert b'name="open_api_model"' in response.data
+    assert b'name="google_maps_api_key"' in response.data
+    assert b'name="google_maps_region"' in response.data
     assert b'href="https://developers.openai.com/api/docs/pricing"' in response.data
     assert b'value="gpt-4o-mini"' in response.data
+    assert b'value="uk"' in response.data
 
 
 def test_post_credentials_saves_and_redirects(client: FlaskClient) -> None:
@@ -55,6 +60,8 @@ def test_post_credentials_saves_and_redirects(client: FlaskClient) -> None:
         "open_api_key": "sk-openai-key-test",
         "open_api_base_url": "https://api.openai.com/v1",
         "open_api_model": "gpt-4o",
+        "google_maps_api_key": "AIzaSyTest123",
+        "google_maps_region": "gb",
     }
 
     response = client.post(
@@ -69,6 +76,8 @@ def test_post_credentials_saves_and_redirects(client: FlaskClient) -> None:
     assert saved["train_s3_bucket"] == "my-train-bucket"
     assert saved["train_s3_region"] == "eu-west-2"
     assert saved["open_api_model"] == "gpt-4o"
+    assert saved["google_maps_api_key"] == "AIzaSyTest123"
+    assert saved["google_maps_region"] == "gb"
 
     # Follow redirect
     follow = client.get("/config/credentials")
@@ -76,6 +85,8 @@ def test_post_credentials_saves_and_redirects(client: FlaskClient) -> None:
     assert b"API credentials saved successfully." in follow.data
     assert b'value="test_bus_key_123"' in follow.data
     assert b'value="my-train-bucket"' in follow.data
+    assert b'value="AIzaSyTest123"' in follow.data
+    assert b'value="gb"' in follow.data
 
 
 def test_credentials_ingress_header(client: FlaskClient) -> None:

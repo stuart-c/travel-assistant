@@ -14,6 +14,7 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
+from app.datasources.google_maps import GoogleMapsClient
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.naptan import NaptanClient
 from app.datasources.openai import OpenAIClient, filter_chat_models
@@ -32,6 +33,9 @@ DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
     "naptan": NaptanClient,
     "homeassistant": HomeAssistantClient,
     "ha": HomeAssistantClient,
+    "google_maps": GoogleMapsClient,
+    "googlemaps": GoogleMapsClient,
+    "maps": GoogleMapsClient,
 }
 
 
@@ -39,8 +43,9 @@ def get_datasource(service_name: str, settings: Optional[Any] = None) -> BaseDat
     """Factory helper to obtain an instantiated datasource client by service key.
 
     Args:
-        service_name: Service identifier (e.g. 'bus', 'train_s3', 'train_live', 'openai', 'ha').
+        service_name: Service identifier (e.g. 'bus', 'train_s3', 'openai', 'ha', 'google_maps').
         settings: Optional settings provider or dictionary to load credentials from.
+
 
     Returns:
         Configured BaseDataSource client.
@@ -69,6 +74,7 @@ __all__ = [
     "TrainS3Client",
     "TrainLiveClient",
     "OpenAIClient",
+    "GoogleMapsClient",
     "NaptanClient",
     "HomeAssistantClient",
     "filter_chat_models",
