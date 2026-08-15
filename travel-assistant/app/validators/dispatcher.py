@@ -3,6 +3,7 @@
 from typing import Any, Dict, Tuple
 
 from app.validators.bus import validate_bus_api_key
+from app.validators.google_maps import validate_google_maps_api_key
 from app.validators.openai import validate_open_api_key
 from app.validators.s3 import validate_train_s3_bucket
 from app.validators.train_live import validate_train_live_token
@@ -16,7 +17,7 @@ def validate_service_credentials(
     """Dispatch credential validation to the appropriate service handler.
 
     Args:
-        service: Name of the service ('bus', 'train_s3', 'train_live', 'open_api').
+        service: Name of the service ('bus', 'train_s3', 'train_live', 'open_api', 'google_maps').
         payload: Dictionary containing credential values.
         timeout: Network timeout in seconds.
 
@@ -58,5 +59,13 @@ def validate_service_credentials(
             timeout=timeout,
         )
         return valid, msg, {"models": models}
+
+    if service_normalised in ("google_maps", "googlemaps", "google", "maps"):
+        valid, msg = validate_google_maps_api_key(
+            api_key=payload.get("google_maps_api_key", ""),
+            region=payload.get("google_maps_region"),
+            timeout=timeout,
+        )
+        return valid, msg, {}
 
     return False, f"Unknown service: '{service}'.", {}

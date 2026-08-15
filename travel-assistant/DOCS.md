@@ -7,8 +7,10 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **Ingress Dashboard**: Directly accessible from the Home Assistant sidebar.
 - **SQLite Storage**: Persistent database storage for application settings, credentials, timetable entries, and cache.
 - **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, and unsaved changes protection.
-- **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, and Open API credentials.
+- **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, Open API credentials, and Google Maps API credentials with zero-cost validation probes.
+- **Google Maps Integration**: Client library (`GoogleMapsClient`) and credential validator for geocoding, reverse geocoding, distance matrix calculations, and turn-by-turn route directions.
 - **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing timetable schedules, validity date ranges, and operating days (Monday–Sunday + Bank Holiday) with client-side staging, date validation, and atomic persistence.
+
 - **Transfers Configuration**: Dedicated configuration page at `/config/transfers` with stacked Grid.js tables for managing inter-location walking links (e.g. station-to-bus stop) and intra-station platform-to-platform interchange times with search autocomplete and step-free accessibility support.
 - **Journeys Configuration**: Dedicated configuration page at `/config/journeys` with an interactive Grid.js table and modal dialogue for configuring travel journeys between rail stations, bus stops, Home Assistant locations, and custom locations with multi-time-window scheduling.
 - **Locations Configuration & Home Assistant Synchronisation**: Dedicated configuration page at `/config/locations` with an interactive Grid.js table and Leaflet JS map dialogue for managing custom and Home Assistant synchronised geographic locations (`locations` table). Features a boolean `ha` indicator, read-only viewing modal, deletion protections for synced zones, and automated daily background synchronisation.

@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
 - Settings navigation cog button in the web UI header.
 - Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.
-- API credentials management page (`/config/credentials`) supporting Bus API keys, Train S3 bucket details, Train live credentials, and Open API credentials.
-- Asynchronous credential validation endpoint (`POST /config/credentials/validate`) supporting live verification for Bus Open Data Service (BODS REST API), AWS S3 buckets (`boto3`), National Rail LDBWS (`bravado` OpenAPI / SOAP), and OpenAI services (`openai`).
+- API credentials management page (`/config/credentials`) supporting Bus API keys, Train S3 bucket details, Train live credentials, Open API credentials, and Google Maps API credentials with custom region bias.
+- Google Maps client library (`GoogleMapsClient`) and validator (`validate_google_maps_api_key`) supporting geocoding, reverse geocoding, distance matrix, directions, and zero-cost credential probe verification.
+- Added `googlemaps>=4.10.0` dependency to `requirements.txt`.
+- Asynchronous credential validation endpoint (`POST /config/credentials/validate`) supporting live verification for Bus Open Data Service (BODS REST API), AWS S3 buckets (`boto3`), National Rail LDBWS (`bravado` OpenAPI / SOAP), OpenAI services (`openai`), and Google Maps Platform services (`googlemaps`).
+
 - OpenAI chat model dropdown (`open_api_model`) auto-populated from discovered endpoint models on credential validation, with chat model filtering and standard fallback choices.
 - External OpenAI model pricing documentation link on the credentials configuration page next to the model selection dropdown.
 - Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.

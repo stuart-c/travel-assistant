@@ -62,6 +62,22 @@ def test_validate_service_credentials_dispatcher() -> None:
         assert msg == "openai ok"
         assert extra == {"models": ["gpt-4o-mini", "gpt-4o"]}
 
+    with patch("app.validators.dispatcher.validate_google_maps_api_key") as mock_maps:
+        mock_maps.return_value = (True, "maps ok")
+        valid, msg, extra = validate_service_credentials(
+            "google_maps", {"google_maps_api_key": "k", "google_maps_region": "uk"}
+        )
+        assert valid
+        assert msg == "maps ok"
+        assert extra == {}
+
+        valid, msg, extra = validate_service_credentials(
+            "maps", {"google_maps_api_key": "k"}
+        )
+        assert valid
+        assert msg == "maps ok"
+        assert extra == {}
+
     valid, msg, extra = validate_service_credentials("unknown_service_xyz", {})
     assert not valid
     assert "Unknown service" in msg

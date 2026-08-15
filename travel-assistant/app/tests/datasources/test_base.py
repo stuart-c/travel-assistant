@@ -6,6 +6,7 @@ from flask import Flask
 from app.datasources import (
     BodsClient,
     DataSourceConfigError,
+    GoogleMapsClient,
     NaptanClient,
     OpenAIClient,
     TrainLiveClient,
@@ -31,6 +32,12 @@ def test_get_datasource_factory_known_services(app: Flask) -> None:
 
         naptan = get_datasource("naptan")
         assert isinstance(naptan, NaptanClient)
+
+        maps_client = get_datasource("google_maps")
+        assert isinstance(maps_client, GoogleMapsClient)
+
+        maps_client2 = get_datasource("googlemaps")
+        assert isinstance(maps_client2, GoogleMapsClient)
 
 
 def test_get_datasource_unknown_service() -> None:

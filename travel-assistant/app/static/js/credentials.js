@@ -50,7 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return Boolean(key);
       },
     },
+    google_maps: {
+      badgeId: 'status-badge-google_maps',
+      fields: ['google_maps_api_key', 'google_maps_region'],
+      hasValue: () => {
+        const key = document.getElementById('google_maps_api_key')?.value.trim();
+        return Boolean(key);
+      },
+    },
   };
+
 
   function setCheckButtonState(serviceKey, enabled) {
     const btn = document.querySelector(`.check-btn[data-service="${serviceKey}"]`);
