@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Show validating spinner state
     badge.className =
-      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 animate-pulse';
+      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 animate-pulse';
     badge.innerHTML = `
       <span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping"></span>
       Validating...
@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.valid) {
         badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30';
+          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30';
         badge.title = data.message || 'Valid';
         badge.innerHTML = `<span>✓</span> Valid`;
 
@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else {
         badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
+          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
         badge.title = data.message || 'Validation failed';
         badge.innerHTML = `<span>✗</span> <span class="truncate">${
           data.message || 'Invalid'
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       badge.className =
-        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
+        'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
       badge.title = err.message || 'Network error';
       badge.innerHTML = `<span>✗</span> Network error`;
     }

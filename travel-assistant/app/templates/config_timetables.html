@@ -11,7 +11,7 @@
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/timetables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
 
 <div class="space-y-6">
   <!-- Page Header & Action Bar -->
@@ -20,7 +20,7 @@
       <div>
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Active Timetables</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-          List of configured bus routes and train lines. Add or remove entries, then click <strong>Save Changes</strong>.
+          List of configured bus routes and rail stations. Add or remove entries, then click <strong>Save Changes</strong>.
         </p>
       </div>
 
@@ -28,7 +28,7 @@
         <button 
           type="button" 
           id="open-add-modal-btn" 
-          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
         >
           <span class="material-symbols-outlined text-base">add</span>
           <span>Add Timetable</span>
@@ -50,7 +50,7 @@
         <button 
           type="button" 
           id="empty-add-btn" 
-          class="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
+          class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
         >
           + Add First Timetable
         </button>
@@ -96,187 +96,66 @@
           <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 cursor-pointer transport-type-label">
             <input type="radio" name="modal_transport_type" value="train" class="text-sky-600 focus:ring-sky-500">
             <span class="material-symbols-outlined text-indigo-500">train</span>
-            <span class="text-sm font-semibold">Rail Journey</span>
+            <span class="text-sm font-semibold">Rail Station</span>
           </label>
         </div>
       </div>
 
-      <!-- Cache Prerequisite Warning Banner -->
-      <div id="cache-warning-banner" class="hidden p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm space-y-2">
-        <div class="flex items-start gap-2.5">
-          <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-xl shrink-0 mt-0.5">warning</span>
-          <div>
-            <div class="font-semibold text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300" id="cache-warning-title">Synchronisation Required</div>
-            <p class="text-xs text-amber-700 dark:text-amber-300/90 mt-0.5" id="cache-warning-message">
-              Transit dataset has not been cached yet. You must synchronise datasets in Database settings before configuring timetables.
-            </p>
+      <!-- 2. Dynamic Search / Lookup -->
+      <div>
+        <label for="modal-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+          Search Feed / Station Lookup
+        </label>
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <span class="material-symbols-outlined text-lg">search</span>
+          </div>
+          <input 
+            type="text" 
+            id="modal-search-input" 
+            class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="Type to search (e.g., Oxford, London, Tube, Route 1, PAD)..."
+            autocomplete="off"
+          >
+          <div id="search-spinner" class="hidden absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <span class="inline-block w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
           </div>
         </div>
-        <div class="pl-7">
-          <a href="{{ ingress_path }}/config/db" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-200/80 hover:bg-amber-300 text-amber-900 dark:bg-amber-900/60 dark:hover:bg-amber-800 dark:text-amber-100 transition-colors">
-            <span class="material-symbols-outlined text-sm">database</span>
-            <span>Go to Database Settings</span>
-          </a>
-        </div>
-      </div>
 
-      <!-- Train Selection Flow (Station 1 + Station 2) -->
-      <div id="train-selection-container" class="hidden space-y-3">
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          Select two railway stations to create a bi-directional journey timetable.
-        </p>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <!-- Station 1 -->
-          <div>
-            <label for="station1-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">First Station *</label>
-            <div class="relative">
-              <input 
-                type="text" 
-                id="station1-search-input" 
-                class="w-full pl-3.5 pr-8 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-                placeholder="Search station (e.g. Oxford, PAD)..."
-                autocomplete="off"
-              >
-              <div id="station1-spinner" class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-                <span class="inline-block w-3.5 h-3.5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
-              </div>
-            </div>
-            <div id="station1-selected-chip" class="hidden mt-1.5 p-2 rounded-lg bg-sky-50 border border-sky-200 dark:bg-sky-950/50 dark:border-sky-800 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-sm">train</span>
-                <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate" id="station1-chip-name"></span>
-                <code class="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900 text-sky-800 dark:text-sky-200 text-xs font-mono shrink-0" id="station1-chip-crs"></code>
-              </div>
-              <button type="button" id="clear-station1-btn" class="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 shrink-0" title="Clear station">
-                <span class="material-symbols-outlined text-base">close</span>
-              </button>
-            </div>
-            <div id="station1-suggestions" class="hidden mt-1 max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60 z-20"></div>
-          </div>
-
-          <!-- Station 2 -->
-          <div>
-            <label for="station2-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Second Station *</label>
-            <div class="relative">
-              <input 
-                type="text" 
-                id="station2-search-input" 
-                class="w-full pl-3.5 pr-8 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-                placeholder="Search station (e.g. Paddington, BHM)..."
-                autocomplete="off"
-              >
-              <div id="station2-spinner" class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-                <span class="inline-block w-3.5 h-3.5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
-              </div>
-            </div>
-            <div id="station2-selected-chip" class="hidden mt-1.5 p-2 rounded-lg bg-sky-50 border border-sky-200 dark:bg-sky-950/50 dark:border-sky-800 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-sm">train</span>
-                <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate" id="station2-chip-name"></span>
-                <code class="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900 text-sky-800 dark:text-sky-200 text-xs font-mono shrink-0" id="station2-chip-crs"></code>
-              </div>
-              <button type="button" id="clear-station2-btn" class="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 shrink-0" title="Clear station">
-                <span class="material-symbols-outlined text-base">close</span>
-              </button>
-            </div>
-            <div id="station2-suggestions" class="hidden mt-1 max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60 z-20"></div>
-          </div>
+        <!-- Autocomplete Suggestions List -->
+        <div id="search-suggestions" class="hidden mt-2 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-md dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60">
         </div>
       </div>
 
-      <!-- Bus Selection Flow (Stop + Route) -->
-      <div id="bus-selection-container" class="space-y-3">
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          Choose a bus stop and select an associated bus route to configure the timetable feed.
-        </p>
-
-        <!-- Bus Stop Selector -->
+      <!-- 3. Name & Identifier Fields -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
         <div>
-          <label for="bus-stop-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">1. Bus Stop *</label>
-          <div class="relative">
-            <input 
-              type="text" 
-              id="bus-stop-search-input" 
-              class="w-full pl-3.5 pr-8 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-              placeholder="Search bus stop by name, locality, or ATCO code..."
-              autocomplete="off"
-            >
-            <div id="bus-stop-spinner" class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-              <span class="inline-block w-3.5 h-3.5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
-            </div>
-          </div>
-          <div id="bus-stop-selected-chip" class="hidden mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/50 dark:border-amber-800 flex items-center justify-between gap-2">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-sm">directions_bus</span>
-              <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate" id="bus-stop-chip-name"></span>
-              <code class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-mono shrink-0" id="bus-stop-chip-atco"></code>
-            </div>
-            <button type="button" id="clear-bus-stop-btn" class="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 shrink-0" title="Clear stop">
-              <span class="material-symbols-outlined text-base">close</span>
-            </button>
-          </div>
-          <div id="bus-stop-suggestions" class="hidden mt-1 max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60 z-20"></div>
-        </div>
-
-        <!-- Bus Route Selector -->
-        <div>
-          <label for="bus-route-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">2. Bus Route *</label>
-          <div class="relative">
-            <input 
-              type="text" 
-              id="bus-route-search-input" 
-              class="w-full pl-3.5 pr-8 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-              placeholder="Search route by line number, operator, or destination..."
-              autocomplete="off"
-            >
-            <div id="bus-route-spinner" class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-              <span class="inline-block w-3.5 h-3.5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></span>
-            </div>
-          </div>
-          <div id="bus-route-selected-chip" class="hidden mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/50 dark:border-amber-800 flex items-center justify-between gap-2">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-sm">route</span>
-              <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate" id="bus-route-chip-name"></span>
-              <code class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-mono shrink-0" id="bus-route-chip-number"></code>
-            </div>
-            <button type="button" id="clear-bus-route-btn" class="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 shrink-0" title="Clear route">
-              <span class="material-symbols-outlined text-base">close</span>
-            </button>
-          </div>
-          <div id="bus-route-suggestions" class="hidden mt-1 max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 text-sm divide-y divide-slate-100 dark:divide-slate-700/60 z-20"></div>
-        </div>
-      </div>
-
-      <!-- Generated Name & Identifier Preview Fields -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-        <div>
-          <label for="modal_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Display Name *</label>
+          <label for="modal_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Display Name *</label>
           <input 
             type="text" 
             id="modal_name" 
-            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-            placeholder="Auto-generated or custom name"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="e.g. Oxford Tube Express"
           >
         </div>
 
         <div>
-          <label for="modal_identifier" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Identifier / Code *</label>
+          <label for="modal_identifier" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Identifier / Code *</label>
           <input 
             type="text" 
             id="modal_identifier" 
-            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-            placeholder="Auto-generated code"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+            placeholder="e.g. OX-TUBE or OXF"
           >
         </div>
       </div>
 
-      <!-- Status Selection -->
+      <!-- 4. Status -->
       <div>
-        <label for="modal_status" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">Initial Status</label>
+        <label for="modal_status" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">Initial Status</label>
         <select 
           id="modal_status" 
-          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
         >
           <option value="active" selected>Active</option>
           <option value="inactive">Inactive</option>
@@ -284,7 +163,7 @@
       </div>
 
       <div id="modal-validation-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
-        Please complete the selection to generate a valid Display Name and Identifier.
+        Please provide both a Display Name and Identifier.
       </div>
     </div>
 
@@ -300,9 +179,9 @@
       <button 
         type="button" 
         id="confirm-add-timetable-btn" 
-        class="px-5 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
       >
-        Add to List
+        Add Timetable
       </button>
     </div>
   </div>

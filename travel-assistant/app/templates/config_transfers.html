@@ -11,7 +11,7 @@
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/timetables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
 
 <div class="space-y-8">
   <!-- Section 1: Inter-Location Transfers -->
@@ -31,7 +31,7 @@
         <button 
           type="button" 
           id="open-add-location-modal-btn" 
-          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
         >
           <span class="material-symbols-outlined text-base">add</span>
           <span>Add Location Transfer</span>
@@ -53,7 +53,7 @@
         <button 
           type="button" 
           id="empty-add-location-btn" 
-          class="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
+          class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
         >
           + Add First Location Transfer
         </button>
@@ -78,7 +78,7 @@
         <button 
           type="button" 
           id="open-add-platform-modal-btn" 
-          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm transition-colors cursor-pointer"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm transition-colors cursor-pointer"
         >
           <span class="material-symbols-outlined text-base">add</span>
           <span>Add Platform Transfer</span>
@@ -100,7 +100,7 @@
         <button 
           type="button" 
           id="empty-add-platform-btn" 
-          class="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-100 text-indigo-800 hover:bg-indigo-200 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30 transition-colors cursor-pointer"
+          class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-100 text-indigo-800 hover:bg-indigo-200 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30 transition-colors cursor-pointer"
         >
           + Add First Platform Transfer
         </button>
@@ -307,7 +307,7 @@
       <button 
         type="button" 
         id="confirm-location-transfer-btn" 
-        class="px-5 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
       >
         Save Transfer
       </button>
@@ -478,7 +478,7 @@
       <button 
         type="button" 
         id="confirm-platform-transfer-btn" 
-        class="px-5 py-2 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-colors cursor-pointer"
+        class="px-4 py-2 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-colors cursor-pointer"
       >
         Save Transfer
       </button>

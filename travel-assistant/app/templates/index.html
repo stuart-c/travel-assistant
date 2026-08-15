@@ -12,18 +12,18 @@
     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Service Status</h2>
     
     {% if error %}
-    <div class="inline-flex items-center gap-2.5 rounded-lg bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 ring-1 ring-inset ring-rose-600/20 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-500/30 mb-4">
-      <span class="relative flex h-2.5 w-2.5">
-        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 mb-4">
+      <span class="relative flex h-2 w-2">
+        <span class="relative inline-flex h-2 w-2 rounded-full bg-rose-500"></span>
       </span>
       <span>Resource Not Found</span>
     </div>
     <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">The requested page or endpoint could not be found.</p>
     {% else %}
-    <div class="inline-flex items-center gap-2.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/30 mb-4">
-      <span class="relative flex h-2.5 w-2.5">
+    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30 mb-4">
+      <span class="relative flex h-2 w-2">
         <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+        <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
       </span>
       <span>Online &amp; Operational</span>
     </div>
@@ -52,14 +52,19 @@
     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Quick Configuration</h2>
     <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-6">Manage transit API keys, S3 storage buckets, bus routes, and rail timetables.</p>
     <div class="flex flex-wrap items-center gap-3">
-      <a href="{{ ingress_path }}/config/credentials" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
+      <a href="{{ ingress_path }}/config/credentials" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
         <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400">key</span>
         <span>API Credentials</span>
         <span>&rarr;</span>
       </a>
-      <a href="{{ ingress_path }}/config/timetables" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
+      <a href="{{ ingress_path }}/config/timetables" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
         <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400">directions_bus</span>
-        <span>Manage Timetables</span>
+        <span>Timetables</span>
+        <span>&rarr;</span>
+      </a>
+      <a href="{{ ingress_path }}/config/db" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors">
+        <span class="material-symbols-outlined text-base text-sky-600 dark:text-sky-400">database</span>
+        <span>Database</span>
         <span>&rarr;</span>
       </a>
     </div>

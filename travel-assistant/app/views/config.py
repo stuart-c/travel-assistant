@@ -353,18 +353,40 @@ def search_timetables() -> Any:
             st_res = station_repo.search(query, limit=limit)
             rt_res = route_repo.search(query, limit=limit)
             results = st_res + rt_res
-        else:
-            for item in SAMPLE_TIMETABLE_DATA:
-                if transport_type and item["transport_type"] != transport_type:
-                    continue
-                if query:
-                    match_name = query.lower() in item["name"].lower()
-                    match_id = query.lower() in item["identifier"].lower()
-                    match_desc = query.lower() in item["description"].lower()
-                    if match_name or match_id or match_desc:
-                        results.append(item)
-                else:
+
+    # Fallback to SAMPLE_TIMETABLE_DATA if not cached from database
+    if not is_cached and transport_type not in ("status", "status_check"):
+        target_mode = (
+            "train"
+            if transport_type in ("station", "train", "stations")
+            else (
+                "bus"
+                if transport_type
+                in (
+                    "bus_stop",
+                    "stop",
+                    "bus_stops",
+                    "stops",
+                    "bus_route",
+                    "route",
+                    "bus_routes",
+                    "routes",
+                    "bus",
+                )
+                else ""
+            )
+        )
+        for item in SAMPLE_TIMETABLE_DATA:
+            if target_mode and item["transport_type"] != target_mode:
+                continue
+            if query:
+                match_name = query.lower() in item["name"].lower()
+                match_id = query.lower() in item["identifier"].lower()
+                match_desc = query.lower() in item["description"].lower()
+                if match_name or match_id or match_desc:
                     results.append(item)
+            else:
+                results.append(item)
 
     return jsonify(
         {

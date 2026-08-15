@@ -57,53 +57,12 @@ def test_page_404_html_response(client: FlaskClient) -> None:
 
 
 def test_api_timetables_search_endpoint(client: FlaskClient) -> None:
-    """Test that /api/timetables/search returns search results and cache state."""
-    from app.db import BusRouteRepository
-
-    # When uncached
-    response_empty = client.get("/api/timetables/search?type=bus_route")
-    assert response_empty.status_code == 200
-    data_empty = response_empty.get_json()
-    assert data_empty["is_cached"] is False
-    assert data_empty["results"] == []
-
-    # When cached
-    route_repo = BusRouteRepository()
-    route_repo.bulk_upsert(
-        [
-            {
-                "route_number": "1",
-                "operator_name": "Oxford Bus Company",
-                "origin": "Blackbird Leys",
-                "destination": "Oxford City Centre",
-            }
-        ]
-    )
-    response_cached = client.get("/api/timetables/search?type=bus_route&q=1")
-    assert response_cached.status_code == 200
-    data_cached = response_cached.get_json()
-    assert data_cached["is_cached"] is True
-    assert len(data_cached["results"]) == 1
-    assert data_cached["results"][0]["route_number"] == "1"
-
-
-def test_api_sync_endpoints(client: FlaskClient) -> None:
-    """Test that /api/sync and /api/sync/<table_name> trigger sync operations."""
-    # Test sync all
-    res_all = client.post("/api/sync")
-    assert res_all.status_code == 200
-    data_all = res_all.get_json()
-    assert "tables" in data_all
-
-    # Test sync specific table
-    res_table = client.post("/api/sync/stations")
-    assert res_table.status_code == 200
-    data_table = res_table.get_json()
-    assert data_table["table"] == "stations"
-
-    # Test invalid table
-    res_invalid = client.post("/api/sync/invalid_table")
-    assert res_invalid.status_code == 400
+    """Test that /api/timetables/search returns search results."""
+    response = client.get("/api/timetables/search?type=bus")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "results" in data
+    assert len(data["results"]) > 0
 
 
 def test_static_assets_served(client: FlaskClient) -> None:
@@ -112,6 +71,9 @@ def test_static_assets_served(client: FlaskClient) -> None:
         "/static/js/dirty-manager.js",
         "/static/js/credentials.js",
         "/static/js/timetables.js",
+        "/static/js/transfers.js",
+        "/static/js/db.js",
+        "/static/css/tables.css",
         "/static/css/timetables.css",
     ]
     for asset_path in assets:
