@@ -8,7 +8,6 @@ from botocore.exceptions import (
     EndpointConnectionError,
     BotoCoreError,
 )
-from bods_client.models.base import APIError as BodsAPIError
 from openai import (
     AuthenticationError as OpenAIAuthError,
     APIConnectionError as OpenAIConnError,
@@ -38,80 +37,90 @@ def test_validate_bus_api_key_empty() -> None:
     assert "Bus API key is empty" in message
 
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_success(mock_bods_cls: MagicMock) -> None:
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_success(mock_get: MagicMock) -> None:
     """Test Bus API validation success."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.return_value = {"datasets": []}
-    mock_bods_cls.return_value = mock_instance
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_get.return_value = mock_resp
 
     valid, message = validate_bus_api_key("valid_bus_token")
     assert valid
     assert "valid and active" in message
+    assert mock_get.call_args[1]["params"] == {
+        "api_key": "valid_bus_token",
+        "limit": 1,
+    }
 
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_unauthorised(mock_bods_cls: MagicMock) -> None:
-    """Test Bus API validation with 401/403 error."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.return_value = BodsAPIError(
-        status_code=401, reason="Unauthorised"
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_custom_base_url(mock_get: MagicMock) -> None:
+    """Test Bus API validation with custom base URL."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_get.return_value = mock_resp
+
+    valid, message = validate_bus_api_key(
+        "valid_bus_token", base_url="https://custom.bods.api/v1/dataset"
     )
-    mock_bods_cls.return_value = mock_instance
+    assert valid
+    assert mock_get.call_args[0][0] == "https://custom.bods.api/v1/dataset"
+
+
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_unauthorised(mock_get: MagicMock) -> None:
+    """Test Bus API validation with 401/403 error."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+    mock_get.return_value = mock_resp
 
     valid, message = validate_bus_api_key("invalid_token")
     assert not valid
     assert "Invalid Bus API key or unauthorised access" in message
 
+    mock_resp.status_code = 403
+    valid, message = validate_bus_api_key("forbidden_token")
+    assert not valid
+    assert "Invalid Bus API key or unauthorised access" in message
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_other_api_error(mock_bods_cls: MagicMock) -> None:
+
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_other_api_error(mock_get: MagicMock) -> None:
     """Test Bus API validation with other API error code."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.return_value = BodsAPIError(
-        status_code=500, reason="Internal Server Error"
-    )
-    mock_bods_cls.return_value = mock_instance
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    mock_resp.text = "Internal Server Error"
+    mock_get.return_value = mock_resp
 
     valid, message = validate_bus_api_key("some_token")
     assert not valid
     assert "Bus API error (500)" in message
 
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_timeout(mock_bods_cls: MagicMock) -> None:
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_timeout(mock_get: MagicMock) -> None:
     """Test Bus API validation timeout exception."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.side_effect = requests.exceptions.Timeout(
-        "Timed out"
-    )
-    mock_bods_cls.return_value = mock_instance
+    mock_get.side_effect = requests.exceptions.Timeout("Timed out")
 
     valid, message = validate_bus_api_key("token_timeout")
     assert not valid
     assert "timed out" in message.lower()
 
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_request_exception(mock_bods_cls: MagicMock) -> None:
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_request_exception(mock_get: MagicMock) -> None:
     """Test Bus API validation request connection error."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.side_effect = (
-        requests.exceptions.ConnectionError("Failed to connect")
-    )
-    mock_bods_cls.return_value = mock_instance
+    mock_get.side_effect = requests.exceptions.ConnectionError("Failed to connect")
 
     valid, message = validate_bus_api_key("token_conn_err")
     assert not valid
     assert "Unable to connect to Bus Open Data Service" in message
 
 
-@patch("app.validators.BODSClient")
-def test_validate_bus_api_key_generic_exception(mock_bods_cls: MagicMock) -> None:
+@patch("app.validators.requests.get")
+def test_validate_bus_api_key_generic_exception(mock_get: MagicMock) -> None:
     """Test Bus API validation generic unexpected exception."""
-    mock_instance = MagicMock()
-    mock_instance.get_timetable_datasets.side_effect = RuntimeError("Unexpected error")
-    mock_bods_cls.return_value = mock_instance
+    mock_get.side_effect = RuntimeError("Unexpected error")
 
     valid, message = validate_bus_api_key("token_generic_err")
     assert not valid

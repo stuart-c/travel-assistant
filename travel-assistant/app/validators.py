@@ -15,8 +15,6 @@ from botocore.exceptions import (
     EndpointConnectionError,
     BotoCoreError,
 )
-from bods_client.client import BODSClient
-from bods_client.models.base import APIError as BodsAPIError
 from openai import (
     OpenAI,
     AuthenticationError as OpenAIAuthError,
@@ -26,15 +24,21 @@ from openai import (
 )
 
 # Standard default endpoints
+DEFAULT_BODS_BASE = "https://data.bus-data.dft.gov.uk/api/v1"
 DEFAULT_LDBWS_BASE = "https://realtime.nationalrail.co.uk/LDBWS"
 DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 
 
-def validate_bus_api_key(api_key: str, timeout: float = 5.0) -> Tuple[bool, str]:
+def validate_bus_api_key(
+    api_key: str,
+    base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Tuple[bool, str]:
     """Validate Bus Open Data Service (BODS) API key.
 
     Args:
         api_key: The BODS API key or token to verify.
+        base_url: Optional base URL for the BODS API.
         timeout: Request timeout in seconds.
 
     Returns:
@@ -44,18 +48,27 @@ def validate_bus_api_key(api_key: str, timeout: float = 5.0) -> Tuple[bool, str]
     if not cleaned_key:
         return False, "Bus API key is empty."
 
+    endpoint = (base_url or DEFAULT_BODS_BASE).rstrip("/")
+    if not endpoint.endswith("/dataset"):
+        test_url = f"{endpoint}/dataset/"
+    else:
+        test_url = endpoint
+
     try:
-        client = BODSClient(api_key=cleaned_key)
-        # Query datasets with a limit of 1 to verify authentication
-        response = client.get_timetable_datasets()
-        if isinstance(response, BodsAPIError):
-            if response.status_code in (401, 403):
-                return False, "Invalid Bus API key or unauthorised access."
-            return (
-                False,
-                f"Bus API error ({response.status_code}): {response.reason}",
-            )
-        return True, "Bus API key is valid and active."
+        response = requests.get(
+            test_url,
+            params={"api_key": cleaned_key, "limit": 1},
+            headers={"Accept": "application/json"},
+            timeout=timeout,
+        )
+        if response.status_code == 200:
+            return True, "Bus API key is valid and active."
+        if response.status_code in (401, 403):
+            return False, "Invalid Bus API key or unauthorised access."
+        return (
+            False,
+            f"Bus API error ({response.status_code}): {response.text[:120]}",
+        )
     except requests.exceptions.Timeout:
         return False, "Connection timed out connecting to Bus Open Data Service."
     except requests.exceptions.RequestException as exc:
@@ -302,6 +315,7 @@ def validate_service_credentials(
     if service_normalised == "bus":
         return validate_bus_api_key(
             api_key=payload.get("bus_api_key", ""),
+            base_url=payload.get("bus_api_base_url"),
             timeout=timeout,
         )
 
