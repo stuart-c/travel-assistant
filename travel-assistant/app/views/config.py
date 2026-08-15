@@ -321,13 +321,33 @@ def locations() -> Any:
                         "name": name,
                         "latitude": round(lat, 6),
                         "longitude": round(lon, 6),
+                        "ha": bool(entry.get("ha", False)),
                     }
                 )
 
             with Location._meta.database.atomic():
+                # Preserve all existing Home Assistant synchronised records
+                existing_ha_records = [
+                    {
+                        "name": loc.name,
+                        "latitude": loc.latitude,
+                        "longitude": loc.longitude,
+                        "ha": True,
+                    }
+                    for loc in Location.select().where(
+                        Location.ha == True  # noqa: E712
+                    )
+                ]
+
+                # Extract only manual (ha=False) entries from submitted items
+                manual_items = [
+                    item for item in cleaned_items if not item.get("ha", False)
+                ]
+
                 Location.delete().execute()
-                if cleaned_items:
-                    Location.insert_many(cleaned_items).execute()
+                all_records = existing_ha_records + manual_items
+                if all_records:
+                    Location.insert_many(all_records).execute()
 
             flash("Locations saved successfully.", "success")
         except Exception as e:

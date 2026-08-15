@@ -14,6 +14,7 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
+from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.naptan import NaptanClient
 from app.datasources.openai import OpenAIClient, filter_chat_models
 from app.datasources.train_live import TrainLiveClient
@@ -29,6 +30,8 @@ DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
     "open_api": OpenAIClient,
     "openai": OpenAIClient,
     "naptan": NaptanClient,
+    "homeassistant": HomeAssistantClient,
+    "ha": HomeAssistantClient,
 }
 
 
@@ -36,7 +39,7 @@ def get_datasource(service_name: str, settings: Optional[Any] = None) -> BaseDat
     """Factory helper to obtain an instantiated datasource client by service key.
 
     Args:
-        service_name: Service identifier (e.g. 'bus', 'train_s3', 'train_live', 'openai').
+        service_name: Service identifier (e.g. 'bus', 'train_s3', 'train_live', 'openai', 'ha').
         settings: Optional settings provider or dictionary to load credentials from.
 
     Returns:
@@ -67,6 +70,7 @@ __all__ = [
     "TrainLiveClient",
     "OpenAIClient",
     "NaptanClient",
+    "HomeAssistantClient",
     "filter_chat_models",
     "get_datasource",
     "DATASOURCE_REGISTRY",

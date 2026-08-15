@@ -3,6 +3,7 @@
  * 
  * Manages client-side staged state for configured geographic locations
  * using Grid.js and Leaflet interactive map with bidirectional coordinate synchronisation.
+ * Provides read-only viewing protections for Home Assistant synchronised locations.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -39,10 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const latInput = document.getElementById('location_latitude');
   const lngInput = document.getElementById('location_longitude');
   const modalError = document.getElementById('location-modal-error');
+  const haNotice = document.getElementById('location-ha-readonly-notice');
 
   // Map state
   let leafletMap = null;
   let leafletMarker = null;
+  let isReadOnlyMode = false;
   const DEFAULT_LAT = 51.5074;
   const DEFAULT_LNG = -0.1278;
   const DEFAULT_ZOOM = 13;
@@ -62,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateCoordinateInputs(lat, lng) {
+    if (isReadOnlyMode) return;
     latInput.value = formatCoord(lat);
     lngInput.value = formatCoord(lng);
   }
@@ -80,22 +84,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }).addTo(leafletMap);
 
     leafletMarker = L.marker([DEFAULT_LAT, DEFAULT_LNG], {
-      draggable: true,
+      draggable: !isReadOnlyMode,
       autoPan: true,
     }).addTo(leafletMap);
 
     leafletMarker.on('drag', (e) => {
+      if (isReadOnlyMode) return;
       const pos = e.target.getLatLng();
       updateCoordinateInputs(pos.lat, pos.lng);
     });
 
     leafletMarker.on('dragend', (e) => {
+      if (isReadOnlyMode) return;
       const pos = e.target.getLatLng();
       updateCoordinateInputs(pos.lat, pos.lng);
       leafletMap.panTo(pos);
     });
 
     leafletMap.on('click', (e) => {
+      if (isReadOnlyMode) return;
       setMarkerPosition(e.latlng.lat, e.latlng.lng, true);
     });
   }
@@ -108,7 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const newLatLng = [safeLat, safeLng];
     leafletMarker.setLatLng(newLatLng);
-    updateCoordinateInputs(safeLat, safeLng);
+    if (!isReadOnlyMode) {
+      updateCoordinateInputs(safeLat, safeLng);
+    }
 
     if (panTo) {
       leafletMap.panTo(newLatLng);
@@ -117,6 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Handle manual coordinate input changes
   function onCoordinateInputChange() {
+    if (isReadOnlyMode) return;
     const lat = parseFloat(latInput.value);
     const lng = parseFloat(lngInput.value);
     if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
@@ -135,6 +145,47 @@ document.addEventListener('DOMContentLoaded', () => {
     return items.map((item, index) => {
       const formattedLat = formatCoord(item.latitude);
       const formattedLng = formatCoord(item.longitude);
+      const isHa = Boolean(item.ha);
+
+      const sourceBadge = isHa
+        ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+             <span class="material-symbols-outlined text-xs">home</span>
+             Home Assistant
+           </span>`
+        : `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+             Custom
+           </span>`;
+
+      const actionButtons = isHa
+        ? `<button 
+             type="button" 
+             class="view-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-sky-600 hover:text-sky-900 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/60 transition-colors cursor-pointer"
+             data-index="${index}"
+             title="View Location Details"
+           >
+             <span class="material-symbols-outlined text-xs leading-none">visibility</span>
+             View
+           </button>`
+        : `<div class="flex items-center gap-1.5">
+             <button 
+               type="button" 
+               class="edit-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+               data-index="${index}"
+               title="Edit Location"
+             >
+               <span class="material-symbols-outlined text-xs leading-none">edit</span>
+               Edit
+             </button>
+             <button 
+               type="button" 
+               class="delete-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+               data-index="${index}"
+               title="Delete Location"
+             >
+               <span class="material-symbols-outlined text-xs leading-none">delete</span>
+               Delete
+             </button>
+           </div>`;
 
       return [
         gridjs.html(`
@@ -149,28 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(`
           <code class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-mono">${formattedLng}</code>
         `),
-        gridjs.html(`
-          <div class="flex items-center gap-1.5">
-            <button 
-              type="button" 
-              class="edit-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Edit Location"
-            >
-              <span class="material-symbols-outlined text-xs leading-none">edit</span>
-              Edit
-            </button>
-            <button 
-              type="button" 
-              class="delete-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Delete Location"
-            >
-              <span class="material-symbols-outlined text-xs leading-none">delete</span>
-              Delete
-            </button>
-          </div>
-        `),
+        gridjs.html(sourceBadge),
+        gridjs.html(actionButtons),
       ];
     });
   }
@@ -179,9 +210,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const grid = new gridjs.Grid({
     columns: [
       { name: 'Name', width: 'auto' },
-      { name: 'Latitude', width: '150px' },
-      { name: 'Longitude', width: '150px' },
-      { name: 'Actions', width: '160px', sort: false },
+      { name: 'Latitude', width: '130px' },
+      { name: 'Longitude', width: '130px' },
+      { name: 'Source', width: '150px' },
+      { name: 'Actions', width: '150px', sort: false },
     ],
     data: formatGridData(stagedLocations),
     sort: true,
@@ -260,19 +292,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Open modal helper
-  function openModal(isEdit = false, index = -1) {
+  function openModal(mode = 'add', index = -1) {
     if (modalError) modalError.classList.add('hidden');
     editIndexInput.value = index;
+    isReadOnlyMode = mode === 'view';
 
-    if (isEdit && index >= 0 && index < stagedLocations.length) {
+    if (isReadOnlyMode) {
       const item = stagedLocations[index];
-      modalTitle.textContent = 'Edit Location';
-      modalIcon.textContent = 'edit';
-      nameInput.value = item.name || '';
-      const lat = parseFloat(item.latitude) || DEFAULT_LAT;
-      const lng = parseFloat(item.longitude) || DEFAULT_LNG;
+      modalTitle.textContent = 'View Location';
+      modalIcon.textContent = 'visibility';
+      if (haNotice) haNotice.classList.remove('hidden');
+
+      nameInput.value = item ? item.name : '';
+      nameInput.disabled = true;
+      nameInput.readOnly = true;
+
+      const lat = item ? parseFloat(item.latitude) || DEFAULT_LAT : DEFAULT_LAT;
+      const lng = item ? parseFloat(item.longitude) || DEFAULT_LNG : DEFAULT_LNG;
       latInput.value = formatCoord(lat);
+      latInput.disabled = true;
+      latInput.readOnly = true;
+
       lngInput.value = formatCoord(lng);
+      lngInput.disabled = true;
+      lngInput.readOnly = true;
+
+      if (confirmBtn) confirmBtn.classList.add('hidden');
+      if (cancelModalBtn) cancelModalBtn.textContent = 'Close';
 
       if (modal && typeof modal.showModal === 'function') {
         modal.showModal();
@@ -284,14 +330,68 @@ document.addEventListener('DOMContentLoaded', () => {
           leafletMap.invalidateSize();
           setMarkerPosition(lat, lng, true);
           leafletMap.setView([lat, lng], 14);
+          if (leafletMarker && leafletMarker.dragging) {
+            leafletMarker.dragging.disable();
+          }
+        }
+      }, 100);
+    } else if (mode === 'edit' && index >= 0 && index < stagedLocations.length) {
+      const item = stagedLocations[index];
+      modalTitle.textContent = 'Edit Location';
+      modalIcon.textContent = 'edit';
+      if (haNotice) haNotice.classList.add('hidden');
+
+      nameInput.value = item.name || '';
+      nameInput.disabled = false;
+      nameInput.readOnly = false;
+
+      const lat = parseFloat(item.latitude) || DEFAULT_LAT;
+      const lng = parseFloat(item.longitude) || DEFAULT_LNG;
+      latInput.value = formatCoord(lat);
+      latInput.disabled = false;
+      latInput.readOnly = false;
+
+      lngInput.value = formatCoord(lng);
+      lngInput.disabled = false;
+      lngInput.readOnly = false;
+
+      if (confirmBtn) confirmBtn.classList.remove('hidden');
+      if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
+
+      if (modal && typeof modal.showModal === 'function') {
+        modal.showModal();
+      }
+
+      setTimeout(() => {
+        initialiseMap();
+        if (leafletMap) {
+          leafletMap.invalidateSize();
+          setMarkerPosition(lat, lng, true);
+          leafletMap.setView([lat, lng], 14);
+          if (leafletMarker && leafletMarker.dragging) {
+            leafletMarker.dragging.enable();
+          }
         }
       }, 100);
     } else {
       modalTitle.textContent = 'Add New Location';
       modalIcon.textContent = 'pin_drop';
+      if (haNotice) haNotice.classList.add('hidden');
+
       nameInput.value = '';
+      nameInput.disabled = false;
+      nameInput.readOnly = false;
+
       latInput.value = formatCoord(DEFAULT_LAT);
+      latInput.disabled = false;
+      latInput.readOnly = false;
+
       lngInput.value = formatCoord(DEFAULT_LNG);
+      lngInput.disabled = false;
+      lngInput.readOnly = false;
+
+      if (confirmBtn) confirmBtn.classList.remove('hidden');
+      if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
 
       if (modal && typeof modal.showModal === 'function') {
         modal.showModal();
@@ -303,6 +403,9 @@ document.addEventListener('DOMContentLoaded', () => {
           leafletMap.invalidateSize();
           setMarkerPosition(DEFAULT_LAT, DEFAULT_LNG, true);
           leafletMap.setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
+          if (leafletMarker && leafletMarker.dragging) {
+            leafletMarker.dragging.enable();
+          }
         }
       }, 100);
     }
@@ -314,14 +417,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (openAddBtn) openAddBtn.addEventListener('click', () => openModal(false));
-  if (emptyAddBtn) emptyAddBtn.addEventListener('click', () => openModal(false));
+  if (openAddBtn) openAddBtn.addEventListener('click', () => openModal('add'));
+  if (emptyAddBtn) emptyAddBtn.addEventListener('click', () => openModal('add'));
   if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
   if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
 
   // Save location from modal
   if (confirmBtn) {
     confirmBtn.addEventListener('click', () => {
+      if (isReadOnlyMode) return;
+
       const name = nameInput.value.trim();
       const lat = parseFloat(latInput.value);
       const lng = parseFloat(lngInput.value);
@@ -332,10 +437,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const idx = parseInt(editIndexInput.value, 10);
+      const isHa = !isNaN(idx) && idx >= 0 && idx < stagedLocations.length ? Boolean(stagedLocations[idx].ha) : false;
+
       const entry = {
         name,
         latitude: parseFloat(lat.toFixed(6)),
         longitude: parseFloat(lng.toFixed(6)),
+        ha: isHa,
       };
 
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
@@ -349,13 +457,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Row event delegation for Edit and Delete
+  // Row event delegation for View, Edit, and Delete
   document.addEventListener('click', (e) => {
+    const viewBtn = e.target.closest('.view-location-btn');
+    if (viewBtn) {
+      const idx = parseInt(viewBtn.getAttribute('data-index'), 10);
+      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        openModal('view', idx);
+      }
+      return;
+    }
+
     const editBtn = e.target.closest('.edit-location-btn');
     if (editBtn) {
       const idx = parseInt(editBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        openModal(true, idx);
+        openModal('edit', idx);
       }
       return;
     }
@@ -364,6 +481,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        if (stagedLocations[idx] && stagedLocations[idx].ha) {
+          return; // Synced locations cannot be deleted
+        }
         stagedLocations.splice(idx, 1);
         syncState();
       }
