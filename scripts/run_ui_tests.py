@@ -71,6 +71,7 @@ class UITester:
             "/config/timetables",
             "/config/transfers",
             "/config/journeys",
+            "/config/walking",
             "/config/db",
             "/config/sync",
         ]
@@ -298,6 +299,33 @@ class UITester:
             "Journeys Grid.js Data Persistence",
             any(j.get("name") == "Lab Commute" for j in j_data),
             f"Verified {len(j_data)} journeys in payload",
+        )
+
+        # Walking Grid.js
+        w_payload = [
+            {
+                "start_type": "ha",
+                "start_id": "zone.home",
+                "start_name": "Home Base",
+                "finish_type": "custom",
+                "finish_id": "custom:lab",
+                "finish_name": "Innovation Lab",
+                "time_needed_minutes": 15,
+                "bidirectional": True,
+            }
+        ]
+        r_w_post = self.client.post(
+            "/config/walking",
+            data={"walking_json": json.dumps(w_payload)},
+            follow_redirects=True,
+        )
+        soup_w = BeautifulSoup(r_w_post.get_data(as_text=True), "html.parser")
+        w_script = soup_w.find("script", id="initial-walking-data")
+        w_data = json.loads(w_script.string) if w_script else []
+        self.record(
+            "Walking Grid.js Data Persistence",
+            any(w.get("time_needed_minutes") == 15 for w in w_data),
+            f"Verified {len(w_data)} walking routes in payload",
         )
 
         # 5. British English Compliance
