@@ -182,14 +182,21 @@ def run_migrations(database: SqliteDatabase) -> None:
         if cursor.fetchone():
             col_cursor = database.execute_sql('PRAGMA table_info("timetables")')
             cols = [col[1] for col in col_cursor.fetchall()]
-            if "start_date" not in cols or "transport_type" in cols:
-                # Timetable schema has evolved from legacy structure.
-                # Recreate table cleanly to eliminate dropped NOT NULL columns and preserve rows.
+            if (
+                "transport_type" not in cols
+                or "content" not in cols
+                or "start_date" not in cols
+            ):
+                # Timetable schema has evolved.
+                # Recreate table cleanly to ensure all columns and defaults are preserved.
                 has_created = "created_at" in cols
                 has_updated = "updated_at" in cols
                 created_col = '"created_at"' if has_created else "CURRENT_TIMESTAMP"
                 updated_col = '"updated_at"' if has_updated else "CURRENT_TIMESTAMP"
                 name_col = '"name"' if "name" in cols else "''"
+                transport_type_col = (
+                    '"transport_type"' if "transport_type" in cols else "'bus'"
+                )
                 start_date_col = '"start_date"' if "start_date" in cols else "NULL"
                 end_date_col = '"end_date"' if "end_date" in cols else "NULL"
                 monday_col = '"monday"' if "monday" in cols else "1"
@@ -200,6 +207,9 @@ def run_migrations(database: SqliteDatabase) -> None:
                 saturday_col = '"saturday"' if "saturday" in cols else "1"
                 sunday_col = '"sunday"' if "sunday" in cols else "1"
                 bank_holiday_col = '"bank_holiday"' if "bank_holiday" in cols else "1"
+                content_col = (
+                    '"content"' if "content" in cols else '\'{"stops":[], "trips":[]}\''
+                )
 
                 with database.atomic():
                     database.execute_sql(
@@ -210,16 +220,17 @@ def run_migrations(database: SqliteDatabase) -> None:
 
                     database.execute_sql(f"""
                         INSERT INTO "timetables" (
-                            "id", "created_at", "updated_at", "name",
+                            "id", "created_at", "updated_at", "name", "transport_type",
                             "start_date", "end_date",
                             "monday", "tuesday", "wednesday", "thursday",
-                            "friday", "saturday", "sunday", "bank_holiday"
+                            "friday", "saturday", "sunday", "bank_holiday", "content"
                         )
                         SELECT
-                            "id", {created_col}, {updated_col}, {name_col},
+                            "id", {created_col}, {updated_col}, {name_col}, {transport_type_col},
                             {start_date_col}, {end_date_col},
                             {monday_col}, {tuesday_col}, {wednesday_col}, {thursday_col},
-                            {friday_col}, {saturday_col}, {sunday_col}, {bank_holiday_col}
+                            {friday_col}, {saturday_col}, {sunday_col},
+                            {bank_holiday_col}, {content_col}
                         FROM "_timetables_old"
                         """)
                     database.execute_sql('DROP TABLE "_timetables_old"')

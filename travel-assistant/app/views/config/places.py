@@ -6,6 +6,45 @@ from flask import jsonify, request
 from app.models import Location, Stop
 from app.views.config import config_bp
 
+STOP_TYPE_CONFIG: Dict[str, Dict[str, str]] = {
+    "rail": {
+        "type": "rail",
+        "icon": "train",
+        "indicator": "Rail",
+        "label": "National Rail Station",
+    },
+    "bus": {
+        "type": "bus",
+        "icon": "directions_bus",
+        "indicator": "Bus Stop",
+        "label": "Bus Stop",
+    },
+    "tram": {
+        "type": "tram",
+        "icon": "tram",
+        "indicator": "Tram",
+        "label": "Tram Stop",
+    },
+    "metro": {
+        "type": "metro",
+        "icon": "subway",
+        "indicator": "Metro",
+        "label": "Metro Station",
+    },
+    "ferry": {
+        "type": "ferry",
+        "icon": "directions_boat",
+        "indicator": "Ferry",
+        "label": "Ferry Terminal",
+    },
+    "air": {
+        "type": "air",
+        "icon": "flight",
+        "indicator": "Air",
+        "label": "Airport Terminal",
+    },
+}
+
 
 @config_bp.route("/search/places", methods=["GET"])
 def search_places() -> Any:
@@ -21,20 +60,23 @@ def search_places() -> Any:
     results: List[Dict[str, Any]] = []
     seen_ids = set()
 
-    # Query Rail Stations
-    if not target_type or target_type in (
-        "station",
-        "train",
-        "rail",
-        "stop",
-        "all",
-    ):
+    # Determine which transit stop types to search
+    if not target_type or target_type == "all":
+        types_to_search = list(STOP_TYPE_CONFIG.keys())
+    elif target_type in STOP_TYPE_CONFIG:
+        types_to_search = [target_type]
+    else:
+        types_to_search = []
+
+    for st_type in types_to_search:
+        meta = STOP_TYPE_CONFIG[st_type]
         try:
-            st_list = (
-                Stop.search(query, stop_type="rail", limit=limit)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "rail").limit(limit))
-            )
+            if query:
+                st_list = Stop.search(query, stop_type=st_type, limit=limit)
+            else:
+                st_list = list(
+                    Stop.select().where(Stop.stop_type == st_type).limit(limit)
+                )
             for st in st_list:
                 item_id = (
                     f"naptan:{st.naptan_code}"
@@ -43,17 +85,23 @@ def search_places() -> Any:
                 )
                 if item_id not in seen_ids:
                     seen_ids.add(item_id)
+                    loc_suffix = f", {st.locality}" if st.locality else ""
+                    ind_text = (
+                        f" ({st.indicator})"
+                        if st.indicator and st_type == "bus"
+                        else ""
+                    )
                     results.append(
                         {
                             "id": item_id,
-                            "name": st.name,
-                            "type": "station",
+                            "name": f"{st.name}{ind_text}",
+                            "type": meta["type"],
                             "description": (
-                                f"National Rail Station - "
+                                f"{meta['label']}{loc_suffix} - "
                                 f"{st.naptan_code or st.atco_code}"
                             ),
-                            "indicator": "Rail",
-                            "icon": "train",
+                            "indicator": st.indicator or meta["indicator"],
+                            "icon": meta["icon"],
                             "latitude": st.latitude,
                             "longitude": st.longitude,
                         }
@@ -61,48 +109,16 @@ def search_places() -> Any:
         except Exception:
             pass
 
-    # Query Bus Stops
-    if not target_type or target_type in ("bus_stop", "bus", "stop", "all"):
-        try:
-            stop_list = (
-                Stop.search(query, stop_type="bus", limit=limit)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "bus").limit(limit))
-            )
-            for sp in stop_list:
-                item_id = (
-                    f"naptan:{sp.naptan_code}"
-                    if sp.naptan_code
-                    else f"atco:{sp.atco_code}"
-                )
-                if item_id not in seen_ids:
-                    seen_ids.add(item_id)
-                    loc_suffix = f", {sp.locality}" if sp.locality else ""
-                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
-                    results.append(
-                        {
-                            "id": item_id,
-                            "name": f"{sp.name}{ind_text}",
-                            "type": "bus_stop",
-                            "description": (f"Bus Stop{loc_suffix} - {sp.atco_code}"),
-                            "indicator": sp.indicator or "Bus Stop",
-                            "icon": "directions_bus",
-                            "latitude": sp.latitude,
-                            "longitude": sp.longitude,
-                        }
-                    )
-        except Exception:
-            pass
-
     # Query Custom & Home Assistant Locations
-    if not target_type or target_type in (
-        "location",
-        "ha_location",
-        "custom_location",
-        "ha",
-        "custom",
-        "all",
-    ):
+    # Included by default, or when searching any transit mode, or when specifically requested
+    include_locations = (
+        not target_type
+        or target_type == "all"
+        or target_type in ("ha", "custom")
+        or target_type in STOP_TYPE_CONFIG
+    )
+
+    if include_locations:
         try:
             loc_list = (
                 Location.search(query, limit=limit)
@@ -111,13 +127,10 @@ def search_places() -> Any:
             )
             for loc in loc_list:
                 is_ha = bool(getattr(loc, "ha", False))
-                loc_type = "ha_location" if is_ha else "custom_location"
-                if target_type and target_type not in (
-                    "location",
-                    "all",
-                    loc_type,
-                    "ha" if is_ha else "custom",
-                ):
+                loc_type = "ha" if is_ha else "custom"
+                if target_type == "ha" and not is_ha:
+                    continue
+                if target_type == "custom" and is_ha:
                     continue
 
                 item_id = str(loc.id)

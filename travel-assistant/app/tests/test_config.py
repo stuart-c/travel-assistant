@@ -179,10 +179,11 @@ def test_get_timetables_page_initial_empty(client: FlaskClient) -> None:
 
 
 def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
-    """Test POST /config/timetables stores valid entries."""
+    """Test POST /config/timetables stores valid entries with transport_type and grid content."""
     items = [
         {
             "name": "Standard Commute Schedule",
+            "transport_type": "bus",
             "start_date": "2026-09-01",
             "end_date": "2026-12-31",
             "monday": True,
@@ -193,9 +194,20 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
             "saturday": False,
             "sunday": False,
             "bank_holiday": False,
+            "content": {
+                "stops": [
+                    {"id": "atco:340000001", "name": "Stop 1", "type": "bus"},
+                    {"id": "atco:340000002", "name": "Stop 2", "type": "bus"},
+                ],
+                "trips": [
+                    {"id": "trip_1", "times": ["08:00", "08:20"]},
+                    {"id": "trip_2", "times": ["09:00", "09:20"]},
+                ],
+            },
         },
         {
-            "name": "Weekend Service",
+            "name": "Weekend Rail Service",
+            "transport_type": "rail",
             "start_date": None,
             "end_date": None,
             "monday": False,
@@ -206,6 +218,18 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
             "saturday": True,
             "sunday": True,
             "bank_holiday": True,
+            "content": json.dumps(
+                {
+                    "stops": [
+                        {
+                            "id": "naptan:PAD",
+                            "name": "Paddington",
+                            "type": "rail",
+                        }
+                    ],
+                    "trips": [{"id": "trip_3", "times": ["10:00"]}],
+                }
+            ),
         },
     ]
 
@@ -220,13 +244,20 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 2
     assert saved[0]["name"] == "Standard Commute Schedule"
+    assert saved[0]["transport_type"] == "bus"
     assert saved[0]["start_date"] == "2026-09-01"
     assert saved[0]["end_date"] == "2026-12-31"
     assert saved[0]["monday"] is True
     assert saved[0]["saturday"] is False
-    assert saved[1]["name"] == "Weekend Service"
+    assert len(saved[0]["content"]["stops"]) == 2
+    assert len(saved[0]["content"]["trips"]) == 2
+    assert saved[0]["content"]["trips"][0]["times"] == ["08:00", "08:20"]
+
+    assert saved[1]["name"] == "Weekend Rail Service"
+    assert saved[1]["transport_type"] == "rail"
     assert saved[1]["start_date"] is None
     assert saved[1]["saturday"] is True
+    assert len(saved[1]["content"]["stops"]) == 1
 
     # Follow redirect
     follow = client.get("/config/timetables")
@@ -402,28 +433,28 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
         ]
     ).execute()
 
-    # 3. Test station search (with naptan prefix vs atco prefix)
-    res_st = client.get("/config/search/places?type=station&q=Oxford")
+    # 3. Test rail search (with naptan prefix vs atco prefix)
+    res_st = client.get("/config/search/places?type=rail&q=Oxford")
     assert res_st.status_code == 200
     data_st = res_st.get_json()
     assert len(data_st["results"]) == 1
     assert data_st["results"][0]["id"] == "naptan:OXF"
-    assert data_st["results"][0]["type"] == "station"
+    assert data_st["results"][0]["type"] == "rail"
     assert data_st["results"][0]["icon"] == "train"
 
-    res_pad = client.get("/config/search/places?type=train&q=Paddington")
+    res_pad = client.get("/config/search/places?type=rail&q=Paddington")
     assert res_pad.status_code == 200
     data_pad = res_pad.get_json()
     assert len(data_pad["results"]) == 1
     assert data_pad["results"][0]["id"] == "atco:9100PAD"
 
     # 4. Test bus stop search
-    res_bus = client.get("/config/search/places?type=bus_stop&q=High Street")
+    res_bus = client.get("/config/search/places?type=bus&q=High Street")
     assert res_bus.status_code == 200
     data_bus = res_bus.get_json()
     assert len(data_bus["results"]) == 1
     assert data_bus["results"][0]["id"] == "atco:340000001"
-    assert data_bus["results"][0]["type"] == "bus_stop"
+    assert data_bus["results"][0]["type"] == "bus"
     assert data_bus["results"][0]["icon"] == "directions_bus"
 
     res_bus_naptan = client.get("/config/search/places?type=bus&q=Blackbird")
@@ -433,12 +464,12 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     assert data_bus_naptan["results"][0]["id"] == "naptan:oxf002"
 
     # 5. Test HA and custom location search
-    res_ha = client.get("/config/search/places?type=ha_location&q=Home")
+    res_ha = client.get("/config/search/places?type=ha&q=Home")
     assert res_ha.status_code == 200
     data_ha = res_ha.get_json()
     assert len(data_ha["results"]) == 1
     assert data_ha["results"][0]["id"] == "ha:home"
-    assert data_ha["results"][0]["type"] == "ha_location"
+    assert data_ha["results"][0]["type"] == "ha"
     assert data_ha["results"][0]["icon"] == "home"
 
     res_custom = client.get("/config/search/places?type=custom&q=Office")
@@ -446,10 +477,62 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     data_custom = res_custom.get_json()
     assert len(data_custom["results"]) == 1
     assert data_custom["results"][0]["id"] == "custom:office"
-    assert data_custom["results"][0]["type"] == "custom_location"
+    assert data_custom["results"][0]["type"] == "custom"
     assert data_custom["results"][0]["icon"] == "pin_drop"
 
-    # 6. Test all locations search without type filter
+    # 6. Test tram, metro, ferry, air stops
+    Stop.bulk_upsert(
+        [
+            {
+                "atco_code": "9400ZZTRAM",
+                "stop_type": "tram",
+                "name": "St Peter's Square",
+            },
+            {
+                "atco_code": "9400ZZMETRO",
+                "stop_type": "metro",
+                "name": "Piccadilly Circus Underground",
+            },
+            {
+                "atco_code": "9300ZZFERRY",
+                "stop_type": "ferry",
+                "name": "Wightlink Ferry Port",
+            },
+            {
+                "atco_code": "9200ZZAIR",
+                "stop_type": "air",
+                "name": "Heathrow Terminal 5",
+            },
+        ]
+    )
+
+    res_tram = client.get("/config/search/places?type=tram&q=Square")
+    assert res_tram.status_code == 200
+    assert len(res_tram.get_json()["results"]) == 1
+    assert res_tram.get_json()["results"][0]["icon"] == "tram"
+
+    res_metro = client.get("/config/search/places?type=metro&q=Piccadilly")
+    assert res_metro.status_code == 200
+    assert len(res_metro.get_json()["results"]) == 1
+    assert res_metro.get_json()["results"][0]["icon"] == "subway"
+
+    res_ferry = client.get("/config/search/places?type=ferry&q=Wightlink")
+    assert res_ferry.status_code == 200
+    assert len(res_ferry.get_json()["results"]) == 1
+    assert res_ferry.get_json()["results"][0]["icon"] == "directions_boat"
+
+    res_air = client.get("/config/search/places?type=air&q=Heathrow")
+    assert res_air.status_code == 200
+    assert len(res_air.get_json()["results"]) == 1
+    assert res_air.get_json()["results"][0]["icon"] == "flight"
+
+    # 7. Test transport type query also returns matching custom / HA location
+    res_bus_with_ha = client.get("/config/search/places?type=bus&q=Home")
+    assert res_bus_with_ha.status_code == 200
+    assert len(res_bus_with_ha.get_json()["results"]) == 1
+    assert res_bus_with_ha.get_json()["results"][0]["id"] == "ha:home"
+
+    # 8. Test all locations search without type filter
     res_all_q = client.get("/config/search/places?limit=invalid")
     assert res_all_q.status_code == 200
     data_all_q = res_all_q.get_json()
@@ -487,8 +570,8 @@ def test_get_db_page_with_populated_tables(client: FlaskClient) -> None:
     Setting.set_val("bus_key", "secret123", category="credentials")
     Setting.set_val("train_key", "secret456", category="credentials")
 
-    Timetable.create(transport_type="bus", name="Route 1", identifier="R-01")
-    Timetable.create(transport_type="train", name="Paddington", identifier="PAD")
+    Timetable.create(transport_type="bus", name="Route 1")
+    Timetable.create(transport_type="rail", name="Paddington")
 
     response = client.get("/config/db")
     assert response.status_code == 200

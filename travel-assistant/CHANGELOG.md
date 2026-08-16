@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Full-width interactive **Timetable Grid Editor** on `/config/timetables` allowing direct configuration and matrix editing of stops down the left column and trips / timings across columns.
+- Transport Type classification on `Timetable` model and database schema supporting Bus (`bus`), Train / Rail (`rail`), Tram (`tram`), Metro (`metro`), Ferry (`ferry`), and Air (`air`) with Material Symbols icons and dedicated table column.
+- Autocomplete stop addition in Timetable Grid Editor querying `/config/search/places` filtered by timetable transport mode while including Home Assistant zones and custom locations.
+- Stop sequence management in Timetable Grid Editor with up/down reordering and deletion.
+- Multi-column selection and **Duplicate & Retime** workflow supporting single-column new departure times or multi-column batch intervals and copy counts, maintaining stop travel durations and sorting columns chronologically.
+- Chronological cell-level timing validation highlighting sequence errors in rose with contextual tooltips and a live validation warning banner.
+- Automated SQLite schema migration in `run_migrations` for existing `timetables` tables adding `transport_type` and `content` columns without data loss.
 - Comprehensive design system documentation (`DESIGN.md`) detailing UI/UX standards, British English copy rules, layout widths, collapsible section patterns, modal proportions, and form controls.
 - Collapsible section architecture with smooth animated chevrons across multi-section configuration views (`/config/credentials`, `/config/transfers`).
 - Dual-mode combined Valid/Check button on the API Credentials page with automatic transformation to Check on input edit and auto-collapse for verified credentials.

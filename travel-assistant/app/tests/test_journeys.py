@@ -71,10 +71,10 @@ def test_journey_model_lifecycle(
 
         journey = Journey.create(
             name="Morning Commute",
-            from_type="custom_location",
+            from_type="custom",
             from_id=str(sample_custom_location.id),
             from_name=sample_custom_location.name,
-            to_type="station",
+            to_type="rail",
             to_id=sample_station.naptan_code or sample_station.atco_code,
             to_name=sample_station.name,
         )
@@ -105,20 +105,20 @@ def test_journey_search_and_stats(app: Flask, sample_station: Stop) -> None:
     with app.app_context():
         Journey.create(
             name="Airport Shuttle",
-            from_type="station",
+            from_type="rail",
             from_id="WAT",
             from_name="London Waterloo",
-            to_type="station",
+            to_type="rail",
             to_id="LGW",
             to_name="Gatwick Airport",
             time_settings="[]",
         )
         Journey.create(
             name="Weekend Trip",
-            from_type="station",
+            from_type="rail",
             from_id="WAT",
             from_name="London Waterloo",
-            to_type="station",
+            to_type="rail",
             to_id="BHM",
             to_name="Birmingham New Street",
             time_settings="[]",
@@ -150,10 +150,10 @@ def test_config_journeys_post_persistence(app: Flask, client: FlaskClient) -> No
     payload = [
         {
             "name": "Daily Commute",
-            "from_type": "custom_location",
+            "from_type": "custom",
             "from_id": "1",
             "from_name": "Home",
-            "to_type": "station",
+            "to_type": "rail",
             "to_id": "WAT",
             "to_name": "London Waterloo",
             "time_settings": [
@@ -167,10 +167,10 @@ def test_config_journeys_post_persistence(app: Flask, client: FlaskClient) -> No
         },
         {
             "name": "Evening Return",
-            "from_type": "station",
+            "from_type": "rail",
             "from_id": "WAT",
             "from_name": "London Waterloo",
-            "to_type": "custom_location",
+            "to_type": "custom",
             "to_id": "1",
             "to_name": "Home",
             "time_settings": [],
@@ -227,14 +227,14 @@ def test_config_journeys_search(
     data = response.get_json()
     assert "results" in data
     assert any(
-        item["type"] == "station"
+        item["type"] == "rail"
         and item["icon"] == "train"
         and item["id"] == "naptan:WAT"
         for item in data["results"]
     )
 
     # Test bus stop search
-    response_bus = client.get("/config/search/places?q=Euston&type=bus_stop")
+    response_bus = client.get("/config/search/places?q=Euston&type=bus")
     assert response_bus.status_code == 200
     data_bus = response_bus.get_json()
     assert len(data_bus["results"]) >= 1
@@ -243,7 +243,7 @@ def test_config_journeys_search(
     assert data_bus["results"][0]["id"] == "atco:490000077E"
 
     # Test custom location search
-    response_custom = client.get("/config/search/places?q=Home&type=custom_location")
+    response_custom = client.get("/config/search/places?q=Home&type=custom")
     assert response_custom.status_code == 200
     data_custom = response_custom.get_json()
     assert len(data_custom["results"]) >= 1
@@ -257,10 +257,10 @@ def test_db_stats_includes_journeys(app: Flask) -> None:
     with app.app_context():
         Journey.create(
             name="Test Route",
-            from_type="station",
+            from_type="rail",
             from_id="WAT",
             from_name="Waterloo",
-            to_type="station",
+            to_type="rail",
             to_id="VIC",
             to_name="Victoria",
             time_settings="[]",

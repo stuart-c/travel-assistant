@@ -20,10 +20,10 @@ def test_location_transfer_model_crud(app: Flask) -> None:
 
         # Add an inter-location transfer
         item = LocationTransfer.create(
-            from_type="station",
+            from_type="rail",
             from_id="OXF",
             from_name="Oxford Rail Station",
-            to_type="bus_stop",
+            to_type="bus",
             to_id="340000001",
             to_name="Frideswide Square (Stop R1)",
             transfer_time_minutes=4,
@@ -36,10 +36,10 @@ def test_location_transfer_model_crud(app: Flask) -> None:
 
         # Retrieve single transfer
         retrieved = LocationTransfer.get_by_id(item.id)
-        assert retrieved.from_type == "station"
+        assert retrieved.from_type == "rail"
         assert retrieved.from_id == "OXF"
         assert retrieved.from_name == "Oxford Rail Station"
-        assert retrieved.to_type == "bus_stop"
+        assert retrieved.to_type == "bus"
         assert retrieved.to_id == "340000001"
         assert retrieved.to_name == "Frideswide Square (Stop R1)"
         assert retrieved.transfer_time_minutes == 4
@@ -53,9 +53,7 @@ def test_location_transfer_model_crud(app: Flask) -> None:
         assert LocationTransfer.get_by_id(item.id).transfer_time_minutes == 6
 
         # Search with type filters
-        res = LocationTransfer.search(
-            from_type="station", to_type="bus_stop", step_free=True
-        )
+        res = LocationTransfer.search(from_type="rail", to_type="bus", step_free=True)
         assert len(res) == 1
 
         # Delete
@@ -70,7 +68,7 @@ def test_platform_transfer_model_crud(app: Flask) -> None:
         assert PlatformTransfer.select().count() == 0
 
         item = PlatformTransfer.create(
-            location_type="station",
+            location_type="rail",
             location_id="PAD",
             location_name="London Paddington",
             from_platform="1",
@@ -84,6 +82,7 @@ def test_platform_transfer_model_crud(app: Flask) -> None:
         assert PlatformTransfer.select().count() == 1
 
         retrieved = PlatformTransfer.get_by_id(item.id)
+        assert retrieved.location_type == "rail"
         assert retrieved.location_id == "PAD"
         assert retrieved.from_platform == "1"
         assert retrieved.to_platform == "2"
@@ -113,10 +112,10 @@ def test_transfers_post_save_valid(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/transfers saves valid location and platform transfers."""
     location_payload = [
         {
-            "from_type": "station",
+            "from_type": "rail",
             "from_id": "OXF",
             "from_name": "Oxford Rail Station",
-            "to_type": "bus_stop",
+            "to_type": "bus",
             "to_id": "340000001",
             "to_name": "Frideswide Square (Stop R1)",
             "transfer_time_minutes": 5,
@@ -127,7 +126,7 @@ def test_transfers_post_save_valid(client: FlaskClient, app: Flask) -> None:
     ]
     platform_payload = [
         {
-            "location_type": "station",
+            "location_type": "rail",
             "location_id": "OXF",
             "location_name": "Oxford Rail Station",
             "from_platform": "1",
@@ -206,13 +205,13 @@ def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None
     assert "total" in data
     assert data["total"] == 2
     types = [item["type"] for item in data["results"]]
-    assert "station" in types and "bus_stop" in types
+    assert "rail" in types and "bus" in types
 
 
-def test_search_transfers_locations_station_filter(
+def test_search_transfers_locations_rail_filter(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test GET /config/search/places with type=station filter."""
+    """Test GET /config/search/places with type=rail filter."""
     with app.app_context():
         Stop.bulk_upsert(
             [
@@ -230,19 +229,17 @@ def test_search_transfers_locations_station_filter(
             ]
         )
 
-    response = client.get("/config/search/places?type=station")
+    response = client.get("/config/search/places?type=rail")
     assert response.status_code == 200
     data = response.get_json()
     assert data["total"] == 1
     for item in data["results"]:
-        assert item["type"] == "station"
+        assert item["type"] == "rail"
         assert item["id"] == "naptan:PAD"
 
 
-def test_search_transfers_locations_bus_stop_filter(
-    client: FlaskClient, app: Flask
-) -> None:
-    """Test GET /config/search/places with type=bus_stop filter."""
+def test_search_transfers_locations_bus_filter(client: FlaskClient, app: Flask) -> None:
+    """Test GET /config/search/places with type=bus filter."""
     with app.app_context():
         Stop.bulk_upsert(
             [
@@ -260,12 +257,12 @@ def test_search_transfers_locations_bus_stop_filter(
             ]
         )
 
-    response = client.get("/config/search/places?type=bus_stop")
+    response = client.get("/config/search/places?type=bus")
     assert response.status_code == 200
     data = response.get_json()
     assert data["total"] == 1
     for item in data["results"]:
-        assert item["type"] == "bus_stop"
+        assert item["type"] == "bus"
         assert item["id"] == "atco:490000001"
 
 
