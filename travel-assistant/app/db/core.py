@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 from flask import Flask, current_app
 from peewee import DatabaseProxy, SqliteDatabase
 from playhouse.flask_utils import FlaskDB
-from playhouse.migrate import SqliteMigrator
 
 # Global database proxy for model bindings
 db = DatabaseProxy()
@@ -97,22 +96,77 @@ def run_migrations(database: SqliteDatabase) -> None:
     with database.bind_ctx(all_models):
         database.create_tables(all_models, safe=True)
 
-    # Migrator instance for schema column alterations
-    migrator = SqliteMigrator(database)
     try:
         cursor = database.execute_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='locations'"
         )
         if cursor.fetchone():
             col_cursor = database.execute_sql('PRAGMA table_info("locations")')
-            cols = [col[1] for col in col_cursor.fetchall()]
-            if "ha" not in cols:
-                from peewee import BooleanField
-                from playhouse.migrate import migrate
+            col_info = {col[1]: col[2].upper() for col in col_cursor.fetchall()}
+            cols = list(col_info.keys())
+            id_type = col_info.get("id", "")
 
-                migrate(
-                    migrator.add_column("locations", "ha", BooleanField(default=False))
-                )
+            # Check if migration is needed: id is INTEGER/AutoField or ha column missing
+            if "INTEGER" in id_type or "ha" not in cols:
+                import uuid
+
+                with database.atomic():
+                    database.execute_sql(
+                        'ALTER TABLE "locations" RENAME TO "_locations_old"'
+                    )
+                    with database.bind_ctx([Location]):
+                        Location.create_table(safe=True)
+
+                    old_col_cursor = database.execute_sql(
+                        'PRAGMA table_info("_locations_old")'
+                    )
+                    old_cols = [col[1] for col in old_col_cursor.fetchall()]
+                    has_ha = "ha" in old_cols
+                    has_created = "created_at" in old_cols
+                    has_updated = "updated_at" in old_cols
+
+                    select_cursor = database.execute_sql(
+                        'SELECT * FROM "_locations_old"'
+                    )
+                    rows = select_cursor.fetchall()
+                    for row in rows:
+                        row_dict = dict(zip(old_cols, row))
+                        name = row_dict.get("name", "")
+                        lat = row_dict.get("latitude", 0.0)
+                        lon = row_dict.get("longitude", 0.0)
+                        is_ha = bool(row_dict.get("ha", 0)) if has_ha else False
+
+                        raw_id = row_dict.get("id")
+                        if is_ha:
+                            slug = (
+                                name.lower().replace(" ", "_").replace("-", "_").strip()
+                            )
+                            new_id = f"ha:{slug}"
+                        elif isinstance(raw_id, str) and raw_id.startswith("custom:"):
+                            new_id = raw_id
+                        else:
+                            new_id = f"custom:{uuid.uuid4().hex[:8]}"
+
+                        created = row_dict.get("created_at") if has_created else None
+                        updated = row_dict.get("updated_at") if has_updated else None
+
+                        database.execute_sql(
+                            'INSERT OR REPLACE INTO "locations" '
+                            "(id, name, latitude, longitude, ha, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, "
+                            "COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))",
+                            (
+                                new_id,
+                                name,
+                                lat,
+                                lon,
+                                1 if is_ha else 0,
+                                created,
+                                updated,
+                            ),
+                        )
+
+                    database.execute_sql('DROP TABLE "_locations_old"')
     except Exception:
         pass
 

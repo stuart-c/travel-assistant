@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed visibility of Home Assistant location synchronisation (`locations`) on the Background Sync page (`/config/sync`) by marking the `locations` table as syncable in database telemetry (`get_db_stats`) and including it in client-side syncable table definitions.
 
 ### Added
+- Unique text ID column (`id`) on the `locations` table and `Location` model with `ha:<object_id>` format for synchronised Home Assistant zones and `custom:<hex>` format for manual entries.
+- Automatic database migration for legacy `locations` tables to text primary keys while backfilling and preserving existing records.
 - Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
 - Settings navigation cog button in the web UI header.
 - Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.

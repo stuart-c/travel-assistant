@@ -49,35 +49,63 @@ def sync_ha_locations(app: Optional[Flask] = None) -> Dict[str, Any]:
             count = len(zones)
 
             with db.atomic():
-                # Build lookup of existing locations
-                existing_map = {loc.name: loc for loc in Location.select()}
-                seen_names = set()
+                # Build lookup of existing locations by ID and name
+                existing_map = {loc.id: loc for loc in Location.select()}
+                existing_name_map = {loc.name: loc for loc in Location.select()}
+                seen_ids = set()
 
                 for zone in zones:
+                    entity_id = zone.get("entity_id", "")
+                    if entity_id.startswith("zone."):
+                        obj_id = entity_id[5:]
+                    else:
+                        obj_id = entity_id or zone["name"].lower().replace(" ", "_")
+                    ha_id = f"ha:{obj_id}"
                     name = zone["name"]
                     lat = zone["latitude"]
                     lon = zone["longitude"]
-                    seen_names.add(name)
+                    seen_ids.add(ha_id)
 
-                    if name in existing_map:
-                        loc = existing_map[name]
+                    if ha_id in existing_map:
+                        loc = existing_map[ha_id]
+                        loc.name = name
                         loc.latitude = lat
                         loc.longitude = lon
                         loc.ha = True
                         loc.save()
+                    elif name in existing_name_map:
+                        # Existing record matching name without ha: id format - convert to HA zone
+                        old_loc = existing_name_map[name]
+                        if old_loc.id != ha_id:
+                            Location.delete().where(Location.id == old_loc.id).execute()
+                            new_loc = Location.create(
+                                id=ha_id,
+                                name=name,
+                                latitude=lat,
+                                longitude=lon,
+                                ha=True,
+                            )
+                            existing_map[ha_id] = new_loc
+                        else:
+                            old_loc.latitude = lat
+                            old_loc.longitude = lon
+                            old_loc.ha = True
+                            old_loc.save()
                     else:
-                        Location.create(
+                        new_loc = Location.create(
+                            id=ha_id,
                             name=name,
                             latitude=lat,
                             longitude=lon,
                             ha=True,
                         )
+                        existing_map[ha_id] = new_loc
 
                 # Remove HA-synced locations that no longer exist in Home Assistant
-                if seen_names:
+                if seen_ids:
                     Location.delete().where(
                         (Location.ha == True)  # noqa: E712
-                        & (~(Location.name.in_(list(seen_names))))
+                        & (~(Location.id.in_(list(seen_ids))))
                     ).execute()
                 else:
                     Location.delete().where(Location.ha == True).execute()  # noqa: E712

@@ -437,9 +437,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const idx = parseInt(editIndexInput.value, 10);
-      const isHa = !isNaN(idx) && idx >= 0 && idx < stagedLocations.length ? Boolean(stagedLocations[idx].ha) : false;
+      const isHa =
+        !isNaN(idx) && idx >= 0 && idx < stagedLocations.length
+          ? Boolean(stagedLocations[idx].ha)
+          : false;
+      const existingId =
+        !isNaN(idx) && idx >= 0 && idx < stagedLocations.length
+          ? stagedLocations[idx].id
+          : undefined;
 
       const entry = {
+        ...(existingId ? { id: existingId } : {}),
         name,
         latitude: parseFloat(lat.toFixed(6)),
         longitude: parseFloat(lng.toFixed(6)),

@@ -16,6 +16,7 @@ def test_location_model_crud(app: Flask) -> None:
 
         # Create locations
         loc1 = Location.create(
+            id="ha:home",
             name="Home",
             latitude=51.7520,
             longitude=-1.2577,
@@ -28,8 +29,9 @@ def test_location_model_crud(app: Flask) -> None:
             ha=False,
         )
 
-        assert loc1.id > 0
-        assert loc2.id > 0
+        assert loc1.id == "ha:home"
+        assert loc2.id.startswith("custom:")
+        assert len(loc2.id) > 7
         assert loc1.ha is True
         assert loc2.ha is False
         assert Location.select().count() == 2
@@ -42,6 +44,7 @@ def test_location_model_crud(app: Flask) -> None:
         assert retrieved.ha is True
 
         loc_dict = retrieved.to_dict()
+        assert loc_dict["id"] == "ha:home"
         assert loc_dict["name"] == "Home"
         assert loc_dict["latitude"] == 51.7520
         assert loc_dict["longitude"] == -1.2577
@@ -54,10 +57,15 @@ def test_location_model_crud(app: Flask) -> None:
         retrieved.save()
         assert Location.get_by_id(loc1.id).name == "Home Sweet Home"
 
-        # Search
+        # Search by name
         search_res = Location.search("Home")
         assert len(search_res) == 1
         assert search_res[0].name == "Home Sweet Home"
+
+        # Search by ID
+        search_by_id = Location.search("ha:home")
+        assert len(search_by_id) == 1
+        assert search_by_id[0].id == "ha:home"
 
         search_empty = Location.search("NonExistent")
         assert len(search_empty) == 0
