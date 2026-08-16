@@ -26,6 +26,7 @@ window.ConfigDirtyManager = (function () {
     const { badge, saveBtn, discardBtn } = getElements();
     if (dirty) {
       if (badge) {
+        badge.classList.remove('hidden');
         badge.className =
           'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30';
         badge.innerHTML =
@@ -34,26 +35,26 @@ window.ConfigDirtyManager = (function () {
       if (discardBtn) {
         discardBtn.disabled = false;
         discardBtn.className =
-          'inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all cursor-pointer';
+          'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer';
       }
       if (saveBtn) {
-        saveBtn.classList.remove('opacity-90');
-        saveBtn.classList.add('ring-2', 'ring-sky-500/50');
+        saveBtn.disabled = false;
+        saveBtn.className =
+          'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-all cursor-pointer';
       }
     } else {
       if (badge) {
-        badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
-        badge.innerHTML =
-          '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span> No unsaved changes';
+        badge.classList.add('hidden');
       }
       if (discardBtn) {
         discardBtn.disabled = true;
         discardBtn.className =
-          'inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all';
+          'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all';
       }
       if (saveBtn) {
-        saveBtn.classList.remove('ring-2', 'ring-sky-500/50');
+        saveBtn.disabled = true;
+        saveBtn.className =
+          'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all';
       }
     }
   }
@@ -147,6 +148,7 @@ window.ConfigDirtyManager = (function () {
     // Save button delegates to active config form submission
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
+        if (!dirty) return;
         const form =
           document.querySelector('form.config-main-form') ||
           document.querySelector('form');
@@ -181,6 +183,9 @@ window.ConfigDirtyManager = (function () {
         }
       });
     }
+
+    // Initialise UI state on load
+    updateUI();
   }
 
   if (document.readyState === 'loading') {
@@ -190,14 +195,10 @@ window.ConfigDirtyManager = (function () {
   }
 
   return {
-    setDirty,
     markDirty,
     clearDirty,
+    setDirty,
     isDirty: () => dirty,
     registerDiscardHandler,
-    markSubmitting: () => {
-      isSubmitting = true;
-      dirty = false;
-    },
   };
 })();

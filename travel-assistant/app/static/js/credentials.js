@@ -1,7 +1,7 @@
 /**
  * API Credentials View Controller.
- * Manages live validation requests, status badge indicators, dynamic model population,
- * and on-change enabled 'Check' buttons.
+ * Manages combined Valid/Check button states, auto-collapsing valid sections,
+ * and live credential validation probes.
  */
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('credentials-form');
@@ -13,7 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const serviceSections = {
     bus: {
-      badgeId: 'status-badge-bus',
+      sectionId: 'section-bus',
+      btnId: 'check-btn-bus',
       fields: ['bus_api_key'],
       hasValue: () => {
         const val = document.getElementById('bus_api_key')?.value.trim();
@@ -21,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     train_s3: {
-      badgeId: 'status-badge-train_s3',
+      sectionId: 'section-train_s3',
+      btnId: 'check-btn-train_s3',
       fields: [
         'train_s3_bucket',
         'train_s3_region',
@@ -35,7 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     train_live: {
-      badgeId: 'status-badge-train_live',
+      sectionId: 'section-train_live',
+      btnId: 'check-btn-train_live',
       fields: ['train_live_api_key', 'train_live_endpoint'],
       hasValue: () => {
         const key = document.getElementById('train_live_api_key')?.value.trim();
@@ -43,15 +46,17 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     open_api: {
-      badgeId: 'status-badge-open_api',
-      fields: ['open_api_key', 'open_api_base_url'],
+      sectionId: 'section-open_api',
+      btnId: 'check-btn-open_api',
+      fields: ['open_api_key', 'open_api_base_url', 'open_api_model'],
       hasValue: () => {
         const key = document.getElementById('open_api_key')?.value.trim();
         return Boolean(key);
       },
     },
     google_maps: {
-      badgeId: 'status-badge-google_maps',
+      sectionId: 'section-google_maps',
+      btnId: 'check-btn-google_maps',
       fields: ['google_maps_api_key', 'google_maps_region'],
       hasValue: () => {
         const key = document.getElementById('google_maps_api_key')?.value.trim();
@@ -60,32 +65,79 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
+  // Section toggle handlers
+  document.querySelectorAll('.section-toggle').forEach((header) => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('button, input, select, a')) return;
+      const targetId = header.getAttribute('data-target');
+      const section = targetId
+        ? document.getElementById(targetId)
+        : header.closest('.collapsible-section');
+      if (section) {
+        section.classList.toggle('collapsed');
+      }
+    });
+  });
 
-  function setCheckButtonState(serviceKey, enabled) {
-    const btn = document.querySelector(`.check-btn[data-service="${serviceKey}"]`);
+  function setCombinedButtonState(serviceKey, state, message = '') {
+    const config = serviceSections[serviceKey];
+    if (!config) return;
+    const btn = document.getElementById(config.btnId);
     if (!btn) return;
 
-    btn.disabled = !enabled;
-    if (enabled) {
+    if (state === 'valid') {
+      btn.disabled = false;
       btn.className =
-        'check-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer';
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30 transition-all cursor-pointer';
+      btn.innerHTML =
+        '<span class="material-symbols-outlined text-[17px] leading-none text-emerald-600 dark:text-emerald-400">check_circle</span> <span>Valid</span>';
+      btn.title = message || 'Credentials are valid. Click to re-check.';
+    } else if (state === 'check') {
+      btn.disabled = false;
+      btn.className =
+        'check-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-all cursor-pointer';
+      btn.innerHTML =
+        '<span class="material-symbols-outlined text-[17px] leading-none">refresh</span> <span>Check</span>';
+      btn.title = 'Click to validate updated credentials';
+    } else if (state === 'validating') {
+      btn.disabled = true;
+      btn.className =
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 animate-pulse cursor-wait';
+      btn.innerHTML =
+        '<span class="material-symbols-outlined text-[17px] leading-none animate-spin">sync</span> <span>Validating...</span>';
+      btn.title = 'Validating credentials...';
+    } else if (state === 'invalid') {
+      btn.disabled = false;
+      btn.className =
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 transition-all cursor-pointer';
+      btn.innerHTML =
+        '<span class="material-symbols-outlined text-[17px] leading-none text-rose-600 dark:text-rose-400">error</span> <span>Invalid</span>';
+      btn.title = message || 'Validation failed. Click to re-check.';
     } else {
+      // Empty / default state
+      btn.disabled = true;
       btn.className =
-        'check-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-colors';
+        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-all';
+      btn.innerHTML =
+        '<span class="material-symbols-outlined text-[17px] leading-none">check_circle</span> <span>Check</span>';
+      btn.title = 'Enter credentials to validate';
     }
   }
 
-  // Bind input change listeners to enable corresponding Check button
+  // Bind input change listeners: editing switches button to Check
   Object.entries(serviceSections).forEach(([serviceKey, config]) => {
     config.fields.forEach((fieldId) => {
       const el = document.getElementById(fieldId);
       if (el) {
-        el.addEventListener('input', () => {
-          setCheckButtonState(serviceKey, true);
-        });
-        el.addEventListener('change', () => {
-          setCheckButtonState(serviceKey, true);
-        });
+        const onEdit = () => {
+          if (config.hasValue()) {
+            setCombinedButtonState(serviceKey, 'check');
+          } else {
+            setCombinedButtonState(serviceKey, 'empty');
+          }
+        };
+        el.addEventListener('input', onEdit);
+        el.addEventListener('change', onEdit);
       }
     });
   });
@@ -99,36 +151,21 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       form.reset();
       Object.keys(serviceSections).forEach((serviceKey) => {
-        setCheckButtonState(serviceKey, false);
-        validateService(serviceKey);
+        validateService(serviceKey, false);
       });
-    });
-
-    form.addEventListener('submit', () => {
-      window.ConfigDirtyManager.markSubmitting();
     });
   }
 
-  async function validateService(serviceKey) {
+  async function validateService(serviceKey, isInitialLoad = false) {
     const config = serviceSections[serviceKey];
     if (!config) return;
-    const badge = document.getElementById(config.badgeId);
-    if (!badge) return;
 
     if (!config.hasValue()) {
-      badge.className = 'hidden';
-      badge.innerHTML = '';
-      setCheckButtonState(serviceKey, false);
+      setCombinedButtonState(serviceKey, 'empty');
       return;
     }
 
-    // Show validating spinner state
-    badge.className =
-      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 animate-pulse';
-    badge.innerHTML = `
-      <span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping"></span>
-      Validating...
-    `;
+    setCombinedButtonState(serviceKey, 'validating');
 
     const payload = { service: serviceKey };
     config.fields.forEach((fieldId) => {
@@ -150,10 +187,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
 
       if (data.valid) {
-        badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30';
-        badge.title = data.message || 'Valid';
-        badge.innerHTML = `<span>✓</span> Valid`;
+        setCombinedButtonState(serviceKey, 'valid', data.message || 'Valid');
+
+        // On initial load, collapse sections that contain valid credentials
+        if (isInitialLoad) {
+          const section = document.getElementById(config.sectionId);
+          if (section) {
+            section.classList.add('collapsed');
+          }
+        }
 
         if (
           serviceKey === 'open_api' &&
@@ -181,20 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       } else {
-        badge.className =
-          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
-        badge.title = data.message || 'Validation failed';
-        badge.innerHTML = `<span>✗</span> <span class="truncate">${
-          data.message || 'Invalid'
-        }</span>`;
+        setCombinedButtonState(
+          serviceKey,
+          'invalid',
+          data.message || 'Validation failed'
+        );
       }
     } catch (err) {
-      badge.className =
-        'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
-      badge.title = err.message || 'Network error';
-      badge.innerHTML = `<span>✗</span> Network error`;
-    } finally {
-      setCheckButtonState(serviceKey, false);
+      setCombinedButtonState(serviceKey, 'invalid', err.message || 'Network error');
     }
   }
 
@@ -204,14 +240,13 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const service = btn.getAttribute('data-service');
       if (service && !btn.disabled) {
-        validateService(service);
+        validateService(service, false);
       }
     });
   });
 
   // Automatically trigger initial validation on page load for all populated sections
   Object.keys(serviceSections).forEach((serviceKey) => {
-    setCheckButtonState(serviceKey, false);
-    validateService(serviceKey);
+    validateService(serviceKey, true);
   });
 });

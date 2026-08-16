@@ -197,12 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-medium text-sm text-slate-900 dark:text-slate-100">${escapeHtml(displayName)}</span>
           </div>
         `),
-        gridjs.html(`
-          <div class="space-y-1">
-            ${lastUpdatedHtml}
-            <div>${statusBadge}</div>
-          </div>
-        `),
+        gridjs.html(lastUpdatedHtml),
+        gridjs.html(statusBadge),
         gridjs.html(actionHtml),
       ];
     });
@@ -213,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     columns: [
       { name: 'Dataset', width: 'auto' },
       { name: 'Last updated', width: '180px' },
+      { name: 'Status', width: '160px' },
       { name: 'Actions', width: '70px', sort: false },
     ],
     data: formatGridData(stagedTables),
