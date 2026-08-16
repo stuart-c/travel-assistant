@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Consolidated location search endpoint (`GET /config/search/places`) providing unified multi-modal search across rail stations, bus stops, Home Assistant locations, and custom locations with standardised namespaced identifiers (`naptan:<crs>`, `atco:<code>`, `ha:<id>`, `custom:<hex>`).
 - Removed obsolete, redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, and `/config/journeys/search`) in favour of the single `/config/search/places` endpoint.
+
+### Removed
+- Obsolete backwards-compatibility aliases in `DATASOURCE_REGISTRY` (`bods`, `s3`, `darwin`, `openai`, `ha`, `googlemaps`, `maps`) in favour of canonical service keys.
+- Redundant service aliases from credential validation dispatcher (`validate_service_credentials`).
+- Obsolete constant re-exports in `app/validators/__init__.py` and view helper re-exports in `app/views/config/__init__.py`.
+- Legacy stop type search aliases (`train`, `station`, `stations`, `bus_stop`, `bus_stops`) in `Stop.search` in favour of canonical `rail` and `bus` modes.
+- Legacy `crs_code` dictionary fallback in `Stop.bulk_upsert`.
 ### Changed
 - Refactored monolithic configuration views (`app/views/config.py`) into a modular Python package (`app/views/config/`) with separate modules for `credentials`, `timetables`, `locations`, `places`, `transfers`, `journeys`, and database `sync`.
 - Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).

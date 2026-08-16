@@ -23,19 +23,12 @@ from app.datasources.train_s3 import TrainS3Client
 
 DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
     "bus": BodsClient,
-    "bods": BodsClient,
     "train_s3": TrainS3Client,
-    "s3": TrainS3Client,
     "train_live": TrainLiveClient,
-    "darwin": TrainLiveClient,
     "open_api": OpenAIClient,
-    "openai": OpenAIClient,
     "naptan": NaptanClient,
     "homeassistant": HomeAssistantClient,
-    "ha": HomeAssistantClient,
     "google_maps": GoogleMapsClient,
-    "googlemaps": GoogleMapsClient,
-    "maps": GoogleMapsClient,
 }
 
 

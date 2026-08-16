@@ -36,12 +36,19 @@ def test_get_datasource_factory_known_services(app: Flask) -> None:
         maps_client = get_datasource("google_maps")
         assert isinstance(maps_client, GoogleMapsClient)
 
-        maps_client2 = get_datasource("googlemaps")
-        assert isinstance(maps_client2, GoogleMapsClient)
-
 
 def test_get_datasource_unknown_service() -> None:
-    """Test get_datasource raises DataSourceConfigError for unrecognized service key."""
-    with pytest.raises(DataSourceConfigError) as exc_info:
-        get_datasource("unknown_provider")
-    assert "Unknown datasource service 'unknown_provider'" in str(exc_info.value)
+    """Test get_datasource raises DataSourceConfigError for unrecognised service key or alias."""
+    for unknown_key in [
+        "unknown_provider",
+        "bods",
+        "s3",
+        "darwin",
+        "openai",
+        "ha",
+        "googlemaps",
+        "maps",
+    ]:
+        with pytest.raises(DataSourceConfigError) as exc_info:
+            get_datasource(unknown_key)
+        assert f"Unknown datasource service '{unknown_key}'" in str(exc_info.value)
