@@ -1,4 +1,5 @@
 {% extends "config_base.html" %}
+{% import "components/macros.html" as macros %}
 
 {% block title %}Locations - {{ app_name }}{% endblock %}
 
@@ -44,20 +45,14 @@
       <div id="locations-grid-wrapper"></div>
       
       <!-- Empty state container when 0 items -->
-      <div id="locations-grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
-        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">pin_drop</span>
-        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No locations configured</h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-          Add frequently visited places such as home, workplace, or travel hubs.
-        </p>
-        <button 
-          type="button" 
-          id="empty-add-location-btn" 
-          class="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 transition-colors cursor-pointer"
-        >
-          + Add First Location
-        </button>
-      </div>
+      {{ macros.render_empty_state(
+        "locations-grid-empty-state",
+        "pin_drop",
+        "No locations configured",
+        "Add frequently visited places such as home, workplace, or travel hubs.",
+        "empty-add-location-btn",
+        "+ Add First Location"
+      ) }}
     </div>
   </section>
 </div>
@@ -69,110 +64,85 @@
 </form>
 
 <!-- Add / Edit Location Modal Dialog -->
-<dialog id="location-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl w-[80vw] max-w-5xl min-w-[320px] mx-auto">
-  <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
-    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-      <div class="flex items-center gap-2.5">
-        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl" id="location-modal-icon">pin_drop</span>
-        <h3 class="text-lg font-bold text-slate-900 dark:text-white" id="location-modal-title">Add New Location</h3>
-      </div>
-      <button 
-        type="button" 
-        id="close-location-modal-btn" 
-        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer p-1"
-        aria-label="Close dialogue"
+{% call macros.render_modal(
+  "location-modal",
+  "location-modal-title",
+  "Add New Location",
+  "location-modal-icon",
+  "pin_drop",
+  "close-location-modal-btn",
+  "cancel-location-modal-btn",
+  "confirm-location-btn",
+  "Save Location"
+) %}
+  <input type="hidden" id="edit-location-index" value="-1">
+
+  <div id="location-ha-readonly-notice" class="hidden p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 dark:bg-sky-950/60 dark:border-sky-800 dark:text-sky-300 text-xs flex items-center gap-2">
+    <span class="material-symbols-outlined text-base">info</span>
+    <span>This location is synchronised from Home Assistant and is read-only. Coordinates and names cannot be edited or deleted here.</span>
+  </div>
+
+  <div class="space-y-4">
+    <div>
+      <label for="location_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+        Location Name *
+      </label>
+      <input 
+        type="text" 
+        id="location_name" 
+        class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
+        placeholder="e.g. Home, Workplace, City Centre"
+        autocomplete="off"
       >
-        <span class="material-symbols-outlined text-xl">close</span>
-      </button>
     </div>
 
-    <input type="hidden" id="edit-location-index" value="-1">
-
-    <div id="location-ha-readonly-notice" class="hidden p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 dark:bg-sky-950/60 dark:border-sky-800 dark:text-sky-300 text-xs flex items-center gap-2">
-      <span class="material-symbols-outlined text-base">info</span>
-      <span>This location is synchronised from Home Assistant and is read-only. Coordinates and names cannot be edited or deleted here.</span>
-    </div>
-
-    <div class="space-y-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div>
-        <label for="location_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-          Location Name *
+        <label for="location_latitude" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+          Latitude *
         </label>
         <input 
-          type="text" 
-          id="location_name" 
-          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-          placeholder="e.g. Home, Workplace, City Centre"
-          autocomplete="off"
+          type="number" 
+          id="location_latitude" 
+          step="any" 
+          min="-90" 
+          max="90" 
+          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-mono text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+          placeholder="e.g. 51.507400"
         >
       </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label for="location_latitude" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-            Latitude *
-          </label>
-          <input 
-            type="number" 
-            id="location_latitude" 
-            step="any" 
-            min="-90" 
-            max="90" 
-            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-mono text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. 51.507400"
-          >
-        </div>
-        <div>
-          <label for="location_longitude" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-            Longitude *
-          </label>
-          <input 
-            type="number" 
-            id="location_longitude" 
-            step="any" 
-            min="-180" 
-            max="180" 
-            class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-mono text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. -0.127800"
-          >
-        </div>
-      </div>
-
-      <!-- Leaflet Map Container -->
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-          Map View (Pan, Zoom, Drag Pin or Click to Move)
+        <label for="location_longitude" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+          Longitude *
         </label>
-        <div id="location-map" class="w-full h-64 sm:h-72 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-800 relative z-0"></div>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-          Drag the pin or click on the map to relocate coordinates. Manual coordinate edits update the map automatically.
-        </p>
-      </div>
-
-      <div id="location-modal-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
-        Please specify a location name and valid coordinates (Latitude: -90 to 90, Longitude: -180 to 180).
+        <input 
+          type="number" 
+          id="location_longitude" 
+          step="any" 
+          min="-180" 
+          max="180" 
+          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-mono text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+          placeholder="e.g. -0.127800"
+        >
       </div>
     </div>
 
-    <!-- Modal Footer Actions -->
-    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-      <button 
-        type="button" 
-        id="cancel-location-modal-btn" 
-        class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-      >
-        Cancel
-      </button>
-      <button 
-        type="button" 
-        id="confirm-location-btn" 
-        class="px-4 py-2 text-sm font-semibold rounded-xl bg-sky-600 text-white hover:bg-sky-500 transition-colors cursor-pointer"
-      >
-        Save Location
-      </button>
+    <!-- Leaflet Map Container -->
+    <div>
+      <label class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+        Map View (Pan, Zoom, Drag Pin or Click to Move)
+      </label>
+      <div id="location-map" class="w-full h-64 sm:h-72 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-800 relative z-0"></div>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+        Drag the pin or click on the map to relocate coordinates. Manual coordinate edits update the map automatically.
+      </p>
+    </div>
+
+    <div id="location-modal-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
+      Please specify a location name and valid coordinates (Latitude: -90 to 90, Longitude: -180 to 180).
     </div>
   </div>
-</dialog>
+{% endcall %}
 
 <!-- Dependencies: Grid.js, Leaflet, and Locations Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>

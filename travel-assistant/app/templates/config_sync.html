@@ -1,4 +1,5 @@
 {% extends "config_base.html" %}
+{% import "components/macros.html" as macros %}
 
 {% block title %}Background Sync - {{ app_name }}{% endblock %}
 
@@ -35,13 +36,12 @@
       <div id="sync-grid-wrapper"></div>
 
       <!-- Empty state container when 0 items -->
-      <div id="grid-empty-state" class="hidden text-center py-12 px-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
-        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-2">sync_problem</span>
-        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-200">No transit datasets initialised</h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-          Transit tables will be automatically created and populated on initial dataset refresh.
-        </p>
-      </div>
+      {{ macros.render_empty_state(
+        "grid-empty-state",
+        "sync_problem",
+        "No transit datasets initialised",
+        "Transit tables will be automatically created and populated on initial dataset refresh."
+      ) }}
     </div>
   </section>
 </div>

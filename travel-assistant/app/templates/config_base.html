@@ -185,6 +185,17 @@
   </div>
 </dialog>
 
+<!-- 15-Minute Increments Datalist for easy time picking across configuration pages -->
+<datalist id="time-intervals-datalist">
+  {% for hour in range(24) %}
+    {% for minute in [0, 15, 30, 45] %}
+      <option value="{{ '%02d:%02d' | format(hour, minute) }}"></option>
+    {% endfor %}
+  {% endfor %}
+</datalist>
+
+<script src="{{ ingress_path }}/static/js/transit-ui.js?v={{ cache_bust }}"></script>
+<script src="{{ ingress_path }}/static/js/day-selector.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/dirty-manager.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/place-autocomplete.js?v={{ cache_bust }}"></script>
 {% endblock %}

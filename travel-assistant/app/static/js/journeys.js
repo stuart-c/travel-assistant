@@ -75,16 +75,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const timeWindowsEmptyNotice = document.getElementById('time-windows-empty-notice');
   const addTimeWindowBtn = document.getElementById('add-time-window-btn');
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
 
-  function getLocationBadge(type) {
+  const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || function (type) {
     const t = String(type || '').toLowerCase();
     if (t === 'rail') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
@@ -102,9 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> Home Assistant</span>`;
     }
     return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
-  }
+  };
 
-  function getLocationIcon(type) {
+  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || function (type) {
     const t = String(type || '').toLowerCase();
     if (t === 'rail') return 'train';
     if (t === 'bus') return 'directions_bus';
@@ -114,9 +114,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (t === 'air') return 'flight';
     if (t === 'ha') return 'home';
     return 'pin_drop';
-  }
+  };
 
-  function formatDaysSummary(days) {
+  const formatDaysSummary = (window.TransitUI && window.TransitUI.formatDaysSummary) || function (days) {
     if (!days || !days.length) return 'All days';
     const dayMap = {
       mon: 'Mon',
@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isOnlyWeekends) return 'Weekends (Sat–Sun)';
     if (days.length === 8) return 'All days & Bank Holidays';
     return mapped.join(', ');
-  }
+  };
 
   function formatScheduleSummary(timeSettings) {
     if (!timeSettings || !timeSettings.length) {
@@ -207,28 +207,36 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `),
         gridjs.html(scheduleHtml),
-        gridjs.html(`
-          <div class="flex items-center gap-1.5">
-            <button 
-              type="button" 
-              class="edit-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
-              data-index="${index}" 
-              title="Edit journey"
-              aria-label="Edit journey"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-            </button>
-            <button 
-              type="button" 
-              class="delete-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
-              data-index="${index}" 
-              title="Delete journey"
-              aria-label="Delete journey"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-            </button>
-          </div>
-        `),
+        gridjs.html(
+          window.TransitUI && window.TransitUI.renderActionButtons
+            ? window.TransitUI.renderActionButtons({
+                index,
+                editClass: 'edit-journey-btn',
+                deleteClass: 'delete-journey-btn',
+                editTitle: 'Edit journey',
+                deleteTitle: 'Delete journey',
+              })
+            : `<div class="flex items-center gap-1.5">
+                <button 
+                  type="button" 
+                  class="edit-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
+                  data-index="${index}" 
+                  title="Edit journey"
+                  aria-label="Edit journey"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
+                </button>
+                <button 
+                  type="button" 
+                  class="delete-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
+                  data-index="${index}" 
+                  title="Delete journey"
+                  aria-label="Delete journey"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
+                </button>
+              </div>`
+        ),
       ];
     });
   }

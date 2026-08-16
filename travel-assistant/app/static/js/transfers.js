@@ -100,16 +100,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const platNotes = document.getElementById('platform_notes');
   const platError = document.getElementById('platform-modal-error');
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
 
-  function getLocationBadge(type) {
+  const getLocationBadge = function (type) {
+    if (window.TransitUI && window.TransitUI.getTransportBadge) {
+      return window.TransitUI.getTransportBadge(type, null, true);
+    }
     const t = String(type || '').toLowerCase();
     if (t === 'rail') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
@@ -127,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> HA</span>`;
     }
     return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
-  }
+  };
 
   // --- Location Transfers Grid Data Formatter ---
   function formatLocationGridData(items) {
@@ -171,28 +174,36 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(dirHtml),
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
-        gridjs.html(`
-          <div class="flex items-center gap-1.5">
-            <button 
-              type="button" 
-              class="edit-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Edit transfer"
-              aria-label="Edit transfer"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-            </button>
-            <button 
-              type="button" 
-              class="remove-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Delete transfer"
-              aria-label="Delete transfer"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-            </button>
-          </div>
-        `)
+        gridjs.html(
+          window.TransitUI && window.TransitUI.renderActionButtons
+            ? window.TransitUI.renderActionButtons({
+                index,
+                editClass: 'edit-loc-row-btn',
+                deleteClass: 'remove-loc-row-btn',
+                editTitle: 'Edit transfer',
+                deleteTitle: 'Delete transfer',
+              })
+            : `<div class="flex items-center gap-1.5">
+                <button 
+                  type="button" 
+                  class="edit-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
+                  data-index="${index}"
+                  title="Edit transfer"
+                  aria-label="Edit transfer"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
+                </button>
+                <button 
+                  type="button" 
+                  class="remove-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
+                  data-index="${index}"
+                  title="Delete transfer"
+                  aria-label="Delete transfer"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
+                </button>
+              </div>`
+        )
       ];
     });
   }
@@ -239,28 +250,36 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(dirHtml),
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
-        gridjs.html(`
-          <div class="flex items-center gap-1.5">
-            <button 
-              type="button" 
-              class="edit-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Edit platform transfer"
-              aria-label="Edit platform transfer"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-            </button>
-            <button 
-              type="button" 
-              class="remove-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Delete platform transfer"
-              aria-label="Delete platform transfer"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-            </button>
-          </div>
-        `)
+        gridjs.html(
+          window.TransitUI && window.TransitUI.renderActionButtons
+            ? window.TransitUI.renderActionButtons({
+                index,
+                editClass: 'edit-plat-row-btn',
+                deleteClass: 'remove-plat-row-btn',
+                editTitle: 'Edit platform transfer',
+                deleteTitle: 'Delete platform transfer',
+              })
+            : `<div class="flex items-center gap-1.5">
+                <button 
+                  type="button" 
+                  class="edit-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
+                  data-index="${index}"
+                  title="Edit platform transfer"
+                  aria-label="Edit platform transfer"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
+                </button>
+                <button 
+                  type="button" 
+                  class="remove-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
+                  data-index="${index}"
+                  title="Delete platform transfer"
+                  aria-label="Delete platform transfer"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
+                </button>
+              </div>`
+        )
       ];
     });
   }
@@ -392,41 +411,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial Sync
   syncState();
 
-  // Collapsible section toggles - clicking arrow button or header card toggles
-  document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const targetId = btn.getAttribute('data-target');
-      const section = targetId
-        ? document.getElementById(targetId)
-        : btn.closest('.collapsible-section');
-      if (section) {
-        const isCollapsed = section.classList.toggle('collapsed');
-        const icon = btn.querySelector('.collapse-icon');
-        if (icon) {
-          icon.textContent = isCollapsed ? 'chevron_right' : 'keyboard_arrow_down';
-        }
-      }
-    });
-  });
-
-  document.querySelectorAll('.section-toggle').forEach((header) => {
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('button, input, select, a, .collapse-toggle-btn')) return;
-      const targetId = header.getAttribute('data-target');
-      const section = targetId
-        ? document.getElementById(targetId)
-        : header.closest('.collapsible-section');
-      if (section) {
-        const isCollapsed = section.classList.toggle('collapsed');
-        const icon = section.querySelector('.collapse-icon');
-        if (icon) {
-          icon.textContent = isCollapsed ? 'chevron_right' : 'keyboard_arrow_down';
-        }
-      }
-    });
-  });
+  // Initialise collapsible sections
+  if (window.TransitUI && window.TransitUI.CollapsibleManager) {
+    window.TransitUI.CollapsibleManager.initialise();
+  }
 
   // Register Discard Handler with ConfigDirtyManager
   if (window.ConfigDirtyManager) {
