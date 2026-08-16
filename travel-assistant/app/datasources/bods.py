@@ -127,10 +127,14 @@ class BodsClient(BaseDataSource):
                 lines = item.get("lines", [])
                 if lines and isinstance(lines, list):
                     for line in lines:
-                        line_name = line if isinstance(line, str) else str(line)
+                        line_name = (
+                            line if isinstance(line, str) else str(line)
+                        ).strip()
+                        if not line_name:
+                            continue
                         routes.append(
                             {
-                                "route_number": line_name.strip(),
+                                "route_number": line_name,
                                 "operator_name": operator_name or name,
                                 "operator_code": operator_code,
                                 "origin": item.get("origin"),
@@ -138,18 +142,6 @@ class BodsClient(BaseDataSource):
                                 "description": description,
                             }
                         )
-                else:
-                    route_id = f"DS-{item.get('id', 'UK')}"
-                    routes.append(
-                        {
-                            "route_number": route_id,
-                            "operator_name": operator_name or name,
-                            "operator_code": operator_code,
-                            "origin": item.get("origin"),
-                            "destination": item.get("destination"),
-                            "description": description or name,
-                        }
-                    )
             return routes
 
         except requests.exceptions.Timeout as e:

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Eliminated all synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`, and `DS-{id}` routes).
+- Connected bus stops and railway station synchronisation to public UK NaPTAN open dataset feeds for genuine, complete access node and rail station indexing.
 - Fixed visibility of Home Assistant location synchronisation (`locations`) on the Background Sync page (`/config/sync`) by marking the `locations` table as syncable in database telemetry (`get_db_stats`) and including it in client-side syncable table definitions.
 
 ### Added
