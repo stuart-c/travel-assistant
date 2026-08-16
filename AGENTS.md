@@ -28,14 +28,7 @@ All branches must be named according to [Conventional Commits](https://www.conve
 
 Example: `feat/add-route-planner` or `fix/broken-ingress-links`.
 
-## 3. Git Worktrees for Parallel Work
-It is vitally important that git worktrees are used to allow multiple agents to work in parallel without overlap.
-- **The main directory must only ever contain the `main` branch.**
-- **All feature branch worktrees MUST reside in the `.worktrees/` directory.**
-- Never checkout a feature branch in the core repository directory.
-- Use `git worktree add .worktrees/<branch-name> <branch-name>` to create a new workspace for your task.
-
-## 4. Pre-Push Verification
+## 3. Pre-Push Verification
 Tests and lints **MUST** be run locally before being pushed to GitHub. This is mandatory whenever Python or frontend code is modified.
 
 ### Mandatory Verification Scripts
@@ -47,7 +40,7 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
 - **Code Coverage**: Aim for 100% unit test code coverage for new backend code.
 - **Linting**: Ensure `black --check` and `flake8` pass with 0 warnings or errors.
 
-## 5. Mandatory Pull Requests & Review Workflow
+## 4. Mandatory Pull Requests & Review Workflow
 **All changes, regardless of size or scope, MUST be submitted as a Pull Request (PR) for user review.** Direct pushes or commits to `main` are strictly forbidden.
 
 ### Pull Request Rules
@@ -68,17 +61,11 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
   gh pr merge --auto --squash
   ```
 
-## 6. Post-Merge Cleanup
-When a PR is merged, tidy the local environment:
-1. Remove the worktree: `git worktree remove .worktrees/<branch-name>`
-2. Delete the local branch: `git branch -d <branch-name>`
-3. Update the local `main` branch: `git checkout main && git pull origin main`
-
-## 7. GitHub CLI Authentication
+## 5. GitHub CLI Authentication
 To facilitate automated interactions, agents use a Personal Access Token (PAT) stored in a `.gh_token` file in the repository root or existing `gh` configuration.
 - The `.gh_token` file is included in `.gitignore` to prevent accidental commits. Never share or commit this file.
 
-## 8. No Backward-Compatibility Aliases
+## 6. No Backward-Compatibility Aliases
 This repository is a self-contained Home Assistant add-on application and is not consumed as an external library or package.
 - **Never create backward-compatibility aliases, wrappers, or fallbacks** when refactoring, replacing, or removing classes, models, functions, or endpoints.
 - When replacing a model or function (e.g. `BusStop` / `Station` -> `Stop`), update all call sites, imports, database schemas, and unit tests directly, and delete obsolete identifiers entirely.
