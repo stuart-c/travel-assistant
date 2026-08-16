@@ -55,3 +55,12 @@ def setting_model(app: Flask) -> Generator[type, None, None]:
     """Setting model fixture with active application context."""
     with app.app_context():
         yield Setting
+
+
+@pytest.fixture(autouse=True)
+def cleanup_worker() -> Generator[None, None, None]:
+    """Ensure background worker daemon thread is stopped after each test."""
+    yield
+    from app.sync.worker import stop_background_worker
+
+    stop_background_worker()

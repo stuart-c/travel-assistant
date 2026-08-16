@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncAllIcon = document.getElementById('sync-all-icon');
   const syncAllText = document.getElementById('sync-all-text');
 
-  const SYNCABLE_NAMES = ['bus_routes', 'bus_stops', 'stations', 'ha_locations'];
+  const SYNCABLE_NAMES = ['bus_routes', 'bus_stops', 'stations', 'ha_locations', 'locations'];
 
   function extractSyncableTables(stats) {
     const allTables = (stats && Array.isArray(stats.tables)) ? stats.tables : [];
@@ -227,11 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAll) {
         showToast('success', '<strong>Dataset refresh complete:</strong> Synchronised all transit datasets.');
       } else if (data.status === 'success') {
-        showToast('success', `<strong>Success (${escapeHtml(tableName)}):</strong> ${escapeHtml(data.message || 'Dataset synchronised successfully.')}`);
+        showToast('success', `<strong>Success (${escapeHtml(getDatasetDisplayName(tableName))}):</strong> ${escapeHtml(data.message || 'Dataset synchronised successfully.')}`);
       } else if (data.status === 'skipped_no_credentials') {
-        showToast('warning', `<strong>Notice (${escapeHtml(tableName)}):</strong> ${escapeHtml(data.message || 'Skipped because API credentials are not configured.')}`);
+        showToast('warning', `<strong>Notice (${escapeHtml(getDatasetDisplayName(tableName))}):</strong> ${escapeHtml(data.message || 'Skipped because API credentials are not configured.')}`);
       } else {
-        showToast('error', `<strong>Error (${escapeHtml(tableName)}):</strong> ${escapeHtml(data.message || 'Failed to synchronise dataset.')}`);
+        showToast('error', `<strong>Error (${escapeHtml(getDatasetDisplayName(tableName))}):</strong> ${escapeHtml(data.message || 'Failed to synchronise dataset.')}`);
       }
 
       if (data.stats) {

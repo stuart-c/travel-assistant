@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed visibility of Home Assistant location synchronisation (`locations`) on the Background Sync page (`/config/sync`) by marking the `locations` table as syncable in database telemetry (`get_db_stats`) and including it in client-side syncable table definitions.
+
 ### Added
 - Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
 - Settings navigation cog button in the web UI header.

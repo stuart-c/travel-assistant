@@ -291,7 +291,9 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             columns = [col[1] for col in col_cursor.fetchall()]
 
             # Determine sync status and last updated
-            is_syncable = table_name in SYNCABLE_TABLE_NAMES
+            is_syncable = (
+                table_name in SYNCABLE_TABLE_NAMES or table_name == "locations"
+            )
             last_updated_at = None
             sync_status = "idle" if is_syncable else "managed"
             error_message = None
