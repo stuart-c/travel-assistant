@@ -91,8 +91,12 @@ class HomeAssistantClient(BaseDataSource):
             url = f"{self.base_url}/config"
             resp = requests.get(url, headers=headers, timeout=self.timeout_seconds)
             if resp.status_code in (401, 403):
+                detail = resp.text.strip() if resp.text else ""
+                err_text = f" {detail}" if detail else ""
                 raise DataSourceAuthError(
-                    f"Authentication failed for Home Assistant ({resp.status_code}): {resp.text}",
+                    f"Authentication failed for Home Assistant ({resp.status_code}):{err_text}. "
+                    "Ensure 'homeassistant_api: true' is enabled in the add-on configuration "
+                    "or verify token permissions.",
                     provider=self.provider_name,
                 )
             if resp.status_code != 200:
@@ -128,8 +132,12 @@ class HomeAssistantClient(BaseDataSource):
             url = f"{self.base_url}/states"
             resp = requests.get(url, headers=headers, timeout=self.timeout_seconds)
             if resp.status_code in (401, 403):
+                detail = resp.text.strip() if resp.text else ""
+                err_text = f" {detail}" if detail else ""
                 raise DataSourceAuthError(
-                    f"Authentication failed for Home Assistant ({resp.status_code}): {resp.text}",
+                    f"Authentication failed for Home Assistant ({resp.status_code}):{err_text}. "
+                    "Ensure 'homeassistant_api: true' is enabled in the add-on configuration "
+                    "or verify token permissions.",
                     provider=self.provider_name,
                 )
             if resp.status_code != 200:
