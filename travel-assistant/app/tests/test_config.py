@@ -526,13 +526,25 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     assert len(res_air.get_json()["results"]) == 1
     assert res_air.get_json()["results"][0]["icon"] == "flight"
 
-    # 7. Test transport type query also returns matching custom / HA location
-    res_bus_with_ha = client.get("/config/search/places?type=bus&q=Home")
-    assert res_bus_with_ha.status_code == 200
-    assert len(res_bus_with_ha.get_json()["results"]) == 1
-    assert res_bus_with_ha.get_json()["results"][0]["id"] == "ha:home"
+    # 7. Test strict transport type filtering (transit search does not return HA locations)
+    res_bus_home = client.get("/config/search/places?type=bus&q=Home")
+    assert res_bus_home.status_code == 200
+    assert len(res_bus_home.get_json()["results"]) == 0
 
-    # 8. Test all locations search without type filter
+    res_all_home = client.get("/config/search/places?type=all&q=Home")
+    assert res_all_home.status_code == 200
+    assert len(res_all_home.get_json()["results"]) == 1
+    assert res_all_home.get_json()["results"][0]["id"] == "ha:home"
+
+    # 8. Test train alias maps to rail
+    res_train = client.get("/config/search/places?type=train&q=Oxford")
+    assert res_train.status_code == 200
+    data_train = res_train.get_json()
+    assert len(data_train["results"]) == 1
+    assert data_train["results"][0]["id"] == "naptan:OXF"
+    assert data_train["results"][0]["type"] == "rail"
+
+    # 9. Test all locations search without type filter
     res_all_q = client.get("/config/search/places?limit=invalid")
     assert res_all_q.status_code == 200
     data_all_q = res_all_q.get_json()

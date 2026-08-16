@@ -61,10 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const locModalTitle = document.getElementById('location-modal-title');
   const locModalIcon = document.getElementById('location-modal-icon');
   const editLocIndexInput = document.getElementById('edit-location-index');
+  const fromLocType = document.getElementById('from_loc_type');
   const fromLocSearch = document.getElementById('from-loc-search');
   const fromLocSuggestions = document.getElementById('from-loc-suggestions');
   const fromLocName = document.getElementById('from_loc_name');
   const fromLocId = document.getElementById('from_loc_id');
+  const toLocType = document.getElementById('to_loc_type');
   const toLocSearch = document.getElementById('to-loc-search');
   const toLocSuggestions = document.getElementById('to-loc-suggestions');
   const toLocName = document.getElementById('to_loc_name');
@@ -85,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const platModalTitle = document.getElementById('platform-modal-title');
   const platModalIcon = document.getElementById('platform-modal-icon');
   const editPlatIndexInput = document.getElementById('edit-platform-index');
+  const platStationType = document.getElementById('plat_station_type');
   const platStationSearch = document.getElementById('plat-station-search');
   const platStationSuggestions = document.getElementById('plat-station-suggestions');
   const platStationName = document.getElementById('plat_station_name');
@@ -434,16 +437,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const PLACE_TYPE_FILTERS = [
+    { type: 'all', label: 'All', icon: 'apps' },
+    { type: 'rail', label: 'Train', icon: 'train' },
+    { type: 'bus', label: 'Bus', icon: 'directions_bus' },
+    { type: 'metro', label: 'Metro', icon: 'subway' },
+    { type: 'tram', label: 'Tram', icon: 'tram' },
+    { type: 'ferry', label: 'Ferry', icon: 'directions_boat' },
+    { type: 'air', label: 'Air', icon: 'flight' },
+    { type: 'ha', label: 'HA', icon: 'home' },
+    { type: 'custom', label: 'Custom', icon: 'pin_drop' },
+  ];
+
   // --- Location Autocomplete Helpers ---
-  function setupAutocomplete(searchInput, suggestionsContainer, typeRadioName, nameInput, idInput) {
+  function setupAutocomplete(searchInput, suggestionsContainer, typeInput, nameInput, idInput, defaultFilter = 'all') {
     let debounceTimer = null;
+    let activeFilter = defaultFilter;
 
     async function triggerLookup(query) {
-      const checkedRadio = document.querySelector(`input[name="${typeRadioName}"]:checked`);
-      const mode = checkedRadio ? checkedRadio.value : '';
+      const mode = activeFilter === 'all' ? '' : activeFilter;
 
       try {
-        const res = await fetch(`${searchBaseUrl}?type=${encodeURIComponent(mode)}&q=${encodeURIComponent(query)}`);
+        const res = await fetch(`${searchBaseUrl}?type=${encodeURIComponent(mode)}&q=${encodeURIComponent(query)}&limit=15`);
+        if (!res.ok) throw new Error('Search failed');
         const data = await res.json();
         renderSuggestions(data.results || []);
       } catch (err) {
@@ -452,39 +468,102 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSuggestions(results) {
+      const filterBarHtml = `
+        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/90 dark:bg-slate-800/90 sticky top-0 z-10 backdrop-blur-xs">
+          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+            ${PLACE_TYPE_FILTERS.map(f => {
+              const isActive = f.type === activeFilter;
+              const activeClass = isActive
+                ? 'bg-sky-600 text-white font-semibold shadow-xs dark:bg-sky-500'
+                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600/80';
+              return `
+                <button
+                  type="button"
+                  class="filter-chip px-2 py-0.5 rounded-md text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-all duration-150 select-none ${activeClass}"
+                  data-filter-type="${f.type}"
+                >
+                  <span class="material-symbols-outlined text-[13px] leading-none">${f.icon}</span>
+                  <span>${f.label}</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      let listHtml = '';
       if (!results || results.length === 0) {
-        suggestionsContainer.innerHTML = '<div class="p-2.5 text-xs text-slate-500 dark:text-slate-400 text-center">No locations found. Enter details manually below.</div>';
-        suggestionsContainer.classList.remove('hidden');
-        return;
+        const filterObj = PLACE_TYPE_FILTERS.find(f => f.type === activeFilter);
+        const filterLabel = filterObj ? filterObj.label : activeFilter;
+        listHtml = `
+          <div class="px-3.5 py-4 text-xs text-slate-500 dark:text-slate-400 text-center">
+            No matching ${escapeHtml(filterLabel === 'All' ? 'locations' : filterLabel + ' locations')} found. Enter details manually below.
+          </div>
+        `;
+      } else {
+        listHtml = `
+          <div class="place-results-list divide-y divide-slate-100 dark:divide-slate-700/50">
+            ${results.map((item, idx) => {
+              const itemIcon = item.icon || getLocationIcon(item.type);
+              const badge = getLocationBadge(item.type);
+              return `
+                <div 
+                  class="suggestion-item p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
+                  data-index="${idx}"
+                >
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-outlined text-base text-slate-400 shrink-0">${escapeHtml(itemIcon)}</span>
+                    <div class="min-w-0">
+                      <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
+                      <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.id)}</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    ${badge}
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">${escapeHtml(item.id)}</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
       }
 
-      suggestionsContainer.innerHTML = '';
-      results.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer rounded-lg transition-colors flex items-center justify-between gap-3';
-        const itemIcon = item.icon || 'place';
-        div.innerHTML = `
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span class="material-symbols-outlined text-base text-slate-400 shrink-0">${escapeHtml(itemIcon)}</span>
-            <div class="min-w-0">
-              <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
-              <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.id)}</div>
-            </div>
-          </div>
-          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">${escapeHtml(item.id)}</span>
-        `;
-        div.addEventListener('click', () => {
-          nameInput.value = item.name;
-          idInput.value = item.id;
-          if (typeRadioName && item.type) {
-            const matchingRadio = document.querySelector(`input[name="${typeRadioName}"][value="${item.type}"]`);
-            if (matchingRadio) matchingRadio.checked = true;
-          }
-          suggestionsContainer.classList.add('hidden');
-        });
-        suggestionsContainer.appendChild(div);
-      });
+      suggestionsContainer.innerHTML = filterBarHtml + listHtml;
       suggestionsContainer.classList.remove('hidden');
+
+      // Bind filter chip clicks
+      suggestionsContainer.querySelectorAll('.filter-chip').forEach(chipBtn => {
+        chipBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        chipBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const newType = chipBtn.getAttribute('data-filter-type');
+          if (newType !== activeFilter) {
+            activeFilter = newType;
+            if (searchInput) triggerLookup(searchInput.value.trim());
+          }
+          if (searchInput) searchInput.focus();
+        });
+      });
+
+      // Bind item clicks
+      suggestionsContainer.querySelectorAll('.suggestion-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.getAttribute('data-index'), 10);
+          const item = results[idx];
+          if (item) {
+            nameInput.value = item.name;
+            idInput.value = item.id;
+            if (typeInput && item.type) {
+              typeInput.value = item.type;
+            }
+            suggestionsContainer.classList.add('hidden');
+          }
+        });
+      });
     }
 
     if (searchInput) {
@@ -504,17 +583,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    document.querySelectorAll(`input[name="${typeRadioName}"]`).forEach(radio => {
-      radio.addEventListener('change', () => {
-        if (searchInput) triggerLookup(searchInput.value.trim());
-      });
-    });
+    return {
+      resetFilter: (newDefault = defaultFilter) => {
+        activeFilter = newDefault;
+      }
+    };
   }
 
   // Setup Autocompletes
-  setupAutocomplete(fromLocSearch, fromLocSuggestions, 'from_loc_type', fromLocName, fromLocId);
-  setupAutocomplete(toLocSearch, toLocSuggestions, 'to_loc_type', toLocName, toLocId);
-  setupAutocomplete(platStationSearch, platStationSuggestions, 'plat_station_type', platStationName, platStationId);
+  const fromAutocomplete = setupAutocomplete(fromLocSearch, fromLocSuggestions, fromLocType, fromLocName, fromLocId, 'all');
+  const toAutocomplete = setupAutocomplete(toLocSearch, toLocSuggestions, toLocType, toLocName, toLocId, 'all');
+  const platAutocomplete = setupAutocomplete(platStationSearch, platStationSuggestions, platStationType, platStationName, platStationId, 'rail');
 
   // Close suggestions when clicking outside
   document.addEventListener('click', (e) => {
@@ -540,9 +619,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = stagedLocationTransfers[editIndex];
       if (locModalTitle) locModalTitle.textContent = 'Edit Inter-Location Transfer';
       if (locModalIcon) locModalIcon.textContent = 'edit';
+      if (fromLocType) fromLocType.value = item.from_type || '';
       if (fromLocSearch) fromLocSearch.value = item.from_name || '';
       if (fromLocName) fromLocName.value = item.from_name || '';
       if (fromLocId) fromLocId.value = item.from_id || '';
+      if (toLocType) toLocType.value = item.to_type || '';
       if (toLocSearch) toLocSearch.value = item.to_name || '';
       if (toLocName) toLocName.value = item.to_name || '';
       if (toLocId) toLocId.value = item.to_id || '';
@@ -550,17 +631,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (locBidirectional) locBidirectional.checked = Boolean(item.bidirectional);
       if (locStepFree) locStepFree.checked = Boolean(item.step_free);
       if (locNotes) locNotes.value = item.notes || '';
-
-      const fromRadio = document.querySelector(`input[name="from_loc_type"][value="${item.from_type || ''}"]`);
-      if (fromRadio) fromRadio.checked = true;
-      const toRadio = document.querySelector(`input[name="to_loc_type"][value="${item.to_type || ''}"]`);
-      if (toRadio) toRadio.checked = true;
     } else {
       if (locModalTitle) locModalTitle.textContent = 'Add Inter-Location Transfer';
       if (locModalIcon) locModalIcon.textContent = 'directions_walk';
+      if (fromLocType) fromLocType.value = '';
       if (fromLocSearch) fromLocSearch.value = '';
       if (fromLocName) fromLocName.value = '';
       if (fromLocId) fromLocId.value = '';
+      if (toLocType) toLocType.value = '';
       if (toLocSearch) toLocSearch.value = '';
       if (toLocName) toLocName.value = '';
       if (toLocId) toLocId.value = '';
@@ -569,10 +647,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (locStepFree) locStepFree.checked = false;
       if (locNotes) locNotes.value = '';
 
-      const defaultFromRadio = document.querySelector('input[name="from_loc_type"][value=""]');
-      if (defaultFromRadio) defaultFromRadio.checked = true;
-      const defaultToRadio = document.querySelector('input[name="to_loc_type"][value=""]');
-      if (defaultToRadio) defaultToRadio.checked = true;
+      fromAutocomplete.resetFilter('all');
+      toAutocomplete.resetFilter('all');
     }
 
     if (locModal && typeof locModal.showModal === 'function') {
@@ -593,13 +669,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (confirmLocBtn) {
     confirmLocBtn.addEventListener('click', () => {
-      const fromTypeRadio = document.querySelector('input[name="from_loc_type"]:checked');
-      const toTypeRadio = document.querySelector('input[name="to_loc_type"]:checked');
-
-      const from_type = fromTypeRadio ? fromTypeRadio.value : '';
+      const from_type = fromLocType ? fromLocType.value : '';
       const from_name = fromLocName.value.trim();
       const from_id = fromLocId.value.trim();
-      const to_type = toTypeRadio ? toTypeRadio.value : '';
+      const to_type = toLocType ? toLocType.value : '';
       const to_name = toLocName.value.trim();
       const to_id = toLocId.value.trim();
       const transfer_time_minutes = parseInt(locTransferTime.value, 10) || 5;
@@ -647,6 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = stagedPlatformTransfers[editIndex];
       if (platModalTitle) platModalTitle.textContent = 'Edit Platform Transfer';
       if (platModalIcon) platModalIcon.textContent = 'edit';
+      if (platStationType) platStationType.value = item.location_type || 'rail';
       if (platStationSearch) platStationSearch.value = item.location_name || '';
       if (platStationName) platStationName.value = item.location_name || '';
       if (platStationId) platStationId.value = item.location_id || '';
@@ -656,12 +730,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (platBidirectional) platBidirectional.checked = Boolean(item.bidirectional);
       if (platStepFree) platStepFree.checked = Boolean(item.step_free);
       if (platNotes) platNotes.value = item.notes || '';
-
-      const stationRadio = document.querySelector(`input[name="plat_station_type"][value="${item.location_type || 'station'}"]`);
-      if (stationRadio) stationRadio.checked = true;
     } else {
       if (platModalTitle) platModalTitle.textContent = 'Add Platform Transfer';
       if (platModalIcon) platModalIcon.textContent = 'transfer_within_a_station';
+      if (platStationType) platStationType.value = 'rail';
       if (platStationSearch) platStationSearch.value = '';
       if (platStationName) platStationName.value = '';
       if (platStationId) platStationId.value = '';
@@ -672,8 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (platStepFree) platStepFree.checked = false;
       if (platNotes) platNotes.value = '';
 
-      const defaultStationRadio = document.querySelector('input[name="plat_station_type"][value="station"]');
-      if (defaultStationRadio) defaultStationRadio.checked = true;
+      platAutocomplete.resetFilter('rail');
     }
 
     if (platModal && typeof platModal.showModal === 'function') {
@@ -694,8 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (confirmPlatBtn) {
     confirmPlatBtn.addEventListener('click', () => {
-      const locTypeRadio = document.querySelector('input[name="plat_station_type"]:checked');
-      const location_type = locTypeRadio ? locTypeRadio.value : 'station';
+      const location_type = platStationType ? platStationType.value : 'rail';
       const location_name = platStationName.value.trim();
       const location_id = platStationId.value.trim();
       const from_platform = platFromPlatform.value.trim();

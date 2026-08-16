@@ -312,9 +312,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.dispatchEvent(new CustomEvent('configDirtyStateChanged', { detail: { isDirty } }));
   }
 
+  const PLACE_TYPE_FILTERS = [
+    { type: 'all', label: 'All', icon: 'apps' },
+    { type: 'rail', label: 'Train', icon: 'train' },
+    { type: 'bus', label: 'Bus', icon: 'directions_bus' },
+    { type: 'metro', label: 'Metro', icon: 'subway' },
+    { type: 'tram', label: 'Tram', icon: 'tram' },
+    { type: 'ferry', label: 'Ferry', icon: 'directions_boat' },
+    { type: 'air', label: 'Air', icon: 'flight' },
+    { type: 'ha', label: 'HA', icon: 'home' },
+    { type: 'custom', label: 'Custom', icon: 'pin_drop' },
+  ];
+
   // --- Location Autocomplete Component ---
-  function setupAutocomplete(inputEl, suggestionsEl, typeEl, idEl, nameEl, previewEl, previewIconEl, previewNameEl, previewIdEl, clearBtnEl) {
+  function setupAutocomplete(inputEl, suggestionsEl, typeEl, idEl, nameEl, previewEl, previewIconEl, previewNameEl, previewIdEl, clearBtnEl, defaultFilter = 'all') {
     let debounceTimer = null;
+    let activeFilter = defaultFilter;
 
     function setSelection(item) {
       typeEl.value = item.type;
@@ -335,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
       typeEl.value = '';
       idEl.value = '';
       nameEl.value = '';
+      activeFilter = defaultFilter;
 
       previewEl.classList.add('hidden');
       inputEl.parentElement.classList.remove('hidden');
@@ -344,6 +358,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (clearBtnEl) {
       clearBtnEl.addEventListener('click', clearSelection);
+    }
+
+    async function fetchPlaces() {
+      const q = inputEl.value.trim();
+      const typeParam = activeFilter === 'all' ? '' : activeFilter;
+      try {
+        const resp = await fetch(
+          `${searchBaseUrl}?type=${encodeURIComponent(typeParam)}&q=${encodeURIComponent(q)}&limit=15`
+        );
+        if (!resp.ok) throw new Error('Search failed');
+        const data = await resp.json();
+        renderDropdown(data.results || []);
+      } catch (err) {
+        console.error('Location search error:', err);
+      }
     }
 
     inputEl.addEventListener('input', () => {
@@ -356,54 +385,99 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      debounceTimer = setTimeout(async () => {
-        try {
-          const resp = await fetch(`${searchBaseUrl}?q=${encodeURIComponent(q)}&limit=12`);
-          if (!resp.ok) throw new Error('Search failed');
-          const data = await resp.json();
-          renderSuggestions(data.results || []);
-        } catch (err) {
-          console.error('Location search error:', err);
-        }
-      }, 200);
+      debounceTimer = setTimeout(fetchPlaces, 200);
     });
 
-    function renderSuggestions(items) {
+    inputEl.addEventListener('focus', () => {
+      const q = inputEl.value.trim();
+      if (q) {
+        fetchPlaces();
+      }
+    });
+
+    function renderDropdown(items) {
+      const filterBarHtml = `
+        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/90 dark:bg-slate-800/90 sticky top-0 z-10 backdrop-blur-xs">
+          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+            ${PLACE_TYPE_FILTERS.map(f => {
+              const isActive = f.type === activeFilter;
+              const activeClass = isActive
+                ? 'bg-sky-600 text-white font-semibold shadow-xs dark:bg-sky-500'
+                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600/80';
+              return `
+                <button
+                  type="button"
+                  class="filter-chip px-2 py-0.5 rounded-md text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-all duration-150 select-none ${activeClass}"
+                  data-filter-type="${f.type}"
+                >
+                  <span class="material-symbols-outlined text-[13px] leading-none">${f.icon}</span>
+                  <span>${f.label}</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      let listHtml = '';
       if (!items || items.length === 0) {
-        suggestionsEl.innerHTML = `
-          <div class="px-3.5 py-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-            No matching stations, bus stops, or locations found
+        const filterObj = PLACE_TYPE_FILTERS.find(f => f.type === activeFilter);
+        const filterLabel = filterObj ? filterObj.label : activeFilter;
+        listHtml = `
+          <div class="px-3.5 py-4 text-xs text-slate-500 dark:text-slate-400 text-center">
+            No matching ${escapeHtml(filterLabel === 'All' ? 'places' : filterLabel + ' locations')} found
           </div>
         `;
-        suggestionsEl.classList.remove('hidden');
-        return;
+      } else {
+        listHtml = `
+          <div class="place-results-list divide-y divide-slate-100 dark:divide-slate-700/50">
+            ${items.map((item, idx) => {
+              const icon = getLocationIcon(item.type);
+              const badge = getLocationBadge(item.type);
+
+              return `
+                <div 
+                  class="suggestion-item px-3.5 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
+                  data-index="${idx}"
+                >
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-outlined text-slate-400 dark:text-slate-500 text-lg shrink-0">${icon}</span>
+                    <div class="truncate">
+                      <div class="text-xs font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</div>
+                      <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description)}</div>
+                    </div>
+                  </div>
+                  <div class="shrink-0">
+                    ${badge}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
       }
 
-      suggestionsEl.innerHTML = items.map((item, idx) => {
-        const icon = getLocationIcon(item.type);
-        const badge = getLocationBadge(item.type);
-
-        return `
-          <div 
-            class="suggestion-item px-3.5 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
-            data-index="${idx}"
-          >
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="material-symbols-outlined text-slate-400 dark:text-slate-500 text-lg shrink-0">${icon}</span>
-              <div class="truncate">
-                <div class="text-xs font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description)}</div>
-              </div>
-            </div>
-            <div class="shrink-0">
-              ${badge}
-            </div>
-          </div>
-        `;
-      }).join('');
-
+      suggestionsEl.innerHTML = filterBarHtml + listHtml;
       suggestionsEl.classList.remove('hidden');
 
+      // Bind filter chip clicks
+      suggestionsEl.querySelectorAll('.filter-chip').forEach(chipBtn => {
+        chipBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        chipBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const newType = chipBtn.getAttribute('data-filter-type');
+          if (newType !== activeFilter) {
+            activeFilter = newType;
+            fetchPlaces();
+          }
+          inputEl.focus();
+        });
+      });
+
+      // Bind item clicks
       suggestionsEl.querySelectorAll('.suggestion-item').forEach(el => {
         el.addEventListener('click', () => {
           const idx = parseInt(el.getAttribute('data-index'), 10);
@@ -421,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    return { setSelection, clearSelection };
+    return { setSelection, clearSelection, resetFilter: () => { activeFilter = defaultFilter; } };
   }
 
   const fromAutocomplete = setupAutocomplete(

@@ -50,6 +50,8 @@ STOP_TYPE_CONFIG: Dict[str, Dict[str, str]] = {
 def search_places() -> Any:
     """Search public transit stops, Home Assistant zones, and custom locations."""
     target_type = request.args.get("type", "").lower().strip()
+    if target_type == "train":
+        target_type = "rail"
     query = request.args.get("q", "").strip()
     limit_raw = request.args.get("limit", "15").strip()
     try:
@@ -110,12 +112,9 @@ def search_places() -> Any:
             pass
 
     # Query Custom & Home Assistant Locations
-    # Included by default, or when searching any transit mode, or when specifically requested
+    # Included by default when searching 'all' or specifically requested
     include_locations = (
-        not target_type
-        or target_type == "all"
-        or target_type in ("ha", "custom")
-        or target_type in STOP_TYPE_CONFIG
+        not target_type or target_type == "all" or target_type in ("ha", "custom")
     )
 
     if include_locations:

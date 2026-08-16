@@ -748,12 +748,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // FULL-WIDTH TIMETABLE GRID EDITOR CONTROLLER
   // =========================================================================
 
+  let matrixActiveFilter = null;
+
   function openEditor(index) {
     if (index < 0 || index >= stagedTimetables.length) return;
     activeEditorIndex = index;
     selectedTripIndices.clear();
 
     const item = stagedTimetables[activeEditorIndex];
+    matrixActiveFilter = item.transport_type || 'bus';
     const mode = TRANSPORT_MODES[item.transport_type] || TRANSPORT_MODES.bus;
 
     if (editorBreadcrumbName) editorBreadcrumbName.textContent = item.name;
@@ -1235,6 +1238,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Setup stop search autocomplete against /config/search/places
   let searchDebounceTimer = null;
+  const PLACE_TYPE_FILTERS = [
+    { type: 'all', label: 'All', icon: 'apps' },
+    { type: 'rail', label: 'Train', icon: 'train' },
+    { type: 'bus', label: 'Bus', icon: 'directions_bus' },
+    { type: 'metro', label: 'Metro', icon: 'subway' },
+    { type: 'tram', label: 'Tram', icon: 'tram' },
+    { type: 'ferry', label: 'Ferry', icon: 'directions_boat' },
+    { type: 'air', label: 'Air', icon: 'flight' },
+    { type: 'ha', label: 'HA', icon: 'home' },
+    { type: 'custom', label: 'Custom', icon: 'pin_drop' },
+  ];
+
   function setupStopSearchAutocomplete() {
     const searchInput = document.getElementById('matrix-stop-search-input');
     const resultsContainer = document.getElementById(
@@ -1242,45 +1257,75 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     if (!searchInput || !resultsContainer) return;
 
-    searchInput.addEventListener('input', () => {
+    const timetable = stagedTimetables[activeEditorIndex];
+    if (!matrixActiveFilter) {
+      matrixActiveFilter = timetable ? timetable.transport_type : 'bus';
+    }
+
+    async function triggerStopLookup() {
       const q = searchInput.value.trim();
-      clearTimeout(searchDebounceTimer);
+      const ingressPath =
+        document.body.getAttribute('data-ingress-path') || '';
+      const filterParam =
+        matrixActiveFilter === 'all' ? '' : matrixActiveFilter;
 
-      if (q.length < 1) {
-        resultsContainer.innerHTML = '';
-        resultsContainer.classList.add('hidden');
-        return;
+      try {
+        const res = await fetch(
+          `${ingressPath}/config/search/places?type=${encodeURIComponent(
+            filterParam
+          )}&q=${encodeURIComponent(q)}&limit=15`
+        );
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
+        renderStopResults(data.results || []);
+      } catch (err) {
+        console.error('Search places error:', err);
       }
+    }
 
-      searchDebounceTimer = setTimeout(async () => {
-        const timetable = stagedTimetables[activeEditorIndex];
-        const transportType = timetable ? timetable.transport_type : 'bus';
-        const ingressPath =
-          document.body.getAttribute('data-ingress-path') || '';
+    function renderStopResults(results) {
+      const filterBarHtml = `
+        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/90 dark:bg-slate-800/90 sticky top-0 z-10 backdrop-blur-xs">
+          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+            ${PLACE_TYPE_FILTERS.map((f) => {
+              const isActive = f.type === matrixActiveFilter;
+              const activeClass = isActive
+                ? 'bg-sky-600 text-white font-semibold shadow-xs dark:bg-sky-500'
+                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600/80';
+              return `
+                <button
+                  type="button"
+                  class="filter-chip px-2 py-0.5 rounded-md text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-all duration-150 select-none ${activeClass}"
+                  data-filter-type="${f.type}"
+                >
+                  <span class="material-symbols-outlined text-[13px] leading-none">${f.icon}</span>
+                  <span>${f.label}</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
 
-        try {
-          const res = await fetch(
-            `${ingressPath}/config/search/places?type=${encodeURIComponent(
-              transportType
-            )}&q=${encodeURIComponent(q)}&limit=15`
-          );
-          if (!res.ok) throw new Error('Search failed');
-          const data = await res.json();
-          const results = data.results || [];
-
-          if (results.length === 0) {
-            resultsContainer.innerHTML = `
-              <div class="p-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-                No matching places found.
-              </div>
-            `;
-            resultsContainer.classList.remove('hidden');
-            return;
-          }
-
-          resultsContainer.innerHTML = results
-            .map(
-              (place) => `
+      let listHtml = '';
+      if (!results || results.length === 0) {
+        const filterObj = PLACE_TYPE_FILTERS.find(
+          (f) => f.type === matrixActiveFilter
+        );
+        const filterLabel = filterObj ? filterObj.label : matrixActiveFilter;
+        listHtml = `
+          <div class="p-3 text-xs text-slate-500 dark:text-slate-400 text-center">
+            No matching ${escapeHtml(
+              filterLabel === 'All' ? 'places' : filterLabel + ' places'
+            )} found.
+          </div>
+        `;
+      } else {
+        listHtml = `
+          <div class="place-results-list divide-y divide-slate-100 dark:divide-slate-700">
+            ${results
+              .map(
+                (place) => `
               <button 
                 type="button" 
                 class="add-searched-stop-btn w-full text-left p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 flex items-center justify-between gap-2 transition-colors cursor-pointer"
@@ -1304,32 +1349,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 </span>
               </button>
             `
-            )
-            .join('');
+              )
+              .join('')}
+          </div>
+        `;
+      }
 
-          resultsContainer.classList.remove('hidden');
+      resultsContainer.innerHTML = filterBarHtml + listHtml;
+      resultsContainer.classList.remove('hidden');
 
-          // Attach click listeners to results
-          resultsContainer
-            .querySelectorAll('.add-searched-stop-btn')
-            .forEach((btn) => {
-              btn.addEventListener('click', () => {
-                const placeDataRaw = btn.getAttribute('data-place');
-                try {
-                  const place = JSON.parse(placeDataRaw);
-                  addStopToTimetable(place);
-                  searchInput.value = '';
-                  resultsContainer.innerHTML = '';
-                  resultsContainer.classList.add('hidden');
-                } catch (err) {
-                  console.error('Failed to add stop:', err);
-                }
-              });
-            });
-        } catch (err) {
-          console.error('Search places error:', err);
-        }
-      }, 200);
+      // Bind filter chip clicks
+      resultsContainer.querySelectorAll('.filter-chip').forEach((chipBtn) => {
+        chipBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        chipBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const newType = chipBtn.getAttribute('data-filter-type');
+          if (newType !== matrixActiveFilter) {
+            matrixActiveFilter = newType;
+            triggerStopLookup();
+          }
+          searchInput.focus();
+        });
+      });
+
+      // Attach click listeners to results
+      resultsContainer
+        .querySelectorAll('.add-searched-stop-btn')
+        .forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const placeDataRaw = btn.getAttribute('data-place');
+            try {
+              const place = JSON.parse(placeDataRaw);
+              addStopToTimetable(place);
+              searchInput.value = '';
+              resultsContainer.innerHTML = '';
+              resultsContainer.classList.add('hidden');
+            } catch (err) {
+              console.error('Failed to add stop:', err);
+            }
+          });
+        });
+    }
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim();
+      clearTimeout(searchDebounceTimer);
+
+      if (q.length < 1) {
+        resultsContainer.innerHTML = '';
+        resultsContainer.classList.add('hidden');
+        return;
+      }
+
+      searchDebounceTimer = setTimeout(triggerStopLookup, 200);
+    });
+
+    searchInput.addEventListener('focus', () => {
+      const q = searchInput.value.trim();
+      if (q.length >= 1) {
+        triggerStopLookup();
+      }
     });
 
     // Close autocomplete on click outside
