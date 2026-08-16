@@ -127,18 +127,16 @@ def test_google_maps_validate_credentials_probe_success() -> None:
     assert is_valid is True
 
 
-def test_google_maps_validate_credentials_invalid_request_zero_cost() -> None:
-    """Test validate_credentials handles INVALID_REQUEST as valid zero-cost probe."""
+def test_google_maps_validate_credentials_zero_results() -> None:
+    """Test validate_credentials handles ZERO_RESULTS as valid probe response."""
     mock_sdk = MagicMock()
-    err = GoogleMapsApiError(
-        status="INVALID_REQUEST", message="Missing address parameter"
-    )
+    err = GoogleMapsApiError(status="ZERO_RESULTS", message="No results found")
     mock_sdk.geocode.side_effect = err
     client = GoogleMapsClient(api_key="test-key", client=mock_sdk)
 
     res = client.validate_credentials()
     assert res["valid"] is True
-    assert "zero-cost probe verified" in res["message"]
+    assert "Google Maps credentials valid." in res["message"]
 
     is_valid, msg = client.validate_tuple()
     assert is_valid is True
