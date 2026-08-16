@@ -12,7 +12,7 @@ mkdir -p "$USER_DATA_DIR"
 echo "=== Initialising Browser Remote Debugging on Port ${DEBUG_PORT} ==="
 
 # Check if browser is already listening on the target port
-if curl -s "http://127.0.0.1:${DEBUG_PORT}/json/version" > /dev/null 2>&1; then
+if curl --noproxy 127.0.0.1,localhost -s "http://127.0.0.1:${DEBUG_PORT}/json/version" > /dev/null 2>&1; then
     echo "Active Chrome/Chromium remote debugging instance already responding on port ${DEBUG_PORT}."
     exit 0
 fi
@@ -56,7 +56,7 @@ for i in {1..15}; do
 done
 
 # Verify DevTools HTTP endpoint
-if curl -s "http://127.0.0.1:${DEBUG_PORT}/json/version" > /dev/null 2>&1; then
+if curl --noproxy 127.0.0.1,localhost -s "http://127.0.0.1:${DEBUG_PORT}/json/version" > /dev/null 2>&1; then
     echo "=== Browser Remote Debugging Ready on ws://127.0.0.1:${DEBUG_PORT} ==="
     echo "DevTools profile: ${USER_DATA_DIR}"
 else

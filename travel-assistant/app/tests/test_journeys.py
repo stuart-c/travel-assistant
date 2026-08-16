@@ -272,3 +272,145 @@ def test_db_stats_includes_journeys(app: Flask) -> None:
         )
         assert journey_table is not None
         assert journey_table["row_count"] >= 1
+
+
+def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
+    """Verify that saving a new journey persists across navigation away and returning."""
+    # 1. Create a new journey
+    new_journey_payload = [
+        {
+            "name": "Gym Workout Route",
+            "from_type": "ha",
+            "from_id": "zone.home",
+            "from_name": "Home",
+            "to_type": "ha",
+            "to_id": "zone.gym",
+            "to_name": "City Health Club",
+            "time_settings": [
+                {
+                    "days": ["mon", "wed", "fri"],
+                    "mode": "arrive",
+                    "start_time": "06:45",
+                    "end_time": "07:15",
+                }
+            ],
+        }
+    ]
+
+    # POST Save Changes
+    save_resp = client.post(
+        "/config/journeys",
+        data={"journeys_json": json.dumps(new_journey_payload)},
+        follow_redirects=True,
+    )
+    assert save_resp.status_code == 200
+    assert b"Journeys saved successfully." in save_resp.data
+
+    # 2. Leave the page (navigate to Locations & Timetables)
+    loc_resp = client.get("/config/locations")
+    assert loc_resp.status_code == 200
+
+    tt_resp = client.get("/config/timetables")
+    assert tt_resp.status_code == 200
+
+    # 3. Return to Journeys page
+    return_resp = client.get("/config/journeys")
+    assert return_resp.status_code == 200
+
+    # 4. Verify data payload rendered on the returned page
+    page_html = return_resp.get_data(as_text=True)
+    assert "initial-journeys-data" in page_html
+
+    # Extract JSON embedded script
+    start_tag = '<script id="initial-journeys-data" type="application/json">'
+    end_tag = "</script>"
+    json_start = page_html.find(start_tag) + len(start_tag)
+    json_end = page_html.find(end_tag, json_start)
+    raw_json = page_html[json_start:json_end]
+
+    persisted_journeys = json.loads(raw_json)
+    assert len(persisted_journeys) == 1
+    item = persisted_journeys[0]
+    assert item["name"] == "Gym Workout Route"
+    assert item["from_id"] == "zone.home"
+    assert item["to_id"] == "zone.gym"
+    assert len(item["time_settings"]) == 1
+    assert item["time_settings"][0]["mode"] == "arrive"
+    assert item["time_settings"][0]["days"] == ["mon", "wed", "fri"]
+    assert item["time_settings"][0]["start_time"] == "06:45"
+    assert item["time_settings"][0]["end_time"] == "07:15"
+
+
+def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
+    """Verify editing and deleting existing journeys persists properly."""
+    # Seed 2 journeys
+    initial_payload = [
+        {
+            "name": "Library Study Session",
+            "from_type": "ha",
+            "from_id": "zone.home",
+            "from_name": "Home",
+            "to_type": "custom",
+            "to_id": "custom:library",
+            "to_name": "Central Public Library",
+            "time_settings": [],
+        },
+        {
+            "name": "Weekend Family Visit",
+            "from_type": "ha",
+            "from_id": "zone.home",
+            "from_name": "Home",
+            "to_type": "custom",
+            "to_id": "custom:parents",
+            "to_name": "Parents House",
+            "time_settings": [],
+        },
+    ]
+
+    client.post(
+        "/config/journeys",
+        data={"journeys_json": json.dumps(initial_payload)},
+        follow_redirects=True,
+    )
+
+    # Edit Library Study Session -> Central Library Research Session and Delete Weekend Family Visit
+    updated_payload = [
+        {
+            "name": "Central Library Research Session",
+            "from_type": "ha",
+            "from_id": "zone.home",
+            "from_name": "Home",
+            "to_type": "custom",
+            "to_id": "custom:library",
+            "to_name": "Central Public Library",
+            "time_settings": [
+                {
+                    "days": ["sat"],
+                    "mode": "depart",
+                    "start_time": "10:00",
+                    "end_time": "11:00",
+                }
+            ],
+        }
+    ]
+
+    save_resp = client.post(
+        "/config/journeys",
+        data={"journeys_json": json.dumps(updated_payload)},
+        follow_redirects=True,
+    )
+    assert save_resp.status_code == 200
+
+    # Return to Journeys and verify
+    get_resp = client.get("/config/journeys")
+    page_html = get_resp.get_data(as_text=True)
+
+    start_tag = '<script id="initial-journeys-data" type="application/json">'
+    end_tag = "</script>"
+    json_start = page_html.find(start_tag) + len(start_tag)
+    json_end = page_html.find(end_tag, json_start)
+    persisted = json.loads(page_html[json_start:json_end])
+
+    assert len(persisted) == 1
+    assert persisted[0]["name"] == "Central Library Research Session"
+    assert persisted[0]["time_settings"][0]["days"] == ["sat"]

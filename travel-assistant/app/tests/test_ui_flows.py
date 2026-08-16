@@ -299,7 +299,14 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
             "to_type": "custom",
             "to_id": "custom:office",
             "to_name": "City Office",
-            "time_settings": [{"target_arrival": "14:00"}],
+            "time_settings": [
+                {
+                    "days": ["mon", "tue", "wed"],
+                    "mode": "arrive",
+                    "start_time": "13:30",
+                    "end_time": "14:00",
+                }
+            ],
         }
     ]
     post_resp = client.post(
@@ -311,6 +318,65 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
     updated_j = json.loads(soup_post.find("script", id="initial-journeys-data").string)
     assert any(j.get("name") == "Library Study Session" for j in updated_j)
+
+
+def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> None:
+    """Simulate full UI flow: create journey, save changes, navigate to overview and back."""
+    _seed_sample_data()
+
+    # Step 1: User visits journeys page
+    resp1 = client.get("/config/journeys")
+    assert resp1.status_code == 200
+    assert "Configured Journeys" in resp1.get_data(as_text=True)
+
+    # Step 2: User adds a new journey in the modal and submits form (Save Changes)
+    new_journey = {
+        "name": "Gym Workout Route",
+        "from_type": "ha",
+        "from_id": "zone.home",
+        "from_name": "Home Zone",
+        "to_type": "ha",
+        "to_id": "zone.gym",
+        "to_name": "City Health Club",
+        "time_settings": [
+            {
+                "days": ["mon", "wed", "fri"],
+                "mode": "arrive",
+                "start_time": "07:00",
+                "end_time": "07:15",
+            }
+        ],
+    }
+    save_resp = client.post(
+        "/config/journeys",
+        data={"journeys_json": json.dumps([new_journey])},
+        follow_redirects=True,
+    )
+    assert save_resp.status_code == 200
+    assert "Journeys saved successfully." in save_resp.get_data(as_text=True)
+
+    # Step 3: User leaves page to Overview / other config section
+    overview_resp = client.get("/")
+    assert overview_resp.status_code == 200
+    loc_resp = client.get("/config/locations")
+    assert loc_resp.status_code == 200
+
+    # Step 4: User returns to Journeys page
+    return_resp = client.get("/config/journeys")
+    assert return_resp.status_code == 200
+    soup = BeautifulSoup(return_resp.get_data(as_text=True), "html.parser")
+    data_script = soup.find("script", id="initial-journeys-data")
+    assert data_script is not None
+    loaded_journeys = json.loads(data_script.string)
+
+    assert len(loaded_journeys) == 1
+    j = loaded_journeys[0]
+    assert j["name"] == "Gym Workout Route"
+    assert j["from_name"] == "Home Zone"
+    assert j["to_name"] == "City Health Club"
+    assert len(j["time_settings"]) == 1
+    assert j["time_settings"][0]["start_time"] == "07:00"
+    assert j["time_settings"][0]["end_time"] == "07:15"
 
 
 def test_british_english_compliance_across_views(client: FlaskClient) -> None:
