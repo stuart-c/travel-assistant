@@ -754,6 +754,9 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedTripIndices.clear();
 
     const item = stagedTimetables[activeEditorIndex];
+    if (matrixStopAutocomplete) {
+      matrixStopAutocomplete.resetFilter(item.transport_type || 'bus');
+    }
     const mode = TRANSPORT_MODES[item.transport_type] || TRANSPORT_MODES.bus;
 
     if (editorBreadcrumbName) editorBreadcrumbName.textContent = item.name;
@@ -1234,7 +1237,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Setup stop search autocomplete against /config/search/places
-  let searchDebounceTimer = null;
+  let matrixStopAutocomplete = null;
   function setupStopSearchAutocomplete() {
     const searchInput = document.getElementById('matrix-stop-search-input');
     const resultsContainer = document.getElementById(
@@ -1242,105 +1245,22 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     if (!searchInput || !resultsContainer) return;
 
-    searchInput.addEventListener('input', () => {
-      const q = searchInput.value.trim();
-      clearTimeout(searchDebounceTimer);
+    const timetable = stagedTimetables[activeEditorIndex];
+    const initialFilter = timetable ? timetable.transport_type : 'bus';
 
-      if (q.length < 1) {
-        resultsContainer.innerHTML = '';
-        resultsContainer.classList.add('hidden');
-        return;
-      }
-
-      searchDebounceTimer = setTimeout(async () => {
-        const timetable = stagedTimetables[activeEditorIndex];
-        const transportType = timetable ? timetable.transport_type : 'bus';
-        const ingressPath =
-          document.body.getAttribute('data-ingress-path') || '';
-
-        try {
-          const res = await fetch(
-            `${ingressPath}/config/search/places?type=${encodeURIComponent(
-              transportType
-            )}&q=${encodeURIComponent(q)}&limit=15`
-          );
-          if (!res.ok) throw new Error('Search failed');
-          const data = await res.json();
-          const results = data.results || [];
-
-          if (results.length === 0) {
-            resultsContainer.innerHTML = `
-              <div class="p-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-                No matching places found.
-              </div>
-            `;
-            resultsContainer.classList.remove('hidden');
-            return;
-          }
-
-          resultsContainer.innerHTML = results
-            .map(
-              (place) => `
-              <button 
-                type="button" 
-                class="add-searched-stop-btn w-full text-left p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 flex items-center justify-between gap-2 transition-colors cursor-pointer"
-                data-place='${escapeHtml(JSON.stringify(place))}'
-              >
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="material-symbols-outlined text-slate-400 text-sm flex-shrink-0">${
-                    place.icon || 'place'
-                  }</span>
-                  <div class="min-w-0">
-                    <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(
-                      place.name
-                    )}</div>
-                    <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(
-                      place.description || place.indicator
-                    )}</div>
-                  </div>
-                </div>
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 flex-shrink-0">
-                  ${escapeHtml(place.indicator || place.type)}
-                </span>
-              </button>
-            `
-            )
-            .join('');
-
-          resultsContainer.classList.remove('hidden');
-
-          // Attach click listeners to results
-          resultsContainer
-            .querySelectorAll('.add-searched-stop-btn')
-            .forEach((btn) => {
-              btn.addEventListener('click', () => {
-                const placeDataRaw = btn.getAttribute('data-place');
-                try {
-                  const place = JSON.parse(placeDataRaw);
-                  addStopToTimetable(place);
-                  searchInput.value = '';
-                  resultsContainer.innerHTML = '';
-                  resultsContainer.classList.add('hidden');
-                } catch (err) {
-                  console.error('Failed to add stop:', err);
-                }
-              });
-            });
-        } catch (err) {
-          console.error('Search places error:', err);
-        }
-      }, 200);
-    });
-
-    // Close autocomplete on click outside
-    document.addEventListener('click', (e) => {
-      if (
-        !e.target.closest('#matrix-stop-search-input') &&
-        !e.target.closest('#matrix-stop-search-results')
-      ) {
-        resultsContainer.classList.add('hidden');
-      }
-    });
+    matrixStopAutocomplete = window.PlaceAutocomplete
+      ? window.PlaceAutocomplete.create({
+          inputEl: searchInput,
+          suggestionsEl: resultsContainer,
+          defaultFilter: initialFilter,
+          onSelect: (place) => {
+            addStopToTimetable(place);
+            if (matrixStopAutocomplete) {
+              matrixStopAutocomplete.clear();
+            }
+          },
+        })
+      : null;
   }
 
   // Add stop to active timetable and pad trips

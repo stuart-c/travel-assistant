@@ -313,9 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Location Autocomplete Component ---
-  function setupAutocomplete(inputEl, suggestionsEl, typeEl, idEl, nameEl, previewEl, previewIconEl, previewNameEl, previewIdEl, clearBtnEl) {
-    let debounceTimer = null;
-
+  function setupAutocomplete(inputEl, suggestionsEl, typeEl, idEl, nameEl, previewEl, previewIconEl, previewNameEl, previewIdEl, clearBtnEl, defaultFilter = 'all') {
     function setSelection(item) {
       typeEl.value = item.type;
       idEl.value = item.id;
@@ -327,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       previewEl.classList.remove('hidden');
       inputEl.parentElement.classList.add('hidden');
-      suggestionsEl.classList.add('hidden');
+      if (autocomplete) autocomplete.hide();
       inputEl.value = '';
     }
 
@@ -335,6 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
       typeEl.value = '';
       idEl.value = '';
       nameEl.value = '';
+      if (autocomplete) autocomplete.resetFilter(defaultFilter);
 
       previewEl.classList.add('hidden');
       inputEl.parentElement.classList.remove('hidden');
@@ -346,82 +345,23 @@ document.addEventListener('DOMContentLoaded', () => {
       clearBtnEl.addEventListener('click', clearSelection);
     }
 
-    inputEl.addEventListener('input', () => {
-      const q = inputEl.value.trim();
-      clearTimeout(debounceTimer);
+    const autocomplete = window.PlaceAutocomplete
+      ? window.PlaceAutocomplete.create({
+          inputEl,
+          suggestionsEl,
+          defaultFilter,
+          searchBaseUrl,
+          onSelect: setSelection,
+        })
+      : null;
 
-      if (!q) {
-        suggestionsEl.innerHTML = '';
-        suggestionsEl.classList.add('hidden');
-        return;
-      }
-
-      debounceTimer = setTimeout(async () => {
-        try {
-          const resp = await fetch(`${searchBaseUrl}?q=${encodeURIComponent(q)}&limit=12`);
-          if (!resp.ok) throw new Error('Search failed');
-          const data = await resp.json();
-          renderSuggestions(data.results || []);
-        } catch (err) {
-          console.error('Location search error:', err);
-        }
-      }, 200);
-    });
-
-    function renderSuggestions(items) {
-      if (!items || items.length === 0) {
-        suggestionsEl.innerHTML = `
-          <div class="px-3.5 py-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-            No matching stations, bus stops, or locations found
-          </div>
-        `;
-        suggestionsEl.classList.remove('hidden');
-        return;
-      }
-
-      suggestionsEl.innerHTML = items.map((item, idx) => {
-        const icon = getLocationIcon(item.type);
-        const badge = getLocationBadge(item.type);
-
-        return `
-          <div 
-            class="suggestion-item px-3.5 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
-            data-index="${idx}"
-          >
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="material-symbols-outlined text-slate-400 dark:text-slate-500 text-lg shrink-0">${icon}</span>
-              <div class="truncate">
-                <div class="text-xs font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description)}</div>
-              </div>
-            </div>
-            <div class="shrink-0">
-              ${badge}
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      suggestionsEl.classList.remove('hidden');
-
-      suggestionsEl.querySelectorAll('.suggestion-item').forEach(el => {
-        el.addEventListener('click', () => {
-          const idx = parseInt(el.getAttribute('data-index'), 10);
-          if (items[idx]) {
-            setSelection(items[idx]);
-          }
-        });
-      });
-    }
-
-    // Close suggestions on outside click
-    document.addEventListener('click', (e) => {
-      if (!inputEl.contains(e.target) && !suggestionsEl.contains(e.target)) {
-        suggestionsEl.classList.add('hidden');
-      }
-    });
-
-    return { setSelection, clearSelection };
+    return {
+      setSelection,
+      clearSelection,
+      resetFilter: (filterType) => {
+        if (autocomplete) autocomplete.resetFilter(filterType || defaultFilter);
+      },
+    };
   }
 
   const fromAutocomplete = setupAutocomplete(
