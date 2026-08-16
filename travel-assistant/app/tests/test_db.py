@@ -316,10 +316,11 @@ def test_sync_metadata_model(app: Flask) -> None:
 
 
 def test_timetable_model(app: Flask) -> None:
-    """Test Timetable model search and summary statistics."""
+    """Test Timetable model search, content management, and summary statistics."""
     with app.app_context():
         t1 = Timetable.create(
             name="Weekday Morning Commute",
+            transport_type="bus",
             start_date="2026-09-01",
             end_date="2026-12-31",
             monday=True,
@@ -331,8 +332,17 @@ def test_timetable_model(app: Flask) -> None:
             sunday=False,
             bank_holiday=False,
         )
+        t1.set_content(
+            {
+                "stops": [{"id": "atco:123", "name": "Station A"}],
+                "trips": [{"id": "t1", "times": ["08:00"]}],
+            }
+        )
+        t1.save()
+
         t2 = Timetable.create(
             name="Weekend Leisure Schedule",
+            transport_type="rail",
             start_date=None,
             end_date=None,
             monday=False,
@@ -346,6 +356,7 @@ def test_timetable_model(app: Flask) -> None:
         )
         t3 = Timetable.create(
             name="Bank Holiday Special",
+            transport_type="tram",
             start_date="2026-08-25",
             end_date="2026-08-25",
             monday=True,
@@ -365,30 +376,43 @@ def test_timetable_model(app: Flask) -> None:
         res1 = Timetable.search(query="Commute")
         assert len(res1) == 1
         assert res1[0].name == "Weekday Morning Commute"
+        assert res1[0].transport_type == "bus"
         assert res1[0].monday is True
         assert res1[0].saturday is False
         assert res1[0].start_date.isoformat() == "2026-09-01"
+        assert len(res1[0].get_content()["stops"]) == 1
 
         res2 = Timetable.search(query="Special")
         assert len(res2) == 1
         assert res2[0].name == "Bank Holiday Special"
+        assert res2[0].transport_type == "tram"
 
         # to_dict verification
         t1_dict = t1.to_dict()
         assert t1_dict["name"] == "Weekday Morning Commute"
+        assert t1_dict["transport_type"] == "bus"
         assert t1_dict["start_date"] == "2026-09-01"
         assert t1_dict["end_date"] == "2026-12-31"
         assert t1_dict["monday"] is True
         assert t1_dict["saturday"] is False
+        assert len(t1_dict["content"]["stops"]) == 1
+        assert t1_dict["content"]["trips"][0]["times"] == ["08:00"]
 
         t2_dict = t2.to_dict()
         assert t2_dict["name"] == "Weekend Leisure Schedule"
+        assert t2_dict["transport_type"] == "rail"
         assert t2_dict["start_date"] is None
         assert t2_dict["saturday"] is True
+        assert t2_dict["content"]["stops"] == []
 
         t3_dict = t3.to_dict()
         assert t3_dict["name"] == "Bank Holiday Special"
+        assert t3_dict["transport_type"] == "tram"
         assert t3_dict["bank_holiday"] is True
+
+        # Test empty/malformed content fallback
+        t_bad = Timetable(content="invalid-json")
+        assert t_bad.get_content() == {"stops": [], "trips": []}
 
 
 def test_transfer_models(app: Flask) -> None:
@@ -500,6 +524,8 @@ def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
     # Inspect columns
     col_cursor = test_db.execute_sql('PRAGMA table_info("timetables")')
     cols = [col[1] for col in col_cursor.fetchall()]
+    assert "transport_type" in cols
+    assert "content" in cols
     assert "start_date" in cols
     assert "end_date" in cols
     assert "monday" in cols
@@ -512,6 +538,7 @@ def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert len(entries) == 1
         t = entries[0]
         assert t.name == "Oxford Tube Express"
+        assert t.transport_type == "bus"
         assert t.start_date is None
         assert t.end_date is None
         assert t.monday is True
@@ -519,12 +546,15 @@ def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
 
         d = t.to_dict()
         assert d["name"] == "Oxford Tube Express"
+        assert d["transport_type"] == "bus"
         assert d["start_date"] is None
         assert d["monday"] is True
+        assert d["content"] == {"stops": [], "trips": []}
 
         # Verify insert and retrieval from migrated schema
         t2 = Timetable.create(
             name="New Commute Schedule",
+            transport_type="rail",
             start_date="2026-09-01",
             end_date="2026-12-31",
             monday=True,
@@ -533,6 +563,7 @@ def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert t2.id is not None
         queried_t2 = Timetable.get_by_id(t2.id)
         assert queried_t2.start_date.isoformat() == "2026-09-01"
+        assert queried_t2.transport_type == "rail"
 
     test_db.close()
 

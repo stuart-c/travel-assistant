@@ -63,9 +63,37 @@ def timetables() -> Any:
                         f"start date ({start_date_val}) for timetable '{name}'."
                     )
 
+                transport_type = (
+                    str(entry.get("transport_type", "bus")).strip().lower() or "bus"
+                )
+                raw_content = entry.get("content")
+                if isinstance(raw_content, str):
+                    try:
+                        parsed_content = json.loads(raw_content)
+                    except Exception:
+                        parsed_content = {"stops": [], "trips": []}
+                elif isinstance(raw_content, dict):
+                    parsed_content = raw_content
+                else:
+                    parsed_content = {"stops": [], "trips": []}
+
+                content_clean = {
+                    "stops": (
+                        parsed_content.get("stops", [])
+                        if isinstance(parsed_content, dict)
+                        else []
+                    ),
+                    "trips": (
+                        parsed_content.get("trips", [])
+                        if isinstance(parsed_content, dict)
+                        else []
+                    ),
+                }
+
                 cleaned_items.append(
                     {
                         "name": name,
+                        "transport_type": transport_type,
                         "start_date": start_date_val,
                         "end_date": end_date_val,
                         "monday": bool(entry.get("monday", True)),
@@ -76,6 +104,7 @@ def timetables() -> Any:
                         "saturday": bool(entry.get("saturday", True)),
                         "sunday": bool(entry.get("sunday", True)),
                         "bank_holiday": bool(entry.get("bank_holiday", True)),
+                        "content": json.dumps(content_clean),
                     }
                 )
 
