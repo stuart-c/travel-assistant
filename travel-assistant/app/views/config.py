@@ -25,7 +25,7 @@ from app.models import (
     Station,
     Timetable,
 )
-from app.sync import sync_all, sync_table
+from app.sync import sync_table
 from app.validators import validate_service_credentials
 
 config_bp = Blueprint("config", __name__, url_prefix="/config")
@@ -814,22 +814,23 @@ def background_sync() -> Any:
     )
 
 
-@config_bp.route("/db/sync", methods=["POST"], strict_slashes=False)
 @config_bp.route("/db/sync/<table_name>", methods=["POST"], strict_slashes=False)
-def sync_db_table(table_name: str = "all") -> Any:
-    """Trigger on-demand synchronisation for a specific transit dataset or all datasets."""
+def sync_db_table(table_name: str) -> Any:
+    """Trigger on-demand synchronisation for a specific transit dataset."""
     norm_name = table_name.lower().strip()
-    if norm_name in ("all", ""):
-        result = sync_all(force=True)
-        stats = get_db_stats()
-        return jsonify(
-            {
-                "success": result.get("success", False),
-                "table": "all",
-                "total_records": result.get("total_records", 0),
-                "tables": result.get("tables", {}),
-                "stats": stats,
-            }
+    if not norm_name or norm_name == "all":
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "status": "error",
+                    "message": (
+                        "Bulk dataset synchronisation is not supported. "
+                        "Please synchronise individual tables."
+                    ),
+                }
+            ),
+            400,
         )
 
     result = sync_table(norm_name, force=True)
