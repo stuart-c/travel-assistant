@@ -437,156 +437,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const PLACE_TYPE_FILTERS = [
-    { type: 'all', label: 'All', icon: 'apps' },
-    { type: 'rail', label: 'Train', icon: 'train' },
-    { type: 'bus', label: 'Bus', icon: 'directions_bus' },
-    { type: 'metro', label: 'Metro', icon: 'subway' },
-    { type: 'tram', label: 'Tram', icon: 'tram' },
-    { type: 'ferry', label: 'Ferry', icon: 'directions_boat' },
-    { type: 'air', label: 'Air', icon: 'flight' },
-    { type: 'ha', label: 'HA', icon: 'home' },
-    { type: 'custom', label: 'Custom', icon: 'pin_drop' },
-  ];
-
   // --- Location Autocomplete Helpers ---
   function setupAutocomplete(searchInput, suggestionsContainer, typeInput, nameInput, idInput, defaultFilter = 'all') {
-    let debounceTimer = null;
-    let activeFilter = defaultFilter;
-
-    async function triggerLookup(query) {
-      const mode = activeFilter === 'all' ? '' : activeFilter;
-
-      try {
-        const res = await fetch(`${searchBaseUrl}?type=${encodeURIComponent(mode)}&q=${encodeURIComponent(query)}&limit=15`);
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        renderSuggestions(data.results || []);
-      } catch (err) {
-        console.error('Location search lookup failed:', err);
-      }
-    }
-
-    function renderSuggestions(results) {
-      const filterBarHtml = `
-        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/90 dark:bg-slate-800/90 sticky top-0 z-10 backdrop-blur-xs">
-          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-            ${PLACE_TYPE_FILTERS.map(f => {
-              const isActive = f.type === activeFilter;
-              const activeClass = isActive
-                ? 'bg-sky-600 text-white font-semibold shadow-xs dark:bg-sky-500'
-                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600/80';
-              return `
-                <button
-                  type="button"
-                  class="filter-chip px-2 py-0.5 rounded-md text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-all duration-150 select-none ${activeClass}"
-                  data-filter-type="${f.type}"
-                >
-                  <span class="material-symbols-outlined text-[13px] leading-none">${f.icon}</span>
-                  <span>${f.label}</span>
-                </button>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-
-      let listHtml = '';
-      if (!results || results.length === 0) {
-        const filterObj = PLACE_TYPE_FILTERS.find(f => f.type === activeFilter);
-        const filterLabel = filterObj ? filterObj.label : activeFilter;
-        listHtml = `
-          <div class="px-3.5 py-4 text-xs text-slate-500 dark:text-slate-400 text-center">
-            No matching ${escapeHtml(filterLabel === 'All' ? 'locations' : filterLabel + ' locations')} found. Enter details manually below.
-          </div>
-        `;
-      } else {
-        listHtml = `
-          <div class="place-results-list divide-y divide-slate-100 dark:divide-slate-700/50">
-            ${results.map((item, idx) => {
-              const itemIcon = item.icon || getLocationIcon(item.type);
-              const badge = getLocationBadge(item.type);
-              return `
-                <div 
-                  class="suggestion-item p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
-                  data-index="${idx}"
-                >
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <span class="material-symbols-outlined text-base text-slate-400 shrink-0">${escapeHtml(itemIcon)}</span>
-                    <div class="min-w-0">
-                      <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
-                      <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.id)}</div>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-1.5 shrink-0">
-                    ${badge}
-                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">${escapeHtml(item.id)}</span>
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        `;
-      }
-
-      suggestionsContainer.innerHTML = filterBarHtml + listHtml;
-      suggestionsContainer.classList.remove('hidden');
-
-      // Bind filter chip clicks
-      suggestionsContainer.querySelectorAll('.filter-chip').forEach(chipBtn => {
-        chipBtn.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-        });
-        chipBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const newType = chipBtn.getAttribute('data-filter-type');
-          if (newType !== activeFilter) {
-            activeFilter = newType;
-            if (searchInput) triggerLookup(searchInput.value.trim());
-          }
-          if (searchInput) searchInput.focus();
-        });
-      });
-
-      // Bind item clicks
-      suggestionsContainer.querySelectorAll('.suggestion-item').forEach(el => {
-        el.addEventListener('click', () => {
-          const idx = parseInt(el.getAttribute('data-index'), 10);
-          const item = results[idx];
-          if (item) {
-            nameInput.value = item.name;
-            idInput.value = item.id;
+    const autocomplete = window.PlaceAutocomplete
+      ? window.PlaceAutocomplete.create({
+          inputEl: searchInput,
+          suggestionsEl: suggestionsContainer,
+          defaultFilter,
+          searchBaseUrl,
+          emptyText: 'No matching locations found. Enter details manually below.',
+          onSelect: (item) => {
+            if (nameInput) nameInput.value = item.name;
+            if (idInput) idInput.value = item.id;
             if (typeInput && item.type) {
               typeInput.value = item.type;
             }
-            suggestionsContainer.classList.add('hidden');
-          }
-        });
-      });
-    }
-
-    if (searchInput) {
-      searchInput.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          triggerLookup(searchInput.value.trim());
-        }, 200);
-      });
-
-      searchInput.addEventListener('focus', () => {
-        if (suggestionsContainer && suggestionsContainer.children.length > 0) {
-          suggestionsContainer.classList.remove('hidden');
-        } else {
-          triggerLookup(searchInput.value.trim());
-        }
-      });
-    }
+            if (autocomplete) autocomplete.hide();
+          },
+        })
+      : null;
 
     return {
       resetFilter: (newDefault = defaultFilter) => {
-        activeFilter = newDefault;
-      }
+        if (autocomplete) autocomplete.resetFilter(newDefault);
+      },
     };
   }
 
@@ -594,19 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const fromAutocomplete = setupAutocomplete(fromLocSearch, fromLocSuggestions, fromLocType, fromLocName, fromLocId, 'all');
   const toAutocomplete = setupAutocomplete(toLocSearch, toLocSuggestions, toLocType, toLocName, toLocId, 'all');
   const platAutocomplete = setupAutocomplete(platStationSearch, platStationSuggestions, platStationType, platStationName, platStationId, 'rail');
-
-  // Close suggestions when clicking outside
-  document.addEventListener('click', (e) => {
-    if (fromLocSearch && !e.target.closest('#from-loc-search') && !e.target.closest('#from-loc-suggestions')) {
-      if (fromLocSuggestions) fromLocSuggestions.classList.add('hidden');
-    }
-    if (toLocSearch && !e.target.closest('#to-loc-search') && !e.target.closest('#to-loc-suggestions')) {
-      if (toLocSuggestions) toLocSuggestions.classList.add('hidden');
-    }
-    if (platStationSearch && !e.target.closest('#plat-station-search') && !e.target.closest('#plat-station-suggestions')) {
-      if (platStationSuggestions) platStationSuggestions.classList.add('hidden');
-    }
-  });
 
   // --- Location Modal Handlers ---
   function showLocationModal(editIndex = -1) {
