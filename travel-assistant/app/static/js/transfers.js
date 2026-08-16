@@ -215,6 +215,24 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.location_name)}</span>
             </div>
             <span class="text-xs font-mono text-slate-500 dark:text-slate-400">${escapeHtml(item.location_id)}</span>
+          </div>
+        `),
+        gridjs.html(`
+          <span class="inline-flex items-center px-2 py-0.5 rounded-md font-mono text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            ${escapeHtml(item.from_platform || 'Any')}
+          </span>
+        `),
+        gridjs.html(`
+          <span class="inline-flex items-center px-2 py-0.5 rounded-md font-mono text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            ${escapeHtml(item.to_platform || 'Any')}
+          </span>
+        `),
+        gridjs.html(`
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 font-bold text-xs">
+            <span class="material-symbols-outlined text-sm leading-none">timer</span>
+            ${escapeHtml(item.transfer_time_minutes)} min${item.transfer_time_minutes > 1 ? 's' : ''}
+          </span>
+        `),
         gridjs.html(dirHtml),
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
@@ -244,21 +262,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const locColumnsConfig = [
+    { name: 'Origin (From)', width: '220px', sort: true },
+    { name: 'Destination (To)', width: '220px', sort: true },
+    { name: 'Duration', width: '110px', sort: true },
+    { name: 'Direction', width: '130px', sort: true },
+    { name: 'Step-Free', width: '100px', sort: true },
+    { name: 'Notes', width: 'auto', sort: true },
+    { name: 'Actions', width: '90px', sort: false }
+  ];
+
   // --- Initialise Location Grid.js ---
   const locationGrid = new gridjs.Grid({
-    columns: [
-      { name: 'Origin (From)', width: '220px' },
-      { name: 'Destination (To)', width: '220px' },
-      { name: 'Duration', width: '110px' },
-      { name: 'Direction', width: '130px' },
-      { name: 'Step-Free', width: '100px' },
-      { name: 'Notes', width: 'auto' },
-      { name: 'Actions', width: '80px', sort: false }
-    ],
+    columns: locColumnsConfig,
     data: formatLocationGridData(stagedLocationTransfers),
     search: { placeholder: 'Search inter-location transfers...' },
-    sort: true,
-    pagination: { limit: 5, summary: true },
+    pagination: { limit: 10, summary: true },
     language: {
       search: { placeholder: 'Search inter-location transfers...' },
       pagination: {
@@ -273,22 +292,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }).render(locGridWrapper);
 
+  const platColumnsConfig = [
+    { name: 'Station / Interchange', width: '200px', sort: true },
+    { name: 'From Platform', width: '130px', sort: true },
+    { name: 'To Platform', width: '130px', sort: true },
+    { name: 'Duration', width: '110px', sort: true },
+    { name: 'Direction', width: '130px', sort: true },
+    { name: 'Step-Free', width: '100px', sort: true },
+    { name: 'Notes', width: 'auto', sort: true },
+    { name: 'Actions', width: '90px', sort: false }
+  ];
+
   // --- Initialise Platform Grid.js ---
   const platformGrid = new gridjs.Grid({
-    columns: [
-      { name: 'Station / Interchange', width: '200px' },
-      { name: 'From Platform', width: '130px' },
-      { name: 'To Platform', width: '130px' },
-      { name: 'Duration', width: '110px' },
-      { name: 'Direction', width: '130px' },
-      { name: 'Step-Free', width: '100px' },
-      { name: 'Notes', width: 'auto' },
-      { name: 'Actions', width: '80px', sort: false }
-    ],
+    columns: platColumnsConfig,
     data: formatPlatformGridData(stagedPlatformTransfers),
     search: { placeholder: 'Search platform transfers...' },
-    sort: true,
-    pagination: { limit: 5, summary: true },
+    pagination: { limit: 10, summary: true },
     language: {
       search: { placeholder: 'Search platform transfers...' },
       pagination: {
@@ -296,7 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
         next: 'Next',
         showing: 'Showing',
         results: () => 'transfers'
-      }
+      },
+      noRecordsFound: 'No matching platform transfers found'
     }
   }).render(platGridWrapper);
 
@@ -325,12 +346,30 @@ document.addEventListener('DOMContentLoaded', () => {
       platEmptyState.classList.add('hidden');
     }
 
-    // Force Re-render Grids
+    // Force Re-render Grids & check pagination display
+    if (locGridWrapper.querySelector('.gridjs-container')) {
+      if (stagedLocationTransfers.length <= 10) {
+        locGridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+      } else {
+        locGridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
+      }
+    }
+
+    if (platGridWrapper.querySelector('.gridjs-container')) {
+      if (stagedPlatformTransfers.length <= 10) {
+        platGridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+      } else {
+        platGridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
+      }
+    }
+
     locationGrid.updateConfig({
+      columns: locColumnsConfig,
       data: formatLocationGridData(stagedLocationTransfers)
     }).forceRender();
 
     platformGrid.updateConfig({
+      columns: platColumnsConfig,
       data: formatPlatformGridData(stagedPlatformTransfers)
     }).forceRender();
 
@@ -347,6 +386,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial Sync
   syncState();
+
+  // Collapsible section toggles - only arrow button toggles
+  document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetId = btn.getAttribute('data-target');
+      const section = targetId
+        ? document.getElementById(targetId)
+        : btn.closest('.collapsible-section');
+      if (section) {
+        const isCollapsed = section.classList.toggle('collapsed');
+        const icon = btn.querySelector('.collapse-icon');
+        if (icon) {
+          icon.textContent = isCollapsed ? 'chevron_right' : 'keyboard_arrow_down';
+        }
+      }
+    });
+  });
 
   // Register Discard Handler with ConfigDirtyManager
   if (window.ConfigDirtyManager) {
@@ -410,24 +468,26 @@ document.addEventListener('DOMContentLoaded', () => {
       suggestionsContainer.classList.remove('hidden');
     }
 
-    searchInput.addEventListener('input', () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        triggerLookup(searchInput.value.trim());
-      }, 200);
-    });
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          triggerLookup(searchInput.value.trim());
+        }, 200);
+      });
 
-    searchInput.addEventListener('focus', () => {
-      if (suggestionsContainer.children.length > 0) {
-        suggestionsContainer.classList.remove('hidden');
-      } else {
-        triggerLookup(searchInput.value.trim());
-      }
-    });
+      searchInput.addEventListener('focus', () => {
+        if (suggestionsContainer && suggestionsContainer.children.length > 0) {
+          suggestionsContainer.classList.remove('hidden');
+        } else {
+          triggerLookup(searchInput.value.trim());
+        }
+      });
+    }
 
     document.querySelectorAll(`input[name="${typeRadioName}"]`).forEach(radio => {
       radio.addEventListener('change', () => {
-        triggerLookup(searchInput.value.trim());
+        if (searchInput) triggerLookup(searchInput.value.trim());
       });
     });
   }
@@ -439,65 +499,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Close suggestions when clicking outside
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('#from-loc-search') && !e.target.closest('#from-loc-suggestions')) {
-      fromLocSuggestions.classList.add('hidden');
+    if (fromLocSearch && !e.target.closest('#from-loc-search') && !e.target.closest('#from-loc-suggestions')) {
+      if (fromLocSuggestions) fromLocSuggestions.classList.add('hidden');
     }
-    if (!e.target.closest('#to-loc-search') && !e.target.closest('#to-loc-suggestions')) {
-      toLocSuggestions.classList.add('hidden');
+    if (toLocSearch && !e.target.closest('#to-loc-search') && !e.target.closest('#to-loc-suggestions')) {
+      if (toLocSuggestions) toLocSuggestions.classList.add('hidden');
     }
-    if (!e.target.closest('#plat-station-search') && !e.target.closest('#plat-station-suggestions')) {
-      platStationSuggestions.classList.add('hidden');
+    if (platStationSearch && !e.target.closest('#plat-station-search') && !e.target.closest('#plat-station-suggestions')) {
+      if (platStationSuggestions) platStationSuggestions.classList.add('hidden');
     }
   });
 
   // --- Location Modal Handlers ---
   function showLocationModal(editIndex = -1) {
-    locError.classList.add('hidden');
-    editLocIndexInput.value = editIndex;
-    fromLocSuggestions.classList.add('hidden');
-    toLocSuggestions.classList.add('hidden');
+    if (locError) locError.classList.add('hidden');
+    if (editLocIndexInput) editLocIndexInput.value = editIndex;
+    if (fromLocSuggestions) fromLocSuggestions.classList.add('hidden');
+    if (toLocSuggestions) toLocSuggestions.classList.add('hidden');
 
     if (editIndex >= 0 && editIndex < stagedLocationTransfers.length) {
       const item = stagedLocationTransfers[editIndex];
-      locModalTitle.textContent = 'Edit Inter-Location Transfer';
-      locModalIcon.textContent = 'edit_note';
+      if (locModalTitle) locModalTitle.textContent = 'Edit Inter-Location Transfer';
+      if (locModalIcon) locModalIcon.textContent = 'edit';
+      if (fromLocSearch) fromLocSearch.value = item.from_name || '';
+      if (fromLocName) fromLocName.value = item.from_name || '';
+      if (fromLocId) fromLocId.value = item.from_id || '';
+      if (toLocSearch) toLocSearch.value = item.to_name || '';
+      if (toLocName) toLocName.value = item.to_name || '';
+      if (toLocId) toLocId.value = item.to_id || '';
+      if (locTransferTime) locTransferTime.value = item.transfer_time_minutes || 5;
+      if (locBidirectional) locBidirectional.checked = Boolean(item.bidirectional);
+      if (locStepFree) locStepFree.checked = Boolean(item.step_free);
+      if (locNotes) locNotes.value = item.notes || '';
 
-      const fromRadio = document.querySelector(`input[name="from_loc_type"][value="${item.from_type}"]`);
+      const fromRadio = document.querySelector(`input[name="from_loc_type"][value="${item.from_type || ''}"]`);
       if (fromRadio) fromRadio.checked = true;
-      fromLocSearch.value = '';
-      fromLocName.value = item.from_name || '';
-      fromLocId.value = item.from_id || '';
-
-      const toRadio = document.querySelector(`input[name="to_loc_type"][value="${item.to_type}"]`);
+      const toRadio = document.querySelector(`input[name="to_loc_type"][value="${item.to_type || ''}"]`);
       if (toRadio) toRadio.checked = true;
-      toLocSearch.value = '';
-      toLocName.value = item.to_name || '';
-      toLocId.value = item.to_id || '';
-
-      locTransferTime.value = item.transfer_time_minutes || 5;
-      locBidirectional.checked = item.bidirectional !== false;
-      locStepFree.checked = !!item.step_free;
-      locNotes.value = item.notes || '';
     } else {
-      locModalTitle.textContent = 'Add Inter-Location Transfer';
-      locModalIcon.textContent = 'directions_walk';
+      if (locModalTitle) locModalTitle.textContent = 'Add Inter-Location Transfer';
+      if (locModalIcon) locModalIcon.textContent = 'directions_walk';
+      if (fromLocSearch) fromLocSearch.value = '';
+      if (fromLocName) fromLocName.value = '';
+      if (fromLocId) fromLocId.value = '';
+      if (toLocSearch) toLocSearch.value = '';
+      if (toLocName) toLocName.value = '';
+      if (toLocId) toLocId.value = '';
+      if (locTransferTime) locTransferTime.value = '5';
+      if (locBidirectional) locBidirectional.checked = true;
+      if (locStepFree) locStepFree.checked = false;
+      if (locNotes) locNotes.value = '';
 
-      const defFromRadio = document.querySelector('input[name="from_loc_type"][value="station"]');
-      if (defFromRadio) defFromRadio.checked = true;
-      fromLocSearch.value = '';
-      fromLocName.value = '';
-      fromLocId.value = '';
-
-      const defToRadio = document.querySelector('input[name="to_loc_type"][value="bus_stop"]');
-      if (defToRadio) defToRadio.checked = true;
-      toLocSearch.value = '';
-      toLocName.value = '';
-      toLocId.value = '';
-
-      locTransferTime.value = 5;
-      locBidirectional.checked = true;
-      locStepFree.checked = false;
-      locNotes.value = '';
+      const defaultFromRadio = document.querySelector('input[name="from_loc_type"][value=""]');
+      if (defaultFromRadio) defaultFromRadio.checked = true;
+      const defaultToRadio = document.querySelector('input[name="to_loc_type"][value=""]');
+      if (defaultToRadio) defaultToRadio.checked = true;
     }
 
     if (locModal && typeof locModal.showModal === 'function') {
@@ -521,21 +577,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const fromTypeRadio = document.querySelector('input[name="from_loc_type"]:checked');
       const toTypeRadio = document.querySelector('input[name="to_loc_type"]:checked');
 
-      const from_type = fromTypeRadio ? fromTypeRadio.value : 'station';
+      const from_type = fromTypeRadio ? fromTypeRadio.value : '';
       const from_name = fromLocName.value.trim();
       const from_id = fromLocId.value.trim();
-
-      const to_type = toTypeRadio ? toTypeRadio.value : 'bus_stop';
+      const to_type = toTypeRadio ? toTypeRadio.value : '';
       const to_name = toLocName.value.trim();
       const to_id = toLocId.value.trim();
-
       const transfer_time_minutes = parseInt(locTransferTime.value, 10) || 5;
       const bidirectional = locBidirectional.checked;
       const step_free = locStepFree.checked;
       const notes = locNotes.value.trim();
 
       if (!from_name || !from_id || !to_name || !to_id) {
-        locError.classList.remove('hidden');
+        if (locError) locError.classList.remove('hidden');
         return;
       }
 
@@ -566,43 +620,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Platform Modal Handlers ---
   function showPlatformModal(editIndex = -1) {
-    platError.classList.add('hidden');
-    editPlatIndexInput.value = editIndex;
-    platStationSuggestions.classList.add('hidden');
+    if (platError) platError.classList.add('hidden');
+    if (editPlatIndexInput) editPlatIndexInput.value = editIndex;
+    if (platStationSuggestions) platStationSuggestions.classList.add('hidden');
 
     if (editIndex >= 0 && editIndex < stagedPlatformTransfers.length) {
       const item = stagedPlatformTransfers[editIndex];
-      platModalTitle.textContent = 'Edit Platform Transfer';
-      platModalIcon.textContent = 'edit_note';
+      if (platModalTitle) platModalTitle.textContent = 'Edit Platform Transfer';
+      if (platModalIcon) platModalIcon.textContent = 'edit';
+      if (platStationSearch) platStationSearch.value = item.location_name || '';
+      if (platStationName) platStationName.value = item.location_name || '';
+      if (platStationId) platStationId.value = item.location_id || '';
+      if (platFromPlatform) platFromPlatform.value = item.from_platform || '';
+      if (platToPlatform) platToPlatform.value = item.to_platform || '';
+      if (platTransferTime) platTransferTime.value = item.transfer_time_minutes || 2;
+      if (platBidirectional) platBidirectional.checked = Boolean(item.bidirectional);
+      if (platStepFree) platStepFree.checked = Boolean(item.step_free);
+      if (platNotes) platNotes.value = item.notes || '';
 
-      const stnRadio = document.querySelector(`input[name="plat_station_type"][value="${item.location_type}"]`);
-      if (stnRadio) stnRadio.checked = true;
-      platStationSearch.value = '';
-      platStationName.value = item.location_name || '';
-      platStationId.value = item.location_id || '';
-
-      platFromPlatform.value = item.from_platform || '';
-      platToPlatform.value = item.to_platform || '';
-      platTransferTime.value = item.transfer_time_minutes || 2;
-      platBidirectional.checked = item.bidirectional !== false;
-      platStepFree.checked = !!item.step_free;
-      platNotes.value = item.notes || '';
+      const stationRadio = document.querySelector(`input[name="plat_station_type"][value="${item.location_type || 'station'}"]`);
+      if (stationRadio) stationRadio.checked = true;
     } else {
-      platModalTitle.textContent = 'Add Platform Transfer';
-      platModalIcon.textContent = 'transfer_within_a_station';
+      if (platModalTitle) platModalTitle.textContent = 'Add Platform Transfer';
+      if (platModalIcon) platModalIcon.textContent = 'transfer_within_a_station';
+      if (platStationSearch) platStationSearch.value = '';
+      if (platStationName) platStationName.value = '';
+      if (platStationId) platStationId.value = '';
+      if (platFromPlatform) platFromPlatform.value = '';
+      if (platToPlatform) platToPlatform.value = '';
+      if (platTransferTime) platTransferTime.value = '2';
+      if (platBidirectional) platBidirectional.checked = true;
+      if (platStepFree) platStepFree.checked = false;
+      if (platNotes) platNotes.value = '';
 
-      const defStnRadio = document.querySelector('input[name="plat_station_type"][value="station"]');
-      if (defStnRadio) defStnRadio.checked = true;
-      platStationSearch.value = '';
-      platStationName.value = '';
-      platStationId.value = '';
-
-      platFromPlatform.value = '';
-      platToPlatform.value = '';
-      platTransferTime.value = 2;
-      platBidirectional.checked = true;
-      platStepFree.checked = false;
-      platNotes.value = '';
+      const defaultStationRadio = document.querySelector('input[name="plat_station_type"][value="station"]');
+      if (defaultStationRadio) defaultStationRadio.checked = true;
     }
 
     if (platModal && typeof platModal.showModal === 'function') {
@@ -635,7 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const notes = platNotes.value.trim();
 
       if (!location_name || !location_id || !from_platform || !to_platform) {
-        platError.classList.remove('hidden');
+        if (platError) platError.classList.remove('hidden');
         return;
       }
 

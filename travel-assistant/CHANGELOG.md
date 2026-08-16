@@ -15,24 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-column selection and **Duplicate & Retime** workflow supporting single-column new departure times or multi-column batch intervals and copy counts, maintaining stop travel durations and sorting columns chronologically.
 - Chronological cell-level timing validation highlighting sequence errors in rose with contextual tooltips and a live validation warning banner.
 - Automated SQLite schema migration in `run_migrations` for existing `timetables` tables adding `transport_type` and `content` columns without data loss.
-- Comprehensive design system documentation (`DESIGN.md`) detailing UI/UX standards, British English copy rules, layout widths, collapsible section patterns, modal proportions, and form controls.
-- Collapsible section architecture with smooth animated chevrons across multi-section configuration views (`/config/credentials`, `/config/transfers`).
-- Dual-mode combined Valid/Check button on the API Credentials page with automatic transformation to Check on input edit and auto-collapse for verified credentials.
-- Categorised AWS region dropdown with continental groupings (`<optgroup label="Europe">`, `North America`, etc.) and country bias dropdown for Google Maps.
-- 15-minute increment time selector datalist allowing fast 1-click selection and arbitrary manual time editing on journey configuration.
-- Standardised day selector buttons and presets across timetables and journeys.
-- Unique startup cache-busting token (`STARTUP_CACHE_BUST`) injected into template context processors and appended to all static CSS and JavaScript URLs (`?v={{ cache_bust }}`) on application start.
-- Collapsible cards for API Credentials with arrow toggles (`keyboard_arrow_down` when expanded, `chevron_right` when collapsed), automatic collapse when credentials pass validation, green "Valid" status badges, and on-change revealed "Check" buttons.
-- Dedicated `Status` column on the Background Sync page (`/config/sync`) displaying dataset synchronisation state pills.
-
-### Changed
-- Refined Timetables table column widths (widened Applicable Days to 280px and Actions to 100px) with `flex-nowrap` to prevent day badge wrapping and eliminate header truncation.
-- Removed redundant Source column from Locations table, placing source indicator icons (`home` for Home Assistant synced locations, `pin_drop` for custom locations) next to location names.
-- Hid exact database byte count into a hover tooltip on the formatted database size metric on `/config/db`.
-- Explicitly configured per-column sorting across Grid.js tables, disabling sort arrows on action and status columns.
-- Unified `Stop` Peewee model and SQLite `stops` table consolidating all UK public transport nodes (bus stops, rail stations, metro, tram, ferry, and air terminals) with `stop_type` classification and batch upsert optimisations.
-- NaPTAN datasource integration (`NaptanClient`) fetching open national access nodes from the Department for Transport NaPTAN API (`https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv`).
-- Unified transit synchronisation pipeline (`sync_stops`) populating all UK transit stops in a single background sync task.
+- Automatic startup asset cache busting (`?v={{ cache_bust }}`) appended to all CSS and JavaScript imports across templates to prevent stale asset caching.
+- Enhanced collapsible sections across `/config/credentials` and `/config/transfers` with arrow button toggles (`keyboard_arrow_down` when expanded, `chevron_right` when collapsed).
+- Interactive API credentials status transformation on `/config/credentials` swapping between green verified `✓ Valid` badges and revealed `Check` action buttons on user edit with default collapse for passing services.
+- Database storage size display hiding exact byte counts within an accessible hover tooltip on `/config/db`.
+- Fixed Grid.js column widths and disabled sorting on actions and non-sortable columns across timetables, locations, journeys, transfers, and sync tables.
 
 - Consolidated location search endpoint (`GET /config/search/places`) providing unified multi-modal search across rail stations, bus stops, Home Assistant locations, and custom locations with standardised namespaced identifiers (`naptan:<crs>`, `atco:<code>`, `ha:<id>`, `custom:<hex>`).
 - Removed obsolete, redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, and `/config/journeys/search`) in favour of the single `/config/search/places` endpoint.

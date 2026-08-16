@@ -12,7 +12,6 @@ from app import db
 from app.sync import start_background_worker, sync_all, sync_table
 from app.views.config import config_bp
 
-# Random cache-busting token generated once per application startup
 STARTUP_CACHE_BUST = uuid.uuid4().hex[:8]
 
 
