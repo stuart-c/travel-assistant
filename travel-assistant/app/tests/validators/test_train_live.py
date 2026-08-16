@@ -55,12 +55,20 @@ def test_validate_train_live_openapi_unauthorised(mock_get: MagicMock) -> None:
     assert "Invalid train live token or unauthorised access" in message
 
 
+@patch("app.datasources.train_live.requests.post")
 @patch("app.datasources.train_live.requests.get")
-def test_validate_train_live_openapi_not_found(mock_get: MagicMock) -> None:
+def test_validate_train_live_openapi_not_found(
+    mock_get: MagicMock, mock_post: MagicMock
+) -> None:
     """Test OpenAPI LDBWS live train validation 404 endpoint not found."""
     mock_resp = MagicMock()
     mock_resp.status_code = 404
     mock_get.return_value = mock_resp
+
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 404
+    mock_post_resp.text = "Not Found"
+    mock_post.return_value = mock_post_resp
 
     valid, message = validate_train_live_token("some_token")
     assert not valid

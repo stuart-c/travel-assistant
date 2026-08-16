@@ -18,11 +18,15 @@ echo "=== Running Linter (flake8) ==="
 flake8 "$TOP_DIR/travel-assistant/app" --max-line-length=100 --extend-ignore=E203,W503
 
 echo "=== Running Unit Tests & Coverage (pytest) ==="
-PYTHONPATH="$TOP_DIR/travel-assistant" pytest \
-    "$TOP_DIR/travel-assistant/app/tests" \
-    --cov="$TOP_DIR/travel-assistant/app" \
-    --cov-report=term-missing \
-    --cov-report=html:"$TOP_DIR/htmlcov" \
-    --cov-report=xml:"$TOP_DIR/coverage.xml"
+if [ $# -gt 0 ]; then
+    PYTHONPATH="$TOP_DIR/travel-assistant" pytest "$@"
+else
+    PYTHONPATH="$TOP_DIR/travel-assistant" pytest \
+        "$TOP_DIR/travel-assistant/app/tests" \
+        --cov="$TOP_DIR/travel-assistant/app" \
+        --cov-report=term-missing \
+        --cov-report=html:"$TOP_DIR/htmlcov" \
+        --cov-report=xml:"$TOP_DIR/coverage.xml"
+fi
 
 echo "=== All Tests and Lints Passed Successfully ==="

@@ -1,5 +1,6 @@
 """Unit tests for the Travel Assistant Flask application."""
 
+from unittest.mock import patch
 from flask.testing import FlaskClient
 
 
@@ -59,16 +60,23 @@ def test_page_404_html_response(client: FlaskClient) -> None:
 def test_api_sync_endpoints(client: FlaskClient) -> None:
     """Test POST /api/sync and POST /api/sync/<table_name> endpoints."""
     # 1. Sync all tables
-    res_all = client.post("/api/sync")
-    assert res_all.status_code == 200
-    data_all = res_all.get_json()
-    assert "success" in data_all
+    with patch(
+        "app.main.sync_all", return_value={"success": True, "total_records": 10}
+    ):
+        res_all = client.post("/api/sync")
+        assert res_all.status_code == 200
+        data_all = res_all.get_json()
+        assert "success" in data_all
 
     # 2. Sync specific valid table
-    res_table = client.post("/api/sync/bus_routes")
-    assert res_table.status_code == 200
-    data_table = res_table.get_json()
-    assert data_table["table"] == "bus_routes"
+    with patch(
+        "app.main.sync_table",
+        return_value={"status": "success", "table": "bus_routes", "records": 5},
+    ):
+        res_table = client.post("/api/sync/bus_routes")
+        assert res_table.status_code == 200
+        data_table = res_table.get_json()
+        assert data_table["table"] == "bus_routes"
 
     # 3. Sync invalid table
     res_invalid = client.post("/api/sync/unknown_table_xyz")

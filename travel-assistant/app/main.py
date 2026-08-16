@@ -4,6 +4,7 @@ Provides the Home Assistant Add-on web interface and API endpoints.
 """
 
 import os
+import sys
 import uuid
 from typing import Any, Dict
 from flask import Flask, render_template, jsonify, request
@@ -58,6 +59,7 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
     if (
         not app.config.get("TESTING")
         and not app.config.get("DISABLE_BACKGROUND_WORKER", False)
+        and "pytest" not in sys.modules
         and not os.environ.get("PYTEST_CURRENT_TEST")
     ):
         start_background_worker(app)

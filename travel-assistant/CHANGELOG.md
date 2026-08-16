@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive API credentials status transformation on `/config/credentials` swapping between green verified `✓ Valid` badges and revealed `Check` action buttons on user edit with default collapse for passing services.
 - Database storage size display hiding exact byte counts within an accessible hover tooltip on `/config/db`.
 - Fixed Grid.js column widths and disabled sorting on actions and non-sortable columns across timetables, locations, journeys, transfers, and sync tables.
+- Added `pytest-xdist>=3.5.0` test runner dependency for parallel test execution.
+- Added argument forwarding to `scripts/run_tests.sh` to allow targeted test file execution.
 
 - Consolidated location search endpoint (`GET /config/search/places`) providing unified multi-modal search across rail stations, bus stops, Home Assistant locations, and custom locations with standardised namespaced identifiers (`naptan:<crs>`, `atco:<code>`, `ha:<id>`, `custom:<hex>`).
 - Removed obsolete, redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, and `/config/journeys/search`) in favour of the single `/config/search/places` endpoint.
@@ -31,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy stop type search aliases (`train`, `station`, `stations`, `bus_stop`, `bus_stops`) in `Stop.search` in favour of canonical `rail` and `bus` modes.
 - Legacy `crs_code` dictionary fallback in `Stop.bulk_upsert`.
 ### Changed
+- Optimised unit test database fixtures in `app/tests/conftest.py` to use fast shared in-memory SQLite URI databases (`file:mem_test_{uuid}?mode=memory&cache=shared`), eliminating disk I/O, temporary file overhead, and redundant table migration loops.
+- Enhanced `create_sqlite_database` and `get_db_stats` in `app/db/core.py` to support SQLite URI paths, in-memory configurations, and memory-safe file size telemetry.
+- Eliminated circular import dependencies between `app.db` and `app.models` by removing redundant model re-exports from `app/db/__init__.py`.
+- Guarded background transit worker daemon in `app/main.py` to prevent background thread startup during module imports and unit test discovery.
+- Mocked Darwin SOAP fallback requests in `test_validate_train_live_openapi_not_found` and sync routines in `test_api_sync_endpoints` to eliminate unmocked external network requests and socket timeouts.
 - Refactored monolithic configuration views (`app/views/config.py`) into a modular Python package (`app/views/config/`) with separate modules for `credentials`, `timetables`, `locations`, `places`, `transfers`, `journeys`, and database `sync`.
 - Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).
 - Updated API credentials check buttons on `/config/credentials` into compact 28x28px icon-only check buttons matching the unified action icon design.
