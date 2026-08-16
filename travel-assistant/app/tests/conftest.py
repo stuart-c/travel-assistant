@@ -12,10 +12,10 @@ from app.models.setting import Setting
 
 
 @pytest.fixture
-def temp_db_path() -> Generator[str, None, None]:
-    """Create a temporary in-memory database URI for fast test isolation."""
-    db_uri = f"file:mem_test_{uuid.uuid4().hex}?mode=memory&cache=shared"
-    yield db_uri
+def temp_db_path(tmp_path: pytest.TempPathFactory) -> Generator[str, None, None]:
+    """Create a temporary database file for robust and isolated testing with WAL mode."""
+    db_file = str(tmp_path / f"test_{uuid.uuid4().hex}.db")
+    yield db_file
 
 
 @pytest.fixture
