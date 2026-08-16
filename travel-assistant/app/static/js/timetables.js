@@ -5,8 +5,9 @@
  * and chronological timing validation.
  */
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('timetables-form');
-  if (!form) return;
+  try {
+    const form = document.getElementById('timetables-form');
+    if (!form) return;
 
   const dataEl = document.getElementById('initial-timetables-data');
   let initialRaw = [];
@@ -71,17 +72,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const stops = Array.isArray(content.stops) ? content.stops : [];
-    const trips = Array.isArray(content.trips) ? content.trips : [];
+    const rawStops = Array.isArray(content.stops) ? content.stops : [];
+    const stops = rawStops.map((s) => {
+      if (typeof s === 'string') {
+        return {
+          id: s,
+          name: s,
+          type: (item.transport_type || 'bus').toLowerCase(),
+          indicator: 'Stop',
+          icon: 'place',
+        };
+      }
+      return s || {};
+    });
 
-    // Ensure all trips have matching time array lengths
-    trips.forEach((trip) => {
-      if (!Array.isArray(trip.times)) {
-        trip.times = [];
+    const rawTrips = Array.isArray(content.trips) ? content.trips : [];
+    const trips = rawTrips.map((trip, tIdx) => {
+      let times = Array.isArray(trip.times) ? [...trip.times] : [];
+      if (times.length === 0 && trip.time) {
+        times.push(trip.time);
       }
-      while (trip.times.length < stops.length) {
-        trip.times.push('');
+      while (times.length < stops.length) {
+        times.push('');
       }
+      return {
+        id:
+          trip.id ||
+          `trip-${tIdx + 1}-${Date.now().toString(16).slice(2, 6)}`,
+        headsign: trip.headsign || '',
+        times,
+      };
     });
 
     return {
@@ -111,6 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const initialSnapshot = JSON.stringify(stagedTimetables);
   let currentEditIndex = -1;
   let activeEditorIndex = -1;
+  let matrixStopAutocomplete = null;
   const selectedTripIndices = new Set();
 
   const hiddenInput = document.getElementById('timetables_json');
@@ -585,8 +606,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial sync
+  // Initial sync & stop search setup
   syncState();
+  setupStopSearchAutocomplete();
 
   // Register discard handler
   if (window.ConfigDirtyManager) {
@@ -671,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
 
   // Delegate Grid.js row actions (Open Editor, Edit Metadata, Delete)
-  document.addEventListener('click', (e) => {
+  function handleGridActionClick(e) {
     const openEditorBtn = e.target.closest(
       '.edit-matrix-btn, .open-editor-btn'
     );
@@ -702,7 +724,12 @@ document.addEventListener('DOMContentLoaded', () => {
         syncState();
       }
     }
-  });
+  }
+
+  document.addEventListener('click', handleGridActionClick);
+  if (gridContainer) {
+    gridContainer.addEventListener('click', handleGridActionClick);
+  }
 
   // Confirm adding / updating timetable metadata
   if (confirmBtn) {
@@ -776,32 +803,40 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
 
   function openEditor(index) {
-    if (index < 0 || index >= stagedTimetables.length) return;
-    activeEditorIndex = index;
-    selectedTripIndices.clear();
+    try {
+      if (index < 0 || index >= stagedTimetables.length) return;
+      activeEditorIndex = index;
+      selectedTripIndices.clear();
 
-    const item = stagedTimetables[activeEditorIndex];
-    if (matrixStopAutocomplete) {
-      matrixStopAutocomplete.resetFilter(item.transport_type || 'bus');
+      const item = stagedTimetables[activeEditorIndex];
+      if (matrixStopAutocomplete) {
+        matrixStopAutocomplete.clear();
+        matrixStopAutocomplete.resetFilter(item.transport_type || 'bus');
+      }
+      const mode = TRANSPORT_MODES[item.transport_type] || TRANSPORT_MODES.bus;
+
+      if (editorBreadcrumbName) editorBreadcrumbName.textContent = item.name;
+      if (editorTitle) editorTitle.textContent = `${item.name}`;
+      if (editorModeIcon) editorModeIcon.textContent = mode.icon;
+      if (editorModeText) editorModeText.textContent = mode.label;
+      if (editorModeBadge) {
+        editorModeBadge.className = `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}`;
+      }
+
+      if (listView) listView.classList.add('hidden');
+      if (editorView) editorView.classList.remove('hidden');
+      renderMatrix();
+    } catch (err) {
+      console.error('Error in openEditor:', err);
     }
-    const mode = TRANSPORT_MODES[item.transport_type] || TRANSPORT_MODES.bus;
-
-    if (editorBreadcrumbName) editorBreadcrumbName.textContent = item.name;
-    if (editorTitle) editorTitle.textContent = `${item.name}`;
-    if (editorModeIcon) editorModeIcon.textContent = mode.icon;
-    if (editorModeText) editorModeText.textContent = mode.label;
-    if (editorModeBadge) {
-      editorModeBadge.className = `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}`;
-    }
-
-    listView.classList.add('hidden');
-    editorView.classList.remove('hidden');
-    renderMatrix();
   }
 
   function closeEditor() {
     activeEditorIndex = -1;
     selectedTripIndices.clear();
+    if (matrixStopAutocomplete) {
+      matrixStopAutocomplete.clear();
+    }
     editorView.classList.add('hidden');
     listView.classList.remove('hidden');
     syncState();
@@ -1066,32 +1101,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Bottom Add Stop Row
     tableHtml += `
-          <tr class="bg-slate-50/40 dark:bg-slate-800/20 border-t-2 border-slate-200 dark:border-slate-700">
-            <td class="sticky left-0 z-10 bg-slate-50 dark:bg-slate-800/90 p-3 border-r border-slate-200 dark:border-slate-700">
-              <div class="relative">
-                <div class="flex items-center gap-2">
-                  <span class="material-symbols-outlined text-slate-400 text-sm">search</span>
-                  <input 
-                    type="text" 
-                    id="matrix-stop-search-input" 
-                    placeholder="Search stops, stations, HA &amp; custom places to add..." 
-                    class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-                    autocomplete="off"
-                  >
-                </div>
-                <!-- Autocomplete Dropdown List Mount -->
-                <div id="matrix-stop-search-results" class="hidden absolute top-full left-0 right-0 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 z-50 divide-y divide-slate-100 dark:divide-slate-700"></div>
-              </div>
-            </td>
-            <td colspan="${Math.max(
-              1,
-              trips.length
-            )}" class="p-3 text-xs text-slate-400 dark:text-slate-500 italic">
-              Add stops above to extend this route pattern.
-            </td>
-          </tr>
         </tbody>
       </table>
     `;
@@ -1258,13 +1268,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
-
-    // Autocomplete Stop Search
-    setupStopSearchAutocomplete();
   }
 
   // Setup stop search autocomplete against /config/search/places
-  let matrixStopAutocomplete = null;
   function setupStopSearchAutocomplete() {
     const searchInput = document.getElementById('matrix-stop-search-input');
     const resultsContainer = document.getElementById(
@@ -1272,14 +1278,11 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     if (!searchInput || !resultsContainer) return;
 
-    const timetable = stagedTimetables[activeEditorIndex];
-    const initialFilter = timetable ? timetable.transport_type : 'bus';
-
     matrixStopAutocomplete = window.PlaceAutocomplete
       ? window.PlaceAutocomplete.create({
           inputEl: searchInput,
           suggestionsEl: resultsContainer,
-          defaultFilter: initialFilter,
+          defaultFilter: 'bus',
           onSelect: (place) => {
             addStopToTimetable(place);
             if (matrixStopAutocomplete) {
@@ -1600,5 +1603,15 @@ document.addEventListener('DOMContentLoaded', () => {
       renderMatrix();
       syncState();
     });
+  }
+
+    window.__timetablesController = {
+      openEditor,
+      closeEditor,
+      getStaged: () => stagedTimetables,
+    };
+  } catch (err) {
+    window.__timetablesError = err.stack || err.toString();
+    console.error('Timetables DOMContentLoaded Error:', err);
   }
 });

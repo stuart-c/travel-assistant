@@ -150,6 +150,28 @@
       <span id="grid-validation-text">Some timing entries are out of order. Subsequent stops cannot be earlier than preceding stops.</span>
     </div>
 
+    <!-- Stop Search Bar (positioned outside horizontal scroll container to prevent dropdown clipping) -->
+    <div class="relative max-w-xl z-20">
+      <label for="matrix-stop-search-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+        Add Stop or Place
+      </label>
+      <div class="relative">
+        <input 
+          type="text" 
+          id="matrix-stop-search-input" 
+          placeholder="Search stops, stations, HA &amp; custom places to add..." 
+          class="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+          autocomplete="off"
+        >
+        <span class="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-base">search</span>
+      </div>
+      <!-- Autocomplete Dropdown List Mount -->
+      <div 
+        id="matrix-stop-search-results" 
+        class="hidden absolute left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 z-50 divide-y divide-slate-100 dark:divide-slate-700"
+      ></div>
+    </div>
+
     <!-- Matrix Scrollable Container -->
     <div class="overflow-x-auto pb-4 custom-scrollbar">
       <div id="timetable-matrix-mount" class="min-w-full inline-block align-middle">
