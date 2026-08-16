@@ -5,11 +5,19 @@
 {% block config_title %}Database{% endblock %}
 
 {% block subtitle %}
-<p class="text-sm text-slate-600 dark:text-slate-400">View SQLite database disk storage usage.</p>
+<p class="text-sm text-slate-600 dark:text-slate-400">View SQLite database disk storage usage and schema metrics.</p>
 {% endblock %}
 
 {% block action_bar %}
-<!-- Read-only database page: Save/Discard action bar omitted -->
+<!-- Database Size widget in Action Bar (replacing Save/Discard) -->
+<div class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-xs" id="stat-db-size-container">
+  <span class="material-symbols-outlined text-lg text-sky-500 leading-none">hard_drive</span>
+  <div class="flex items-baseline gap-1.5 text-xs">
+    <span class="font-bold text-slate-700 dark:text-slate-300">Size:</span>
+    <span class="font-bold text-slate-900 dark:text-white" id="stat-db-size">{{ stats.file_size_formatted }}</span>
+    <span class="font-mono text-slate-400 dark:text-slate-500" id="stat-db-size-bytes">({{ "{:,}".format(stats.file_size_bytes) }} bytes)</span>
+  </div>
+</div>
 {% endblock %}
 
 {% block config_content %}
@@ -18,20 +26,6 @@
 <link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
 
 <div class="space-y-6" id="db-stats-container">
-  <!-- Storage Overview Stat Card -->
-  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 max-w-md">
-    <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-      <span class="material-symbols-outlined text-base text-sky-500">hard_drive</span>
-      <span>Database Size</span>
-    </div>
-    <div class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-db-size">
-      {{ stats.file_size_formatted }}
-    </div>
-    <div class="text-xs text-slate-500 dark:text-slate-400 mt-1" id="stat-db-size-bytes">
-      {{ "{:,}".format(stats.file_size_bytes) }} bytes
-    </div>
-  </section>
-
   <!-- Database Tables Section -->
   <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
     <div class="mb-4">

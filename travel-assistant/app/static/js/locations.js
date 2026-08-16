@@ -98,28 +98,26 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isReadOnlyMode) return;
       const pos = e.target.getLatLng();
       updateCoordinateInputs(pos.lat, pos.lng);
-      leafletMap.panTo(pos);
     });
 
     leafletMap.on('click', (e) => {
       if (isReadOnlyMode) return;
-      setMarkerPosition(e.latlng.lat, e.latlng.lng, true);
+      const { lat, lng } = e.latlng;
+      setMarkerPosition(lat, lng, false);
+      updateCoordinateInputs(lat, lng);
     });
   }
 
   function setMarkerPosition(lat, lng, panTo = false) {
-    if (!leafletMarker || !leafletMap) return;
-    const safeLat = parseFloat(lat);
-    const safeLng = parseFloat(lng);
-    if (isNaN(safeLat) || isNaN(safeLng)) return;
+    const validLat = typeof lat === 'number' && !isNaN(lat) ? lat : DEFAULT_LAT;
+    const validLng = typeof lng === 'number' && !isNaN(lng) ? lng : DEFAULT_LNG;
+    const newLatLng = [validLat, validLng];
 
-    const newLatLng = [safeLat, safeLng];
-    leafletMarker.setLatLng(newLatLng);
-    if (!isReadOnlyMode) {
-      updateCoordinateInputs(safeLat, safeLng);
+    if (leafletMarker) {
+      leafletMarker.setLatLng(newLatLng);
     }
 
-    if (panTo) {
+    if (panTo && leafletMap) {
       leafletMap.panTo(newLatLng);
     }
   }
@@ -147,14 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const formattedLng = formatCoord(item.longitude);
       const isHa = Boolean(item.ha);
 
-      const sourceBadge = isHa
-        ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
-             <span class="material-symbols-outlined text-xs">home</span>
-             Home Assistant
-           </span>`
-        : `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-             Custom
-           </span>`;
+      const sourceIcon = isHa ? 'home' : 'pin_drop';
+      const sourceIconClass = isHa ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500';
+      const sourceTitle = isHa ? 'Home Assistant location (Read-only)' : 'Custom location';
 
       const actionButtons = isHa
         ? `<button 
@@ -189,8 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       return [
         gridjs.html(`
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-base text-sky-500">pin_drop</span>
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-lg ${sourceIconClass} shrink-0" title="${escapeHtml(sourceTitle)}">${sourceIcon}</span>
             <span class="font-medium text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</span>
           </div>
         `),
@@ -200,7 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(`
           <code class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-mono">${formattedLng}</code>
         `),
-        gridjs.html(sourceBadge),
         gridjs.html(actionButtons),
       ];
     });
@@ -210,9 +202,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const grid = new gridjs.Grid({
     columns: [
       { name: 'Name', width: 'auto' },
-      { name: 'Latitude', width: '130px' },
-      { name: 'Longitude', width: '130px' },
-      { name: 'Source', width: '150px' },
+      { name: 'Latitude', width: '150px' },
+      { name: 'Longitude', width: '150px' },
       { name: 'Actions', width: '80px', sort: false },
     ],
     data: formatGridData(stagedLocations),
@@ -265,6 +256,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (gridContainer) gridContainer.classList.remove('hidden');
     }
 
+    if (gridContainer && gridContainer.querySelector('.gridjs-container')) {
+      if (stagedLocations.length <= 10) {
+        gridContainer.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+      } else {
+        gridContainer.querySelector('.gridjs-container').removeAttribute('data-single-page');
+      }
+    }
+
     grid.updateConfig({
       data: formatGridData(stagedLocations),
     }).forceRender();
@@ -291,6 +290,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const normalInputClass =
+    'w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 transition-colors';
+  const readOnlyInputClass =
+    'w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-400 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed transition-colors select-none';
+
   // Open modal helper
   function openModal(mode = 'add', index = -1) {
     if (modalError) modalError.classList.add('hidden');
@@ -299,23 +303,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (isReadOnlyMode) {
       const item = stagedLocations[index];
-      modalTitle.textContent = 'View Location';
-      modalIcon.textContent = 'visibility';
+      modalTitle.textContent = 'View Location (Read-Only)';
+      modalIcon.textContent = 'home';
       if (haNotice) haNotice.classList.remove('hidden');
 
       nameInput.value = item ? item.name : '';
       nameInput.disabled = true;
       nameInput.readOnly = true;
+      nameInput.className = readOnlyInputClass;
 
       const lat = item ? parseFloat(item.latitude) || DEFAULT_LAT : DEFAULT_LAT;
       const lng = item ? parseFloat(item.longitude) || DEFAULT_LNG : DEFAULT_LNG;
       latInput.value = formatCoord(lat);
       latInput.disabled = true;
       latInput.readOnly = true;
+      latInput.className = readOnlyInputClass;
 
       lngInput.value = formatCoord(lng);
       lngInput.disabled = true;
       lngInput.readOnly = true;
+      lngInput.className = readOnlyInputClass;
 
       if (confirmBtn) confirmBtn.classList.add('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Close';
@@ -344,16 +351,19 @@ document.addEventListener('DOMContentLoaded', () => {
       nameInput.value = item.name || '';
       nameInput.disabled = false;
       nameInput.readOnly = false;
+      nameInput.className = normalInputClass;
 
       const lat = parseFloat(item.latitude) || DEFAULT_LAT;
       const lng = parseFloat(item.longitude) || DEFAULT_LNG;
       latInput.value = formatCoord(lat);
       latInput.disabled = false;
       latInput.readOnly = false;
+      latInput.className = normalInputClass;
 
       lngInput.value = formatCoord(lng);
       lngInput.disabled = false;
       lngInput.readOnly = false;
+      lngInput.className = normalInputClass;
 
       if (confirmBtn) confirmBtn.classList.remove('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
@@ -381,14 +391,17 @@ document.addEventListener('DOMContentLoaded', () => {
       nameInput.value = '';
       nameInput.disabled = false;
       nameInput.readOnly = false;
+      nameInput.className = normalInputClass;
 
       latInput.value = formatCoord(DEFAULT_LAT);
       latInput.disabled = false;
       latInput.readOnly = false;
+      latInput.className = normalInputClass;
 
       lngInput.value = formatCoord(DEFAULT_LNG);
       lngInput.disabled = false;
       lngInput.readOnly = false;
+      lngInput.className = normalInputClass;
 
       if (confirmBtn) confirmBtn.classList.remove('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
@@ -449,8 +462,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const entry = {
         ...(existingId ? { id: existingId } : {}),
         name,
-        latitude: parseFloat(lat.toFixed(6)),
-        longitude: parseFloat(lng.toFixed(6)),
+        latitude: lat,
+        longitude: lng,
         ha: isHa,
       };
 
@@ -460,28 +473,24 @@ document.addEventListener('DOMContentLoaded', () => {
         stagedLocations.push(entry);
       }
 
-      closeModal();
       syncState();
+      closeModal();
     });
   }
 
-  // Row event delegation for View, Edit, and Delete
+  // Row button click handlers via event delegation
   document.addEventListener('click', (e) => {
-    const viewBtn = e.target.closest('.view-location-btn');
-    if (viewBtn) {
-      const idx = parseInt(viewBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        openModal('view', idx);
-      }
-      return;
-    }
-
     const editBtn = e.target.closest('.edit-location-btn');
     if (editBtn) {
       const idx = parseInt(editBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        openModal('edit', idx);
-      }
+      if (!isNaN(idx)) openModal('edit', idx);
+      return;
+    }
+
+    const viewBtn = e.target.closest('.view-location-btn');
+    if (viewBtn) {
+      const idx = parseInt(viewBtn.getAttribute('data-index'), 10);
+      if (!isNaN(idx)) openModal('view', idx);
       return;
     }
 
@@ -489,12 +498,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        if (stagedLocations[idx] && stagedLocations[idx].ha) {
-          return; // Synced locations cannot be deleted
-        }
         stagedLocations.splice(idx, 1);
         syncState();
       }
+      return;
     }
   });
 });

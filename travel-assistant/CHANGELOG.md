@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Comprehensive design system documentation (`DESIGN.md`) detailing UI/UX standards, British English copy rules, layout widths, collapsible section patterns, modal proportions, and form controls.
+- Collapsible section architecture with smooth animated chevrons across multi-section configuration views (`/config/credentials`, `/config/transfers`).
+- Dual-mode combined Valid/Check button on the API Credentials page with automatic transformation to Check on input edit and auto-collapse for verified credentials.
+- Categorised AWS region dropdown with continental groupings (`<optgroup label="Europe">`, `North America`, etc.) and country bias dropdown for Google Maps.
+- 15-minute increment time selector datalist allowing fast 1-click selection and arbitrary manual time editing on journey configuration.
+- Standardised day selector buttons and presets across timetables and journeys.
 - Unified `Stop` Peewee model and SQLite `stops` table consolidating all UK public transport nodes (bus stops, rail stations, metro, tram, ferry, and air terminals) with `stop_type` classification and batch upsert optimisations.
 - NaPTAN datasource integration (`NaptanClient`) fetching open national access nodes from the Department for Transport NaPTAN API (`https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv`).
 - Unified transit synchronisation pipeline (`sync_stops`) populating all UK transit stops in a single background sync task.

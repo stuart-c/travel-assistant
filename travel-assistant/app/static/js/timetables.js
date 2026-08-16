@@ -332,6 +332,14 @@ document.addEventListener('DOMContentLoaded', () => {
       emptyState.classList.add('hidden');
     }
 
+    if (gridContainer && gridContainer.querySelector('.gridjs-container')) {
+      if (stagedTimetables.length <= 10) {
+        gridContainer.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+      } else {
+        gridContainer.querySelector('.gridjs-container').removeAttribute('data-single-page');
+      }
+    }
+
     // Re-render Grid.js
     grid
       .updateConfig({
