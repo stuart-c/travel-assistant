@@ -131,7 +131,9 @@ def test_validate_credentials_form_post_compatibility(
     from app import views
 
     mock_validate = MagicMock(return_value=(True, "Bus credentials valid.", {}))
-    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+    monkeypatch.setattr(
+        views.config.credentials, "validate_service_credentials", mock_validate
+    )
 
     response = client.post(
         "/config/credentials/validate",
@@ -154,7 +156,9 @@ def test_validate_credentials_fallback_to_repo(
     Setting.set_val("train_s3_region", "eu-west-1", category="credentials")
 
     mock_validate = MagicMock(return_value=(True, "S3 bucket is valid.", {}))
-    monkeypatch.setattr(views.config, "validate_service_credentials", mock_validate)
+    monkeypatch.setattr(
+        views.config.credentials, "validate_service_credentials", mock_validate
+    )
 
     response = client.post(
         "/config/credentials/validate",
@@ -558,7 +562,7 @@ def test_sync_db_table_endpoint_specific_success(
             "duration_seconds": 1.5,
         }
     )
-    monkeypatch.setattr(config, "sync_table", mock_sync_table)
+    monkeypatch.setattr(config.sync, "sync_table", mock_sync_table)
 
     response = client.post("/config/db/sync/bus_routes")
     assert response.status_code == 200
@@ -583,7 +587,7 @@ def test_sync_db_table_endpoint_specific_error(
             "duration_seconds": 0.5,
         }
     )
-    monkeypatch.setattr(config, "sync_table", mock_sync_table)
+    monkeypatch.setattr(config.sync, "sync_table", mock_sync_table)
 
     response = client.post("/config/db/sync/stops")
     assert response.status_code == 400
