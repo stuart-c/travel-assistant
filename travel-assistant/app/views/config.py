@@ -218,11 +218,8 @@ def search_timetables() -> Any:
 
     stops_count = Stop.select().count()
     routes_count = BusRoute.select().count()
-
     cache_counts = {
         "stops": stops_count,
-        "stations": stops_count,
-        "bus_stops": stops_count,
         "bus_routes": routes_count,
     }
 
