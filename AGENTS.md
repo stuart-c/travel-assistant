@@ -61,16 +61,11 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
   gh pr merge --auto --squash
   ```
 
-## 5. Post-Merge Cleanup
-When a PR is merged, tidy the local environment:
-1. Delete the local branch: `git branch -d <branch-name>`
-2. Update the local `main` branch: `git checkout main && git pull origin main`
-
-## 6. GitHub CLI Authentication
+## 5. GitHub CLI Authentication
 To facilitate automated interactions, agents use a Personal Access Token (PAT) stored in a `.gh_token` file in the repository root or existing `gh` configuration.
 - The `.gh_token` file is included in `.gitignore` to prevent accidental commits. Never share or commit this file.
 
-## 7. No Backward-Compatibility Aliases
+## 6. No Backward-Compatibility Aliases
 This repository is a self-contained Home Assistant add-on application and is not consumed as an external library or package.
 - **Never create backward-compatibility aliases, wrappers, or fallbacks** when refactoring, replacing, or removing classes, models, functions, or endpoints.
 - When replacing a model or function (e.g. `BusStop` / `Station` -> `Stop`), update all call sites, imports, database schemas, and unit tests directly, and delete obsolete identifiers entirely.
