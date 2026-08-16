@@ -116,6 +116,57 @@ def run_migrations(database: SqliteDatabase) -> None:
     except Exception:
         pass
 
+    try:
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='timetables'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("timetables")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "start_date" not in cols or "transport_type" in cols:
+                # Timetable schema has evolved from legacy structure.
+                # Recreate table cleanly to eliminate dropped NOT NULL columns and preserve rows.
+                has_created = "created_at" in cols
+                has_updated = "updated_at" in cols
+                created_col = '"created_at"' if has_created else "CURRENT_TIMESTAMP"
+                updated_col = '"updated_at"' if has_updated else "CURRENT_TIMESTAMP"
+                name_col = '"name"' if "name" in cols else "''"
+                start_date_col = '"start_date"' if "start_date" in cols else "NULL"
+                end_date_col = '"end_date"' if "end_date" in cols else "NULL"
+                monday_col = '"monday"' if "monday" in cols else "1"
+                tuesday_col = '"tuesday"' if "tuesday" in cols else "1"
+                wednesday_col = '"wednesday"' if "wednesday" in cols else "1"
+                thursday_col = '"thursday"' if "thursday" in cols else "1"
+                friday_col = '"friday"' if "friday" in cols else "1"
+                saturday_col = '"saturday"' if "saturday" in cols else "1"
+                sunday_col = '"sunday"' if "sunday" in cols else "1"
+                bank_holiday_col = '"bank_holiday"' if "bank_holiday" in cols else "1"
+
+                with database.atomic():
+                    database.execute_sql(
+                        'ALTER TABLE "timetables" RENAME TO "_timetables_old"'
+                    )
+                    with database.bind_ctx([Timetable]):
+                        Timetable.create_table(safe=True)
+
+                    database.execute_sql(f"""
+                        INSERT INTO "timetables" (
+                            "id", "created_at", "updated_at", "name",
+                            "start_date", "end_date",
+                            "monday", "tuesday", "wednesday", "thursday",
+                            "friday", "saturday", "sunday", "bank_holiday"
+                        )
+                        SELECT
+                            "id", {created_col}, {updated_col}, {name_col},
+                            {start_date_col}, {end_date_col},
+                            {monday_col}, {tuesday_col}, {wednesday_col}, {thursday_col},
+                            {friday_col}, {saturday_col}, {sunday_col}, {bank_holiday_col}
+                        FROM "_timetables_old"
+                        """)
+                    database.execute_sql('DROP TABLE "_timetables_old"')
+    except Exception:
+        pass
+
 
 def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
     """Initialise database, configure proxy, and create schema tables."""
