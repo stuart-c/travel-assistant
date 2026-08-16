@@ -44,6 +44,15 @@ CREDENTIAL_FIELDS = [
 ]
 
 
+@config_bp.after_request
+def add_no_cache_headers(response: Any) -> Any:
+    """Disable browser caching for all configuration pages and endpoints."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @config_bp.route("")
 @config_bp.route("/")
 def index() -> Any:

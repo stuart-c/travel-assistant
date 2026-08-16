@@ -590,3 +590,60 @@ def test_sync_db_table_endpoint_specific_error(
     data = response.get_json()
     assert data["success"] is False
     assert data["status"] == "error"
+
+
+def test_config_routes_disable_browser_caching(client: FlaskClient) -> None:
+    """Test that all configuration endpoints return HTTP headers disabling browser caching."""
+    endpoints = [
+        "/config",
+        "/config/",
+        "/config/credentials",
+        "/config/timetables",
+        "/config/transfers",
+        "/config/locations",
+        "/config/journeys",
+        "/config/sync",
+        "/config/db",
+        "/config/search/places?q=test",
+    ]
+
+    for endpoint in endpoints:
+        response = client.get(endpoint)
+        assert (
+            response.headers.get("Cache-Control")
+            == "no-cache, no-store, must-revalidate, max-age=0"
+        ), f"Missing or incorrect Cache-Control header on {endpoint}"
+        assert (
+            response.headers.get("Pragma") == "no-cache"
+        ), f"Missing Pragma header on {endpoint}"
+        assert (
+            response.headers.get("Expires") == "0"
+        ), f"Missing Expires header on {endpoint}"
+
+
+def test_config_pages_include_no_cache_meta_tags(client: FlaskClient) -> None:
+    """Test that HTML configuration pages contain no-cache meta tags in head."""
+    pages = [
+        "/config/credentials",
+        "/config/timetables",
+        "/config/transfers",
+        "/config/locations",
+        "/config/journeys",
+        "/config/sync",
+        "/config/db",
+    ]
+
+    for page in pages:
+        response = client.get(page)
+        assert response.status_code == 200
+        html = response.data.decode("utf-8")
+        assert (
+            '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">'
+            in html
+        ), f"Missing Cache-Control meta tag in {page}"
+        assert (
+            '<meta http-equiv="Pragma" content="no-cache">' in html
+        ), f"Missing Pragma meta tag in {page}"
+        assert (
+            '<meta http-equiv="Expires" content="0">' in html
+        ), f"Missing Expires meta tag in {page}"
