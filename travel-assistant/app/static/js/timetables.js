@@ -435,8 +435,8 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>`
         ),
         gridjs.html(
-          `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}">
-            <span class="material-symbols-outlined text-xs">${mode.icon}</span>
+          `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}">
+            <span class="material-symbols-outlined text-xs leading-none">${mode.icon}</span>
             ${mode.label}
           </span>`
         ),
@@ -447,26 +447,26 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="flex items-center gap-1.5 justify-end">
             <button 
               type="button" 
-              class="open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Edit timetable content & timings"
-              aria-label="Edit timetable content & timings"
+              class="edit-matrix-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
+              data-index="${index}" 
+              title="Edit timetable grid and timings"
+              aria-label="Edit timetable grid and timings"
             >
-              <span class="material-symbols-outlined text-[17px] leading-none">table_chart</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">grid_on</span>
             </button>
             <button 
               type="button" 
-              class="edit-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
-              title="Edit metadata & schedule"
-              aria-label="Edit metadata & schedule"
+              class="edit-timetable-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer" 
+              data-index="${index}" 
+              title="Edit timetable metadata"
+              aria-label="Edit timetable metadata"
             >
               <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
             </button>
             <button 
               type="button" 
-              class="remove-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-              data-index="${index}"
+              class="delete-timetable-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
+              data-index="${index}" 
               title="Delete timetable"
               aria-label="Delete timetable"
             >

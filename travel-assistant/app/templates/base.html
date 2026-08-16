@@ -9,7 +9,8 @@
   <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between antialiased selection:bg-sky-500 selection:text-white transition-colors duration-200">
-  <div class="{% block container_class %}max-w-5xl{% endblock %} mx-auto w-full px-4 sm:px-6 py-10 sm:py-16 flex-1 flex flex-col">
+  <div class="{% block container_class %}max-w-7xl{% endblock %} mx-auto w-full px-4 sm:px-6 py-8 sm:py-12 flex-1 flex flex-col">
+    {% block app_header %}
     <header class="mb-8">
       <div class="flex items-center justify-between gap-4 mb-2">
         <div class="flex items-center gap-3">
@@ -19,7 +20,7 @@
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30">v{{ app_version }}</span>
         </div>
         <div>
-          <a href="{{ ingress_path }}/config/credentials" class="inline-flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/80 transition-colors" title="Settings" aria-label="Settings" id="settings-cog-button">
+          <a href="{{ ingress_path }}/config/timetables" class="inline-flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/80 transition-colors" title="Settings" aria-label="Settings" id="settings-cog-button">
             <span class="material-symbols-outlined text-xl" aria-hidden="true">settings</span>
           </a>
         </div>
@@ -28,6 +29,7 @@
       <p class="text-base text-slate-600 dark:text-slate-400">{{ message if message else 'Travel and transport intelligence dashboard' }}</p>
       {% endblock %}
     </header>
+    {% endblock %}
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}

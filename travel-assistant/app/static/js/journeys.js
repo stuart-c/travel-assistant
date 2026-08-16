@@ -249,21 +249,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const gridData = formatGridData(stagedJourneys);
 
+    const columnsConfig = [
+      { name: 'Journey', width: '26%', sort: true },
+      { name: 'Start Location', width: '23%', sort: true },
+      { name: 'End Location', width: '23%', sort: true },
+      { name: 'Schedule', width: '20%', sort: false },
+      { name: 'Actions', width: '90px', sort: false },
+    ];
+
     if (!gridInstance) {
       gridInstance = new gridjs.Grid({
-        columns: [
-          { name: 'Journey', width: '26%' },
-          { name: 'Start Location', width: '23%' },
-          { name: 'End Location', width: '23%' },
-          { name: 'Schedule', width: '20%' },
-          { name: 'Actions', width: '80px', sort: false },
-        ],
+        columns: columnsConfig,
         data: gridData,
         search: {
           enabled: true,
           placeholder: 'Search journeys...',
         },
-        sort: true,
         pagination: {
           enabled: true,
           limit: 10,
@@ -286,7 +287,15 @@ document.addEventListener('DOMContentLoaded', () => {
         },
       }).render(gridWrapper);
     } else {
-      gridInstance.updateConfig({ data: gridData }).forceRender();
+      gridInstance.updateConfig({ columns: columnsConfig, data: gridData }).forceRender();
+    }
+
+    if (gridWrapper && gridWrapper.querySelector('.gridjs-container')) {
+      if (stagedJourneys.length <= 10) {
+        gridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+      } else {
+        gridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
+      }
     }
 
     updateHiddenInput();
@@ -500,8 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
               type="button" 
               class="day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 selectedDays.has(day.key)
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700'
+                  ? 'border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold'
+                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700'
               }"
               data-day="${day.key}"
             >
@@ -548,8 +557,10 @@ document.addEventListener('DOMContentLoaded', () => {
             From Time
           </label>
           <input 
-            type="time" 
-            class="start-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+            type="text" 
+            list="time-intervals-datalist"
+            placeholder="08:00"
+            class="start-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
             value="${startTime}"
           >
         </div>
@@ -559,8 +570,10 @@ document.addEventListener('DOMContentLoaded', () => {
             To Time
           </label>
           <input 
-            type="time" 
-            class="end-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
+            type="text" 
+            list="time-intervals-datalist"
+            placeholder="09:30"
+            class="end-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
             value="${endTime}"
           >
         </div>
@@ -579,10 +592,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const dayKey = btn.getAttribute('data-day');
         if (selectedDays.has(dayKey)) {
           selectedDays.delete(dayKey);
-          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700';
+          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
         } else {
           selectedDays.add(dayKey);
-          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-sky-600 text-white shadow-xs';
+          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300';
         }
       });
     });
@@ -604,9 +617,9 @@ document.addEventListener('DOMContentLoaded', () => {
         card.querySelectorAll('.day-pill-btn').forEach(pBtn => {
           const dKey = pBtn.getAttribute('data-day');
           if (selectedDays.has(dKey)) {
-            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-sky-600 text-white shadow-xs';
+            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300';
           } else {
-            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700';
+            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
           }
         });
       });

@@ -175,8 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const isNever = !tbl.last_updated_at || relativeTime === 'Never updated';
 
       const lastUpdatedHtml = isNever
-        ? `<span class="text-slate-400 dark:text-slate-500 italic text-xs">Never updated</span>`
-        : `<span class="font-medium text-slate-700 dark:text-slate-300 text-xs cursor-help" title="${escapeHtml(exactTime)}">${escapeHtml(relativeTime)}</span>`;
+        ? `<div class="text-slate-400 dark:text-slate-500 italic text-xs">Never updated</div>`
+        : `<div class="font-medium text-slate-700 dark:text-slate-300 text-xs cursor-help" title="${escapeHtml(exactTime)}">${escapeHtml(relativeTime)}</div>`;
 
       const actionHtml = `
         <button 
@@ -199,11 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `),
         gridjs.html(lastUpdatedHtml),
         gridjs.html(statusBadge),
-        gridjs.html(`
-          <div class="flex items-center justify-end">
-            ${actionHtml}
-          </div>
-        `),
+        gridjs.html(actionHtml),
       ];
     });
   }
@@ -211,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const columnsConfig = [
     { name: 'Dataset', width: 'auto', sort: true },
     { name: 'Last updated', width: '180px', sort: true },
-    { name: 'Status', width: '160px', sort: false },
+    { name: 'Status', width: '160px', sort: true },
     { name: 'Actions', width: '90px', sort: false },
   ];
 
