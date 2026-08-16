@@ -210,10 +210,8 @@ def test_post_locations_non_list_payload(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert (
-        b"Failed to save locations: Payload must be a list of location objects."
-        in response.data
-    )
+    assert b"Failed to save locations:" in response.data
+    assert b"must contain a JSON list" in response.data
 
 
 def test_post_locations_skips_invalid_entries(client: FlaskClient, app: Flask) -> None:

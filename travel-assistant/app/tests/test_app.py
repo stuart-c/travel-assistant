@@ -93,8 +93,9 @@ def test_static_assets_served(client: FlaskClient) -> None:
         "/static/js/timetables.js",
         "/static/js/transfers.js",
         "/static/js/db.js",
+        "/static/js/transit-ui.js",
+        "/static/js/day-selector.js",
         "/static/css/tables.css",
-        "/static/css/timetables.css",
     ]
     for asset_path in assets:
         response = client.get(asset_path)

@@ -13,7 +13,7 @@ flask_db = FlaskDB()
 SQLITE_PRAGMAS = {
     "journal_mode": "wal",
     "foreign_keys": 1,
-    "busy_timeout": 5000,
+    "busy_timeout": 30000,
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
@@ -74,6 +74,7 @@ def create_sqlite_database(db_path: str) -> SqliteDatabase:
         "pragmas": pragmas,
         "thread_safe": True,
         "autoconnect": True,
+        "timeout": 30.0,
     }
     if is_uri:
         kwargs["uri"] = True

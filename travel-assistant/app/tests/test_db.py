@@ -610,3 +610,27 @@ def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert len(locs[0].id) > 7
 
     test_db.close()
+
+
+def test_json_field_serialization() -> None:
+    """Test Peewee JSONField automated serialization and deserialization."""
+    from app.models.base import JSONField, LOCATION_TYPES, TRANSPORT_MODES
+
+    assert "rail" in LOCATION_TYPES
+    assert "bus" in TRANSPORT_MODES
+
+    field = JSONField(default=list)
+    assert field.db_value(None) is None
+    assert field.db_value('["a"]') == '["a"]'
+    assert field.db_value(["a", "b"]) == '["a", "b"]'
+
+    assert field.python_value(None) == []
+    assert field.python_value("") == []
+    assert field.python_value(["direct", "list"]) == ["direct", "list"]
+    assert field.python_value('["decoded"]') == ["decoded"]
+    assert field.python_value("invalid-json{") == []
+
+    dict_field = JSONField(default=dict)
+    assert dict_field.python_value(None) == {}
+    assert dict_field.python_value('{"key": "val"}') == {"key": "val"}
+    assert dict_field.python_value("bad-json") == {}

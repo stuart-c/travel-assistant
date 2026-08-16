@@ -746,3 +746,19 @@ def test_config_pages_include_no_cache_meta_tags(client: FlaskClient) -> None:
         assert (
             '<meta http-equiv="Expires" content="0">' in html
         ), f"Missing Expires meta tag in {page}"
+
+
+def test_parse_json_form_list_invalid(app: FlaskClient) -> None:
+    """Test parse_json_form_list error on invalid JSON and non-list payloads."""
+    import pytest
+    from flask import Flask
+    from app.views.config.common import parse_json_form_list
+
+    test_app = Flask(__name__)
+    with test_app.test_request_context("/", data={"test_key": "not-valid-json{"}):
+        with pytest.raises(Exception):
+            parse_json_form_list("test_key")
+
+    with test_app.test_request_context("/", data={"test_key": '{"is": "dict"}'}):
+        with pytest.raises(ValueError, match="must contain a JSON list"):
+            parse_json_form_list("test_key")
