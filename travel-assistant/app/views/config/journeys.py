@@ -65,10 +65,10 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     return {
         "name": name,
-        "from_type": from_type or "station",
+        "from_type": from_type,
         "from_id": from_id,
         "from_name": from_name,
-        "to_type": to_type or "station",
+        "to_type": to_type,
         "to_id": to_id,
         "to_name": to_name,
         "time_settings": cleaned_time_settings,

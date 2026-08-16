@@ -762,3 +762,86 @@ def test_parse_json_form_list_invalid(app: FlaskClient) -> None:
     with test_app.test_request_context("/", data={"test_key": '{"is": "dict"}'}):
         with pytest.raises(ValueError, match="must contain a JSON list"):
             parse_json_form_list("test_key")
+
+
+def test_timetables_save_leave_and_return_persistence(client: FlaskClient) -> None:
+    """Verify creating/updating a timetable persists when leaving the page and returning."""
+    payload = [
+        {
+            "name": "Night Bus Service",
+            "transport_type": "bus",
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
+            "monday": False,
+            "tuesday": False,
+            "wednesday": False,
+            "thursday": False,
+            "friday": True,
+            "saturday": True,
+            "sunday": True,
+            "bank_holiday": True,
+            "content": {"stops": ["490000077E"], "trips": [{"time": "23:45"}]},
+        }
+    ]
+
+    post_resp = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(payload)},
+        follow_redirects=True,
+    )
+    assert post_resp.status_code == 200
+    assert b"Timetables saved successfully." in post_resp.data
+
+    # Leave page
+    assert client.get("/").status_code == 200
+    assert client.get("/config/locations").status_code == 200
+    assert client.get("/config/journeys").status_code == 200
+
+    # Return to Timetables
+    return_resp = client.get("/config/timetables")
+    assert return_resp.status_code == 200
+    page_html = return_resp.get_data(as_text=True)
+
+    start_tag = '<script id="initial-timetables-data" type="application/json">'
+    end_tag = "</script>"
+    json_start = page_html.find(start_tag) + len(start_tag)
+    json_end = page_html.find(end_tag, json_start)
+    persisted = json.loads(page_html[json_start:json_end])
+
+    assert len(persisted) == 1
+    tt = persisted[0]
+    assert tt["name"] == "Night Bus Service"
+    assert tt["transport_type"] == "bus"
+    assert tt["start_date"] == "2026-09-01"
+    assert tt["end_date"] == "2026-12-31"
+    assert tt["friday"] is True
+    assert tt["monday"] is False
+
+
+def test_credentials_save_leave_and_return_persistence(client: FlaskClient) -> None:
+    """Verify credentials save, leave page, and return persists securely."""
+    post_data = {
+        "bus_api_key": "bods_prod_key_777",
+        "open_api_key": "sk-test-live-key",
+        "open_api_model": "gpt-4o",
+        "google_maps_region": "uk",
+    }
+    save_resp = client.post(
+        "/config/credentials",
+        data=post_data,
+        follow_redirects=True,
+    )
+    assert save_resp.status_code == 200
+
+    # Leave page
+    assert client.get("/config/locations").status_code == 200
+    assert client.get("/config/journeys").status_code == 200
+
+    # Return to Credentials
+    return_resp = client.get("/config/credentials")
+    assert return_resp.status_code == 200
+    html = return_resp.get_data(as_text=True)
+    assert 'value="bods_prod_key_777"' in html
+    assert 'value="sk-test-live-key"' in html
+    assert 'value="gpt-4o"' in html
+    assert 'value="uk"' in html

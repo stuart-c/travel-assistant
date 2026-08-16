@@ -262,3 +262,64 @@ def test_db_stats_includes_locations(app: Flask) -> None:
         assert loc_table["syncable"] is True
         assert loc_table["sync_status"] == "success"
         assert loc_table["last_updated_at"] is not None
+
+
+def test_location_save_leave_and_return_persistence(
+    client: FlaskClient, app: Flask
+) -> None:
+    """Verify that saving a location persists across leaving and returning to the page."""
+    with app.app_context():
+        Location.create(
+            id="zone.home",
+            name="Home",
+            latitude=51.5300,
+            longitude=-0.1200,
+            ha=True,
+        )
+
+    # 1. Save new custom location
+    new_locations = [
+        {
+            "name": "St Pancras International Library",
+            "latitude": 51.5310,
+            "longitude": -0.1260,
+            "ha": False,
+        }
+    ]
+    post_resp = client.post(
+        "/config/locations",
+        data={"locations_json": json.dumps(new_locations)},
+        follow_redirects=True,
+    )
+    assert post_resp.status_code == 200
+    assert b"Locations saved successfully." in post_resp.data
+
+    # 2. Leave the page (visit Overview, Journeys, Credentials)
+    assert client.get("/").status_code == 200
+    assert client.get("/config/journeys").status_code == 200
+    assert client.get("/config/credentials").status_code == 200
+
+    # 3. Return to Locations page
+    return_resp = client.get("/config/locations")
+    assert return_resp.status_code == 200
+
+    # 4. Verify rendered JSON data payload
+    page_html = return_resp.get_data(as_text=True)
+    start_tag = '<script id="initial-locations-data" type="application/json">'
+    end_tag = "</script>"
+    json_start = page_html.find(start_tag) + len(start_tag)
+    json_end = page_html.find(end_tag, json_start)
+    persisted = json.loads(page_html[json_start:json_end])
+
+    assert len(persisted) == 2
+    ha_loc = next((loc for loc in persisted if loc.get("ha")), None)
+    custom_loc = next((loc for loc in persisted if not loc.get("ha")), None)
+
+    assert ha_loc is not None
+    assert ha_loc["name"] == "Home"
+    assert ha_loc["id"] == "zone.home"
+
+    assert custom_loc is not None
+    assert custom_loc["name"] == "St Pancras International Library"
+    assert custom_loc["latitude"] == 51.5310
+    assert custom_loc["longitude"] == -0.1260

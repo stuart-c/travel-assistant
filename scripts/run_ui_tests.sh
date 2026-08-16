@@ -11,7 +11,7 @@ fi
 
 source "$VENV_PATH/bin/activate"
 
-export PYTHONPATH="$TOP_DIR/travel-assistant"
+export PYTHONPATH="$TOP_DIR:$TOP_DIR/travel-assistant"
 
 echo "=== Running Automated UI & Route Verification Suite ==="
 python3 "$TOP_DIR/scripts/run_ui_tests.py" "$@"

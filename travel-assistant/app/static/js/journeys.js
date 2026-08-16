@@ -311,13 +311,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateHiddenInput() {
-    if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedJourneys);
-    }
-    // Update dirty state
     const currentSnapshot = JSON.stringify(stagedJourneys);
-    const isDirty = currentSnapshot !== initialSnapshot;
-    window.dispatchEvent(new CustomEvent('configDirtyStateChanged', { detail: { isDirty } }));
+    if (hiddenInput) {
+      hiddenInput.value = currentSnapshot;
+    }
+    // Check dirty state with ConfigDirtyManager
+    if (window.ConfigDirtyManager) {
+      if (currentSnapshot !== initialSnapshot) {
+        window.ConfigDirtyManager.markDirty();
+      } else {
+        window.ConfigDirtyManager.clearDirty();
+      }
+    }
   }
 
   // --- Location Autocomplete Component ---
@@ -751,6 +756,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
+
+  // Register discard handler
+  if (window.ConfigDirtyManager) {
+    window.ConfigDirtyManager.registerDiscardHandler(() => {
+      stagedJourneys = JSON.parse(initialSnapshot);
+      renderGrid();
+    });
+  }
 
   // Initial Render
   renderGrid();

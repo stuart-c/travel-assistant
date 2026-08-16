@@ -13,6 +13,8 @@ TOP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_DIR = os.path.join(TOP_DIR, "travel-assistant")
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
+if TOP_DIR not in sys.path:
+    sys.path.insert(0, TOP_DIR)
 
 from app.main import create_app  # noqa: E402
 
