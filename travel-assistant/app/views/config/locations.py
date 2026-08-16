@@ -50,8 +50,8 @@ def save_locations_with_ha_preservation(cleaned_items: List[Dict[str, Any]]) -> 
         existing_ha_records = [
             {
                 "id": (
-                    loc.id
-                    if str(loc.id).startswith("ha:")
+                    str(loc.id)
+                    if loc.id
                     else f"ha:{loc.name.lower().replace(' ', '_')}"
                 ),
                 "name": loc.name,

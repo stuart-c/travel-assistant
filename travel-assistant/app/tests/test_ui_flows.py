@@ -379,6 +379,165 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
     assert j["time_settings"][0]["end_time"] == "07:15"
 
 
+def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> None:
+    """Test creating/saving on all pages sequentially and navigating between them."""
+    _seed_sample_data()
+
+    # 1. Update Credentials
+    cred_payload = {
+        "bus_api_key": "roundtrip_bods_key",
+        "open_api_key": "roundtrip_openai_key",
+        "open_api_model": "gpt-4o-mini",
+        "google_maps_region": "uk",
+    }
+    resp = client.post("/config/credentials", data=cred_payload, follow_redirects=True)
+    assert resp.status_code == 200
+
+    # 2. Add Location
+    loc_payload = [
+        {
+            "name": "Community Centre",
+            "latitude": 51.5200,
+            "longitude": -0.1100,
+            "ha": False,
+        }
+    ]
+    resp = client.post(
+        "/config/locations",
+        data={"locations_json": json.dumps(loc_payload)},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    # 3. Add Timetable
+    tt_payload = [
+        {
+            "name": "Saturday Market Shuttle",
+            "transport_type": "bus",
+            "start_date": "2026-06-01",
+            "end_date": "2026-08-31",
+            "monday": False,
+            "tuesday": False,
+            "wednesday": False,
+            "thursday": False,
+            "friday": False,
+            "saturday": True,
+            "sunday": False,
+            "bank_holiday": False,
+            "content": {"stops": ["490000077E"], "trips": [{"time": "10:00"}]},
+        }
+    ]
+    resp = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(tt_payload)},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    # 4. Add Transfer
+    transfer_payload = [
+        {
+            "from_type": "rail",
+            "from_id": "9100KNGX",
+            "from_name": "London King's Cross",
+            "to_type": "rail",
+            "to_id": "9100STPX",
+            "to_name": "London St Pancras",
+            "transfer_time_minutes": 3,
+            "bidirectional": True,
+            "step_free": True,
+            "notes": "Walkway",
+        }
+    ]
+    resp = client.post(
+        "/config/transfers",
+        data={
+            "location_transfers_json": json.dumps(transfer_payload),
+            "platform_transfers_json": "[]",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    # 5. Add Journey
+    journey_payload = [
+        {
+            "name": "Market Visit Route",
+            "from_type": "ha",
+            "from_id": "zone.home",
+            "from_name": "Home Zone",
+            "to_type": "custom",
+            "to_id": "custom:community_centre",
+            "to_name": "Community Centre",
+            "time_settings": [
+                {
+                    "days": ["sat"],
+                    "mode": "arrive",
+                    "start_time": "09:30",
+                    "end_time": "10:00",
+                }
+            ],
+        }
+    ]
+    resp = client.post(
+        "/config/journeys",
+        data={"journeys_json": json.dumps(journey_payload)},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    # 6. Now verify ALL pages retained their persisted state when revisited
+    # A. Verify Credentials
+    cred_get = client.get("/config/credentials")
+    assert cred_get.status_code == 200
+    assert 'value="roundtrip_bods_key"' in cred_get.get_data(as_text=True)
+
+    # B. Verify Locations
+    loc_get = client.get("/config/locations")
+    assert loc_get.status_code == 200
+    loc_data = json.loads(
+        BeautifulSoup(loc_get.get_data(as_text=True), "html.parser")
+        .find("script", id="initial-locations-data")
+        .string
+    )
+    assert any(loc_item["name"] == "Community Centre" for loc_item in loc_data)
+
+    # C. Verify Timetables
+    tt_get = client.get("/config/timetables")
+    assert tt_get.status_code == 200
+    tt_data = json.loads(
+        BeautifulSoup(tt_get.get_data(as_text=True), "html.parser")
+        .find("script", id="initial-timetables-data")
+        .string
+    )
+    assert any(t["name"] == "Saturday Market Shuttle" for t in tt_data)
+
+    # D. Verify Transfers
+    tr_get = client.get("/config/transfers")
+    assert tr_get.status_code == 200
+    tr_data = json.loads(
+        BeautifulSoup(tr_get.get_data(as_text=True), "html.parser")
+        .find("script", id="initial-location-transfers-data")
+        .string
+    )
+    assert any(t["notes"] == "Walkway" for t in tr_data)
+
+    # E. Verify Journeys
+    j_get = client.get("/config/journeys")
+    assert j_get.status_code == 200
+    j_data = json.loads(
+        BeautifulSoup(j_get.get_data(as_text=True), "html.parser")
+        .find("script", id="initial-journeys-data")
+        .string
+    )
+    assert any(j["name"] == "Market Visit Route" for j in j_data)
+
+    # F. Verify Database and Sync views
+    assert client.get("/config/db").status_code == 200
+    assert client.get("/config/sync").status_code == 200
+    assert client.get("/").status_code == 200
+
+
 def test_british_english_compliance_across_views(client: FlaskClient) -> None:
     """Verify that all rendered HTML templates adhere to British English standards."""
     routes = [

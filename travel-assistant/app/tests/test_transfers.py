@@ -290,3 +290,84 @@ def test_search_transfers_locations_query(client: FlaskClient, app: Flask) -> No
     assert res_nomatch.status_code == 200
     data_no = res_nomatch.get_json()
     assert data_no["total"] == 0
+
+
+def test_transfers_save_leave_and_return_persistence(client: FlaskClient) -> None:
+    """Verify that saving transfers persists across leaving and returning to the page."""
+    loc_payload = [
+        {
+            "from_type": "rail",
+            "from_id": "9100WAT",
+            "from_name": "London Waterloo",
+            "to_type": "bus",
+            "to_id": "490000077E",
+            "to_name": "Euston Bus Stop",
+            "transfer_time_minutes": 8,
+            "bidirectional": True,
+            "step_free": True,
+            "notes": "Walking connection",
+        }
+    ]
+    plat_payload = [
+        {
+            "location_type": "rail",
+            "location_id": "9100WAT",
+            "location_name": "London Waterloo",
+            "from_platform": "1",
+            "to_platform": "12",
+            "transfer_time_minutes": 5,
+            "bidirectional": True,
+            "step_free": True,
+            "notes": "Footbridge",
+        }
+    ]
+
+    post_resp = client.post(
+        "/config/transfers",
+        data={
+            "location_transfers_json": json.dumps(loc_payload),
+            "platform_transfers_json": json.dumps(plat_payload),
+        },
+        follow_redirects=True,
+    )
+    assert post_resp.status_code == 200
+    assert b"Transfers saved successfully." in post_resp.data
+
+    # Leave page
+    assert client.get("/").status_code == 200
+    assert client.get("/config/locations").status_code == 200
+    assert client.get("/config/journeys").status_code == 200
+
+    # Return to Transfers
+    return_resp = client.get("/config/transfers")
+    assert return_resp.status_code == 200
+    page_html = return_resp.get_data(as_text=True)
+
+    # Verify location transfer
+    start_tag_loc = (
+        '<script id="initial-location-transfers-data" type="application/json">'
+    )
+    end_tag = "</script>"
+    start_idx = page_html.find(start_tag_loc) + len(start_tag_loc)
+    end_idx = page_html.find(end_tag, start_idx)
+    loc_transfers = json.loads(page_html[start_idx:end_idx])
+
+    assert len(loc_transfers) == 1
+    assert loc_transfers[0]["from_name"] == "London Waterloo"
+    assert loc_transfers[0]["to_name"] == "Euston Bus Stop"
+    assert loc_transfers[0]["transfer_time_minutes"] == 8
+    assert loc_transfers[0]["step_free"] is True
+
+    # Verify platform transfer
+    start_tag_plat = (
+        '<script id="initial-platform-transfers-data" type="application/json">'
+    )
+    start_plat_idx = page_html.find(start_tag_plat) + len(start_tag_plat)
+    end_plat_idx = page_html.find(end_tag, start_plat_idx)
+    plat_transfers = json.loads(page_html[start_plat_idx:end_plat_idx])
+
+    assert len(plat_transfers) == 1
+    assert plat_transfers[0]["location_name"] == "London Waterloo"
+    assert plat_transfers[0]["from_platform"] == "1"
+    assert plat_transfers[0]["to_platform"] == "12"
+    assert plat_transfers[0]["transfer_time_minutes"] == 5
