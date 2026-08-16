@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reusable `PlaceAutocomplete` JavaScript component (`place-autocomplete.js`) encapsulating place search querying, debounce management, filter chip bar interaction, and suggestions rendering across Journeys, Transfers, and Timetable views.
 - Interactive **Place Type Filter Chips** (`[All] [Train] [Bus] [Metro] [Tram] [Ferry] [Air] [HA] [Custom]`) pinned to the top of all place search autocomplete dropdowns across Journeys (`/config/journeys`), Transfers (`/config/transfers`), and the Timetable Grid Editor (`/config/timetables`).
 - Instant re-filtering on chip click with focus retention, active filter styling, and context-aware default transport modes.
-- Support for `train` alias mapping to `rail` and strict transport mode filtering in `GET /config/search/places`.
+- Strict transport mode filtering in `GET /config/search/places`.
 - Full-width interactive **Timetable Grid Editor** on `/config/timetables` allowing direct configuration and matrix editing of stops down the left column and trips / timings across columns.
 - Transport Type classification on `Timetable` model and database schema supporting Bus (`bus`), Train / Rail (`rail`), Tram (`tram`), Metro (`metro`), Ferry (`ferry`), and Air (`air`) with Material Symbols icons and dedicated table column.
 - Autocomplete stop addition in Timetable Grid Editor querying `/config/search/places` filtered by timetable transport mode while including Home Assistant zones and custom locations.

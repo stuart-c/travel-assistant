@@ -536,13 +536,13 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     assert len(res_all_home.get_json()["results"]) == 1
     assert res_all_home.get_json()["results"][0]["id"] == "ha:home"
 
-    # 8. Test train alias maps to rail
-    res_train = client.get("/config/search/places?type=train&q=Oxford")
-    assert res_train.status_code == 200
-    data_train = res_train.get_json()
-    assert len(data_train["results"]) == 1
-    assert data_train["results"][0]["id"] == "naptan:OXF"
-    assert data_train["results"][0]["type"] == "rail"
+    # 8. Test rail transport type search
+    res_rail = client.get("/config/search/places?type=rail&q=Oxford")
+    assert res_rail.status_code == 200
+    data_rail = res_rail.get_json()
+    assert len(data_rail["results"]) == 1
+    assert data_rail["results"][0]["id"] == "naptan:OXF"
+    assert data_rail["results"][0]["type"] == "rail"
 
     # 9. Test all locations search without type filter
     res_all_q = client.get("/config/search/places?limit=invalid")
