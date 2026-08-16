@@ -6,7 +6,7 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 
 - **Ingress Dashboard**: Directly accessible from the Home Assistant sidebar.
 - **SQLite Storage**: Persistent database storage for application settings, credentials, timetable entries, and cache.
-- **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, and unsaved changes protection.
+- **Settings Management**: Multi-page configuration (`/config/xxx`) using the Post/Redirect/Get pattern with a unified left navigation bar, mobile drawer, unsaved changes protection, and anti-caching HTTP response headers.
 - **API Credentials Configuration**: Centralised storage for Bus API keys, Train S3 bucket details, live train departure tokens, Open API credentials, and Google Maps API credentials with zero-cost validation probes.
 - **Google Maps Integration**: Client library (`GoogleMapsClient`) and credential validator for geocoding, reverse geocoding, distance matrix calculations, and turn-by-turn route directions.
 - **Timetables Configuration**: CDN-hosted Grid.js table at `/config/timetables` for managing timetable schedules, validity date ranges, and operating days (Monday–Sunday + Bank Holiday) with client-side staging, date validation, and atomic persistence.
