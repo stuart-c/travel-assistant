@@ -2,105 +2,87 @@
 
 import json
 import re
-from typing import Any
 from bs4 import BeautifulSoup
-import pytest
+from flask.testing import FlaskClient
 
 from app.models import (
     Journey,
     Location,
     LocationTransfer,
     PlatformTransfer,
-    Setting,
     Timetable,
 )
 
 
-@pytest.fixture
-def client_with_sample_data(app: Any) -> Any:
-    """Fixture providing a test client with pre-seeded sample transit data."""
-    with app.app_context():
-        # Clean existing test data
-        Location.delete().execute()
-        Timetable.delete().execute()
-        LocationTransfer.delete().execute()
-        PlatformTransfer.delete().execute()
-        Journey.delete().execute()
-        Setting.delete().execute()
+def _seed_sample_data() -> None:
+    """Helper to populate isolated test database with sample transit records."""
+    Location.create(
+        id="zone.home",
+        name="Home Zone",
+        latitude=51.5300,
+        longitude=-0.1200,
+        ha=True,
+    )
+    Location.create(
+        id="custom:office",
+        name="City Office",
+        latitude=51.5150,
+        longitude=-0.0900,
+        ha=False,
+    )
 
-        # Seed sample locations
-        Location.create(
-            id="zone.home",
-            name="Home Zone",
-            latitude=51.5300,
-            longitude=-0.1200,
-            ha=True,
-        )
-        Location.create(
-            id="custom:office",
-            name="City Office",
-            latitude=51.5150,
-            longitude=-0.0900,
-            ha=False,
-        )
+    tt = Timetable.create(
+        name="Weekday Morning",
+        transport_type="rail",
+        monday=True,
+        tuesday=True,
+        wednesday=True,
+        thursday=True,
+        friday=True,
+        saturday=False,
+        sunday=False,
+    )
+    tt.set_content({"stops": ["9100KNGX"], "trips": [{"time": "08:00"}]})
+    tt.save()
 
-        # Seed sample timetable
-        tt = Timetable.create(
-            name="Weekday Morning",
-            transport_type="rail",
-            monday=True,
-            tuesday=True,
-            wednesday=True,
-            thursday=True,
-            friday=True,
-            saturday=False,
-            sunday=False,
-        )
-        tt.set_content({"stops": ["9100KNGX"], "trips": [{"time": "08:00"}]})
-        tt.save()
+    LocationTransfer.create(
+        from_type="rail",
+        from_id="9100KNGX",
+        from_name="London King's Cross",
+        to_type="bus",
+        to_id="490000077E",
+        to_name="King's Cross Stop E",
+        transfer_time_minutes=3,
+        bidirectional=True,
+        step_free=True,
+    )
+    PlatformTransfer.create(
+        location_type="rail",
+        location_id="9100KNGX",
+        location_name="London King's Cross",
+        from_platform="1",
+        to_platform="8",
+        transfer_time_minutes=4,
+        bidirectional=True,
+        step_free=True,
+    )
 
-        # Seed sample transfers
-        LocationTransfer.create(
-            from_type="rail",
-            from_id="9100KNGX",
-            from_name="London King's Cross",
-            to_type="bus",
-            to_id="490000077E",
-            to_name="King's Cross Stop E",
-            transfer_time_minutes=3,
-            bidirectional=True,
-            step_free=True,
-        )
-        PlatformTransfer.create(
-            location_type="rail",
-            location_id="9100KNGX",
-            location_name="London King's Cross",
-            from_platform="1",
-            to_platform="8",
-            transfer_time_minutes=4,
-            bidirectional=True,
-            step_free=True,
-        )
-
-        # Seed sample journey
-        j = Journey.create(
-            name="Office Commute",
-            from_type="ha",
-            from_id="zone.home",
-            from_name="Home Zone",
-            to_type="custom",
-            to_id="custom:office",
-            to_name="City Office",
-        )
-        j.set_time_settings([{"target_arrival": "09:00"}])
-        j.save()
-
-    return app.test_client()
+    j = Journey.create(
+        name="Office Commute",
+        from_type="ha",
+        from_id="zone.home",
+        from_name="Home Zone",
+        to_type="custom",
+        to_id="custom:office",
+        to_name="City Office",
+    )
+    j.set_time_settings([{"target_arrival": "09:00"}])
+    j.save()
 
 
-def test_dashboard_and_navigation(client_with_sample_data: Any) -> None:
+def test_dashboard_and_navigation(client: FlaskClient) -> None:
     """Test dashboard root view and navigation header links."""
-    response = client_with_sample_data.get("/")
+    response = client.get("/")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     soup = BeautifulSoup(html, "html.parser")
@@ -109,10 +91,10 @@ def test_dashboard_and_navigation(client_with_sample_data: Any) -> None:
     assert "Travel Assistant" in html
 
 
-def test_ingress_path_header_injection(client_with_sample_data: Any) -> None:
+def test_ingress_path_header_injection(client: FlaskClient) -> None:
     """Verify that X-Ingress-Path is injected into relative URLs and asset paths."""
     ingress_prefix = "/api/hassio_ingress/token123"
-    response = client_with_sample_data.get(
+    response = client.get(
         "/config/credentials",
         headers={"X-Ingress-Path": ingress_prefix},
     )
@@ -122,9 +104,10 @@ def test_ingress_path_header_injection(client_with_sample_data: Any) -> None:
     assert f'href="{ingress_prefix}/static/css/tables.css' in html
 
 
-def test_places_search_autocomplete_api(client_with_sample_data: Any) -> None:
+def test_places_search_autocomplete_api(client: FlaskClient) -> None:
     """Test /config/search/places autocomplete endpoint."""
-    resp = client_with_sample_data.get("/config/search/places?q=City")
+    _seed_sample_data()
+    resp = client.get("/config/search/places?q=City")
     assert resp.status_code == 200
     data = json.loads(resp.get_data(as_text=True))
     results = data.get("results", [])
@@ -132,10 +115,10 @@ def test_places_search_autocomplete_api(client_with_sample_data: Any) -> None:
     assert any(item.get("name") == "City Office" for item in results)
 
 
-def test_credentials_page_and_validation(client_with_sample_data: Any) -> None:
+def test_credentials_page_and_validation(client: FlaskClient) -> None:
     """Test credentials form retrieval, submission, and async validator."""
     # GET credentials
-    resp = client_with_sample_data.get("/config/credentials")
+    resp = client.get("/config/credentials")
     assert resp.status_code == 200
     assert "API Credentials" in resp.get_data(as_text=True)
 
@@ -146,7 +129,7 @@ def test_credentials_page_and_validation(client_with_sample_data: Any) -> None:
         "open_api_model": "gpt-4o-mini",
         "google_maps_region": "uk",
     }
-    post_resp = client_with_sample_data.post(
+    post_resp = client.post(
         "/config/credentials",
         data=payload,
         follow_redirects=True,
@@ -155,7 +138,7 @@ def test_credentials_page_and_validation(client_with_sample_data: Any) -> None:
     assert "API credentials saved successfully." in post_resp.get_data(as_text=True)
 
     # Test async validator endpoint
-    val_resp = client_with_sample_data.post(
+    val_resp = client.post(
         "/config/credentials/validate",
         json={"service": "bus", "bus_api_key": "invalid-test-key"},
     )
@@ -165,10 +148,10 @@ def test_credentials_page_and_validation(client_with_sample_data: Any) -> None:
     assert "Invalid Bus API key" in val_data.get("message", "")
 
 
-def test_locations_grid_data_binding_and_save(client_with_sample_data: Any) -> None:
+def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
     """Test locations Grid.js JSON script embedding and form submission."""
-    # Verify initial data script tag
-    get_resp = client_with_sample_data.get("/config/locations")
+    _seed_sample_data()
+    get_resp = client.get("/config/locations")
     assert get_resp.status_code == 200
     soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
     data_script = soup.find("script", id="initial-locations-data")
@@ -193,7 +176,7 @@ def test_locations_grid_data_binding_and_save(client_with_sample_data: Any) -> N
             "ha": False,
         },
     ]
-    post_resp = client_with_sample_data.post(
+    post_resp = client.post(
         "/config/locations",
         data={"locations_json": json.dumps(new_locations)},
         follow_redirects=True,
@@ -205,9 +188,10 @@ def test_locations_grid_data_binding_and_save(client_with_sample_data: Any) -> N
     assert any(loc.get("name") == "Central Library" for loc in updated_data)
 
 
-def test_timetables_grid_data_binding_and_save(client_with_sample_data: Any) -> None:
+def test_timetables_grid_data_binding_and_save(client: FlaskClient) -> None:
     """Test timetables Grid.js JSON script embedding and form submission."""
-    get_resp = client_with_sample_data.get("/config/timetables")
+    _seed_sample_data()
+    get_resp = client.get("/config/timetables")
     assert get_resp.status_code == 200
     soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
     data_script = soup.find("script", id="initial-timetables-data")
@@ -232,7 +216,7 @@ def test_timetables_grid_data_binding_and_save(client_with_sample_data: Any) -> 
             "content": {"stops": ["490000077E"], "trips": [{"time": "17:30"}]},
         }
     ]
-    post_resp = client_with_sample_data.post(
+    post_resp = client.post(
         "/config/timetables",
         data={"timetables_json": json.dumps(new_timetables)},
         follow_redirects=True,
@@ -244,9 +228,10 @@ def test_timetables_grid_data_binding_and_save(client_with_sample_data: Any) -> 
     assert any(tt.get("name") == "Evening Commute" for tt in updated_data)
 
 
-def test_transfers_grid_data_binding_and_save(client_with_sample_data: Any) -> None:
+def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
     """Test transfers Grid.js JSON script embedding and form submission."""
-    get_resp = client_with_sample_data.get("/config/transfers")
+    _seed_sample_data()
+    get_resp = client.get("/config/transfers")
     assert get_resp.status_code == 200
     soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
     loc_script = soup.find("script", id="initial-location-transfers-data")
@@ -280,7 +265,7 @@ def test_transfers_grid_data_binding_and_save(client_with_sample_data: Any) -> N
             "notes": "Footbridge",
         }
     ]
-    post_resp = client_with_sample_data.post(
+    post_resp = client.post(
         "/config/transfers",
         data={
             "location_transfers_json": json.dumps(loc_payload),
@@ -296,9 +281,10 @@ def test_transfers_grid_data_binding_and_save(client_with_sample_data: Any) -> N
     assert any(t.get("from_id") == "9100KNGX" for t in updated_loc)
 
 
-def test_journeys_grid_data_binding_and_save(client_with_sample_data: Any) -> None:
+def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     """Test journeys Grid.js JSON script embedding and form submission."""
-    get_resp = client_with_sample_data.get("/config/journeys")
+    _seed_sample_data()
+    get_resp = client.get("/config/journeys")
     assert get_resp.status_code == 200
     soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
     j_script = soup.find("script", id="initial-journeys-data")
@@ -316,7 +302,7 @@ def test_journeys_grid_data_binding_and_save(client_with_sample_data: Any) -> No
             "time_settings": [{"target_arrival": "14:00"}],
         }
     ]
-    post_resp = client_with_sample_data.post(
+    post_resp = client.post(
         "/config/journeys",
         data={"journeys_json": json.dumps(journeys_payload)},
         follow_redirects=True,
@@ -327,7 +313,7 @@ def test_journeys_grid_data_binding_and_save(client_with_sample_data: Any) -> No
     assert any(j.get("name") == "Library Study Session" for j in updated_j)
 
 
-def test_british_english_compliance_across_views(client_with_sample_data: Any) -> None:
+def test_british_english_compliance_across_views(client: FlaskClient) -> None:
     """Verify that all rendered HTML templates adhere to British English standards."""
     routes = [
         "/",
@@ -349,7 +335,7 @@ def test_british_english_compliance_across_views(client_with_sample_data: Any) -
     ]
 
     for route in routes:
-        resp = client_with_sample_data.get(route)
+        resp = client.get(route)
         assert resp.status_code == 200
         soup = BeautifulSoup(resp.get_data(as_text=True), "html.parser")
         text = soup.get_text()
