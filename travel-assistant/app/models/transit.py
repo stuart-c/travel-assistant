@@ -109,9 +109,7 @@ class Stop(BaseModel):
         rows = [
             {
                 "atco_code": str(s.get("atco_code", "")).strip(),
-                "naptan_code": (
-                    str(s.get("naptan_code") or s.get("crs_code") or "").strip() or None
-                ),
+                "naptan_code": str(s.get("naptan_code") or "").strip() or None,
                 "stop_type": str(s.get("stop_type", "bus")).strip().lower() or "bus",
                 "name": str(s.get("name", "")).strip(),
                 "indicator": (
@@ -196,9 +194,9 @@ class Stop(BaseModel):
         )
         if stop_type:
             st = stop_type.strip().lower()
-            if st in ("rail", "train", "station", "stations"):
+            if st == "rail":
                 conditions = conditions & (cls.stop_type.in_(["rail", "metro", "tram"]))
-            elif st in ("bus", "bus_stop", "bus_stops"):
+            elif st == "bus":
                 conditions = conditions & (cls.stop_type == "bus")
             else:
                 conditions = conditions & (cls.stop_type == st)

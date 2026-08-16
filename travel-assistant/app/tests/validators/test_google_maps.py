@@ -45,16 +45,15 @@ def test_validate_google_maps_api_key_denied(mock_client_cls: MagicMock) -> None
 
 @patch("app.datasources.google_maps.googlemaps.Client")
 def test_dispatcher_google_maps(mock_client_cls: MagicMock) -> None:
-    """Test dispatcher routes google_maps / googlemaps service keys correctly."""
+    """Test dispatcher routes google_maps service key correctly."""
     mock_instance = MagicMock()
     mock_instance.geocode.return_value = [{"formatted_address": "London, UK"}]
     mock_client_cls.return_value = mock_instance
 
-    for alias in ["google_maps", "googlemaps", "google", "maps"]:
-        valid, msg, extra = validate_service_credentials(
-            alias,
-            {"google_maps_api_key": "AIzaTest", "google_maps_region": "uk"},
-        )
-        assert valid is True
-        assert "Google Maps credentials valid." in msg
-        assert extra == {}
+    valid, msg, extra = validate_service_credentials(
+        "google_maps",
+        {"google_maps_api_key": "AIzaTest", "google_maps_region": "uk"},
+    )
+    assert valid is True
+    assert "Google Maps credentials valid." in msg
+    assert extra == {}

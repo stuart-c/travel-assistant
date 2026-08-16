@@ -34,7 +34,7 @@ def validate_service_credentials(
         )
         return valid, msg, {}
 
-    if service_normalised in ("train_s3", "train-s3", "s3"):
+    if service_normalised == "train_s3":
         valid, msg = validate_train_s3_bucket(
             bucket=payload.get("train_s3_bucket", ""),
             region=payload.get("train_s3_region"),
@@ -44,7 +44,7 @@ def validate_service_credentials(
         )
         return valid, msg, {}
 
-    if service_normalised in ("train_live", "train-live", "ldbws"):
+    if service_normalised == "train_live":
         valid, msg = validate_train_live_token(
             api_key=payload.get("train_live_api_key", ""),
             endpoint=payload.get("train_live_endpoint"),
@@ -52,7 +52,7 @@ def validate_service_credentials(
         )
         return valid, msg, {}
 
-    if service_normalised in ("open_api", "open-api", "openai"):
+    if service_normalised == "open_api":
         valid, msg, models = validate_open_api_key(
             api_key=payload.get("open_api_key", ""),
             base_url=payload.get("open_api_base_url"),
@@ -60,7 +60,7 @@ def validate_service_credentials(
         )
         return valid, msg, {"models": models}
 
-    if service_normalised in ("google_maps", "googlemaps", "google", "maps"):
+    if service_normalised == "google_maps":
         valid, msg = validate_google_maps_api_key(
             api_key=payload.get("google_maps_api_key", ""),
             region=payload.get("google_maps_region"),

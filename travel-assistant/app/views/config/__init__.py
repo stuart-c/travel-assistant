@@ -25,15 +25,9 @@ from app.views.config import (  # noqa: E402, F401
     timetables,
     transfers,
 )
-from app.views.config.credentials import CREDENTIAL_FIELDS  # noqa: E402, F401
-from app.views.config.places import search_places  # noqa: E402, F401
-from app.validators import validate_service_credentials  # noqa: E402, F401
 
 __all__ = [
     "config_bp",
-    "CREDENTIAL_FIELDS",
-    "search_places",
-    "validate_service_credentials",
     "credentials",
     "journeys",
     "locations",
