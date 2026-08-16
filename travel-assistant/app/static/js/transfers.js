@@ -278,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
     data: formatLocationGridData(stagedLocationTransfers),
     search: { placeholder: 'Search inter-location transfers...' },
     pagination: { limit: 10, summary: true },
+    sort: true,
     language: {
       search: { placeholder: 'Search inter-location transfers...' },
       pagination: {
@@ -309,6 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
     data: formatPlatformGridData(stagedPlatformTransfers),
     search: { placeholder: 'Search platform transfers...' },
     pagination: { limit: 10, summary: true },
+    sort: true,
     language: {
       search: { placeholder: 'Search platform transfers...' },
       pagination: {
@@ -387,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial Sync
   syncState();
 
-  // Collapsible section toggles - only arrow button toggles
+  // Collapsible section toggles - clicking arrow button or header card toggles
   document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -399,6 +401,23 @@ document.addEventListener('DOMContentLoaded', () => {
       if (section) {
         const isCollapsed = section.classList.toggle('collapsed');
         const icon = btn.querySelector('.collapse-icon');
+        if (icon) {
+          icon.textContent = isCollapsed ? 'chevron_right' : 'keyboard_arrow_down';
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll('.section-toggle').forEach((header) => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('button, input, select, a, .collapse-toggle-btn')) return;
+      const targetId = header.getAttribute('data-target');
+      const section = targetId
+        ? document.getElementById(targetId)
+        : header.closest('.collapsible-section');
+      if (section) {
+        const isCollapsed = section.classList.toggle('collapsed');
+        const icon = section.querySelector('.collapse-icon');
         if (icon) {
           icon.textContent = isCollapsed ? 'chevron_right' : 'keyboard_arrow_down';
         }

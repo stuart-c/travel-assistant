@@ -261,6 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       gridInstance = new gridjs.Grid({
         columns: columnsConfig,
         data: gridData,
+        sort: true,
         search: {
           enabled: true,
           placeholder: 'Search journeys...',

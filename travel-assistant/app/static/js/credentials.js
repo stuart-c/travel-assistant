@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Section toggle handlers - only the arrow button toggles
+  // Section toggle handlers - clicking arrow button or section header toggles
   document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -93,6 +93,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const section = targetId
         ? document.getElementById(targetId)
         : btn.closest('.collapsible-section');
+      if (section) {
+        const isCollapsed = section.classList.contains('collapsed');
+        setSectionCollapseState(section.id, !isCollapsed);
+      }
+    });
+  });
+
+  document.querySelectorAll('.section-toggle').forEach((header) => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('button, input, select, a, .check-btn, .status-valid-badge')) return;
+      const targetId = header.getAttribute('data-target');
+      const section = targetId
+        ? document.getElementById(targetId)
+        : header.closest('.collapsible-section');
       if (section) {
         const isCollapsed = section.classList.contains('collapsed');
         setSectionCollapseState(section.id, !isCollapsed);
@@ -206,8 +220,10 @@ document.addEventListener('DOMContentLoaded', () => {
           `;
         }
 
-        // Collapse section by default on verified valid credentials
-        setSectionCollapseState(config.sectionId, true);
+        // Collapse section by default on initial load if verified valid
+        if (isInitialLoad) {
+          setSectionCollapseState(config.sectionId, true);
+        }
 
         if (
           serviceKey === 'open_api' &&
