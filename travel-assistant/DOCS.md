@@ -17,7 +17,8 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **Database Statistics**: SQLite storage usage and schema table metrics view at `/config/db` displaying database disk size and record counts per table.
 - **Background Synchronisation**: Dedicated dashboard at `/config/sync` with interactive Grid.js table displaying cached transit datasets (Bus Routes, NaPTAN Transit Stops, Home Assistant Locations), last updated timestamps, status badges, and on-demand refresh triggers.
 - **Automated Background Updates**: Background daemon worker (`TransitBackgroundWorker`) that automatically synchronises transit datasets and Home Assistant zones whenever data is older than 24 hours (1 day).
-- **RESTful API**: Endpoints for service status, ping checks, timetable search lookup, and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>` and `/config/db/sync/<table_name>`).
+- **RESTful API**: Endpoints for service status, ping checks, consolidated location search (`GET /config/search/places`), and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>` and `/config/db/sync/<table_name>`).
+- **Consolidated Location Search**: Unified multi-modal search endpoint at `/config/search/places` querying rail stations (`naptan:<crs>` or `atco:<code>`), bus stops (`naptan:<sms>` or `atco:<code>`), Home Assistant zones (`ha:<id>`), and custom locations (`custom:<hex>`).
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
 
 ## Timetable Architecture & Next Stages

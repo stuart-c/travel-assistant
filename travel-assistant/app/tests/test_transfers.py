@@ -173,9 +173,9 @@ def test_transfers_post_invalid_json(client: FlaskClient) -> None:
 
 
 def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None:
-    """Test GET /config/transfers/search returns empty when unpopulated and records when cached."""
+    """Test GET /config/search/places returns empty when unpopulated and records when cached."""
     # 1. Unpopulated test
-    response_empty = client.get("/config/transfers/search")
+    response_empty = client.get("/config/search/places")
     assert response_empty.status_code == 200
     data_empty = response_empty.get_json()
     assert data_empty["total"] == 0
@@ -199,7 +199,7 @@ def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None
             ]
         )
 
-    response = client.get("/config/transfers/search")
+    response = client.get("/config/search/places")
     assert response.status_code == 200
     data = response.get_json()
     assert "results" in data
@@ -212,7 +212,7 @@ def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None
 def test_search_transfers_locations_station_filter(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test GET /config/transfers/search with type=station filter."""
+    """Test GET /config/search/places with type=station filter."""
     with app.app_context():
         Stop.bulk_upsert(
             [
@@ -230,18 +230,19 @@ def test_search_transfers_locations_station_filter(
             ]
         )
 
-    response = client.get("/config/transfers/search?type=station")
+    response = client.get("/config/search/places?type=station")
     assert response.status_code == 200
     data = response.get_json()
     assert data["total"] == 1
     for item in data["results"]:
         assert item["type"] == "station"
+        assert item["id"] == "naptan:PAD"
 
 
 def test_search_transfers_locations_bus_stop_filter(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test GET /config/transfers/search with type=bus_stop filter."""
+    """Test GET /config/search/places with type=bus_stop filter."""
     with app.app_context():
         Stop.bulk_upsert(
             [
@@ -259,16 +260,17 @@ def test_search_transfers_locations_bus_stop_filter(
             ]
         )
 
-    response = client.get("/config/transfers/search?type=bus_stop")
+    response = client.get("/config/search/places?type=bus_stop")
     assert response.status_code == 200
     data = response.get_json()
     assert data["total"] == 1
     for item in data["results"]:
         assert item["type"] == "bus_stop"
+        assert item["id"] == "atco:490000001"
 
 
 def test_search_transfers_locations_query(client: FlaskClient, app: Flask) -> None:
-    """Test GET /config/transfers/search with matching and non-matching queries."""
+    """Test GET /config/search/places with matching and non-matching queries."""
     with app.app_context():
         Stop.bulk_upsert(
             [
@@ -281,13 +283,13 @@ def test_search_transfers_locations_query(client: FlaskClient, app: Flask) -> No
             ]
         )
 
-    res_match = client.get("/config/transfers/search?q=Oxford")
+    res_match = client.get("/config/search/places?q=Oxford")
     assert res_match.status_code == 200
     data = res_match.get_json()
     assert data["total"] > 0
     assert any("Oxford" in item["name"] for item in data["results"])
 
-    res_nomatch = client.get("/config/transfers/search?q=NonExistentLocXYZ999")
+    res_nomatch = client.get("/config/search/places?q=NonExistentLocXYZ999")
     assert res_nomatch.status_code == 200
     data_no = res_nomatch.get_json()
     assert data_no["total"] == 0

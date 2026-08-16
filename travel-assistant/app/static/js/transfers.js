@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('transfers-form');
   if (!form) return;
 
-  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/transfers/search';
+  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
   // Parse initial data payloads
   const locScript = document.getElementById('initial-location-transfers-data');
@@ -106,19 +106,23 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/"/g, '&quot;');
   }
 
+  function getLocationBadge(type) {
+    const t = String(type || '').toLowerCase();
+    if (t === 'station' || t === 'train' || t === 'rail') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
+    } else if (t === 'bus_stop' || t === 'bus') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
+    } else if (t === 'ha_location' || t === 'ha' || t === 'home_assistant') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> HA</span>`;
+    }
+    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
+  }
+
   // --- Location Transfers Grid Data Formatter ---
   function formatLocationGridData(items) {
     return items.map((item, index) => {
-      const fromIsTrain = item.from_type === 'station';
-      const toIsTrain = item.to_type === 'station';
-
-      const fromBadge = fromIsTrain
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
-
-      const toBadge = toIsTrain
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
+      const fromBadge = getLocationBadge(item.from_type);
+      const toBadge = getLocationBadge(item.to_type);
 
       const dirHtml = item.bidirectional
         ? `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300" title="Transfer valid in both directions"><span class="material-symbols-outlined text-sm leading-none text-sky-500">sync_alt</span> ⇄ Both ways</span>`
@@ -185,10 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Platform Transfers Grid Data Formatter ---
   function formatPlatformGridData(items) {
     return items.map((item, index) => {
-      const isTrain = item.location_type === 'station';
-      const locBadge = isTrain
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
+      const locBadge = getLocationBadge(item.location_type);
 
       const dirHtml = item.bidirectional
         ? `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300" title="Transfer valid in both directions"><span class="material-symbols-outlined text-sm leading-none text-indigo-500">sync_alt</span> ⇄ Both ways</span>`
@@ -206,16 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.location_name)}</span>
             </div>
             <span class="text-xs font-mono text-slate-500 dark:text-slate-400">${escapeHtml(item.location_id)}</span>
-          </div>
-        `),
-        gridjs.html(`<code class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold">${escapeHtml(item.from_platform)}</code>`),
-        gridjs.html(`<code class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold">${escapeHtml(item.to_platform)}</code>`),
-        gridjs.html(`
-          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 font-bold text-xs">
-            <span class="material-symbols-outlined text-sm leading-none">timer</span>
-            ${escapeHtml(item.transfer_time_minutes)} min${item.transfer_time_minutes > 1 ? 's' : ''}
-          </span>
-        `),
         gridjs.html(dirHtml),
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
@@ -386,16 +377,24 @@ document.addEventListener('DOMContentLoaded', () => {
       results.forEach(item => {
         const div = document.createElement('div');
         div.className = 'p-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer rounded-lg transition-colors flex items-center justify-between gap-3';
+        const itemIcon = item.icon || (item.type === 'station' ? 'train' : 'directions_bus');
         div.innerHTML = `
-          <div class="min-w-0">
-            <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.id)}</div>
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="material-symbols-outlined text-base text-slate-400 shrink-0">${escapeHtml(itemIcon)}</span>
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(item.name)}</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.description || item.id)}</div>
+            </div>
           </div>
           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">${escapeHtml(item.id)}</span>
         `;
         div.addEventListener('click', () => {
           nameInput.value = item.name;
           idInput.value = item.id;
+          if (typeRadioName && item.type) {
+            const matchingRadio = document.querySelector(`input[name="${typeRadioName}"][value="${item.type}"]`);
+            if (matchingRadio) matchingRadio.checked = true;
+          }
           suggestionsContainer.classList.add('hidden');
         });
         suggestionsContainer.appendChild(div);

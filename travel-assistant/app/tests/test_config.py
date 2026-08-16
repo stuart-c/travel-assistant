@@ -334,39 +334,18 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
     assert saved[0]["monday"] is True
 
 
-def test_search_timetables_endpoint(client: FlaskClient) -> None:
-    """Test GET /config/timetables/search across cached datasets and unpopulated states."""
-    from app.models import BusRoute, Stop
+def test_search_places_endpoint(client: FlaskClient) -> None:
+    """Test GET /config/search/places across rail, bus, HA, and custom location datasets."""
+    from app.models import Location, Stop
 
     # 1. Test empty response when nothing cached
-    res_all = client.get("/config/timetables/search")
+    res_all = client.get("/config/search/places")
     assert res_all.status_code == 200
     data_all = res_all.get_json()
     assert data_all["total"] == 0
     assert data_all["results"] == []
-    assert data_all["is_cached"] is False
 
-    res_sample_bus = client.get("/config/timetables/search?type=bus_route")
-    assert res_sample_bus.status_code == 200
-    data_sample_bus = res_sample_bus.get_json()
-    assert data_sample_bus["is_cached"] is False
-    assert data_sample_bus["results"] == []
-
-    res_sample_generic = client.get(
-        "/config/timetables/search?type=unsupported_type&q=Oxford"
-    )
-    assert res_sample_generic.status_code == 200
-    data_sample_gen = res_sample_generic.get_json()
-    assert data_sample_gen["results"] == []
-
-    res_sample_query = client.get("/config/timetables/search?q=Oxford")
-    assert res_sample_query.status_code == 200
-    data_sample_query = res_sample_query.get_json()
-    assert data_sample_query["total"] == 0
-    assert data_sample_query["results"] == []
-    assert data_sample_query["is_cached"] is False
-
-    # 2. Test Station search with cached station records
+    # 2. Populate stops and locations
     Stop.bulk_upsert(
         [
             {
@@ -377,37 +356,13 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
             },
             {
                 "atco_code": "9100PAD",
-                "naptan_code": "PAD",
+                "naptan_code": None,
                 "stop_type": "rail",
                 "name": "London Paddington",
             },
             {
-                "atco_code": "9100BHM",
-                "naptan_code": "BHM",
-                "stop_type": "rail",
-                "name": "Birmingham New Street",
-            },
-        ]
-    )
-
-    res_station_empty_q = client.get("/config/timetables/search?type=station&limit=2")
-    assert res_station_empty_q.status_code == 200
-    data_st_empty = res_station_empty_q.get_json()
-    assert data_st_empty["is_cached"] is True
-    assert len(data_st_empty["results"]) == 2
-
-    res_station_q = client.get("/config/timetables/search?type=train&q=PAD")
-    assert res_station_q.status_code == 200
-    data_st_q = res_station_q.get_json()
-    assert data_st_q["is_cached"] is True
-    assert len(data_st_q["results"]) == 1
-    assert data_st_q["results"][0]["crs_code"] == "PAD"
-
-    # 3. Test Bus Stop search with cached bus stops
-    Stop.bulk_upsert(
-        [
-            {
                 "atco_code": "340000001",
+                "naptan_code": None,
                 "stop_type": "bus",
                 "name": "High Street Stop T1",
                 "locality": "Oxford",
@@ -415,6 +370,7 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
             },
             {
                 "atco_code": "340000002",
+                "naptan_code": "oxf002",
                 "stop_type": "bus",
                 "name": "Blackbird Leys Leisure Centre",
                 "locality": "Oxford",
@@ -423,61 +379,77 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
         ]
     )
 
-    res_stop_empty = client.get("/config/timetables/search?type=bus_stop")
-    assert res_stop_empty.status_code == 200
-    data_stop_empty = res_stop_empty.get_json()
-    assert data_stop_empty["is_cached"] is True
-    assert len(data_stop_empty["results"]) == 2
-
-    res_stop_q = client.get("/config/timetables/search?type=stop&q=340000001")
-    assert res_stop_q.status_code == 200
-    data_stop_q = res_stop_q.get_json()
-    assert len(data_stop_q["results"]) == 1
-    assert data_stop_q["results"][0]["atco_code"] == "340000001"
-
-    # 4. Test Bus Route search with cached bus routes
-    BusRoute.bulk_upsert(
+    Location.insert_many(
         [
             {
-                "route_number": "1",
-                "operator_name": "Oxford Bus Company",
-                "origin": "Blackbird Leys",
-                "destination": "Oxford City Centre",
+                "id": "ha:home",
+                "name": "Home",
+                "latitude": 51.7520,
+                "longitude": -1.2577,
+                "ha": True,
             },
             {
-                "route_number": "5",
-                "operator_name": "Oxford Bus Company",
-                "origin": "Blackbird Leys",
-                "destination": "Oxford Rail Station",
+                "id": "custom:office",
+                "name": "Office HQ",
+                "latitude": 51.7500,
+                "longitude": -1.2600,
+                "ha": False,
             },
         ]
-    )
+    ).execute()
 
-    res_route_empty = client.get("/config/timetables/search?type=bus_route")
-    assert res_route_empty.status_code == 200
-    data_route_empty = res_route_empty.get_json()
-    assert data_route_empty["is_cached"] is True
-    assert len(data_route_empty["results"]) == 2
+    # 3. Test station search (with naptan prefix vs atco prefix)
+    res_st = client.get("/config/search/places?type=station&q=Oxford")
+    assert res_st.status_code == 200
+    data_st = res_st.get_json()
+    assert len(data_st["results"]) == 1
+    assert data_st["results"][0]["id"] == "naptan:OXF"
+    assert data_st["results"][0]["type"] == "station"
+    assert data_st["results"][0]["icon"] == "train"
 
-    res_route_q = client.get("/config/timetables/search?type=route&q=5")
-    assert res_route_q.status_code == 200
-    data_route_q = res_route_q.get_json()
-    assert len(data_route_q["results"]) == 1
-    assert data_route_q["results"][0]["route_number"] == "5"
+    res_pad = client.get("/config/search/places?type=train&q=Paddington")
+    assert res_pad.status_code == 200
+    data_pad = res_pad.get_json()
+    assert len(data_pad["results"]) == 1
+    assert data_pad["results"][0]["id"] == "atco:9100PAD"
 
-    # 5. Test status check and custom limits
-    res_status = client.get("/config/timetables/search?type=status")
-    assert res_status.status_code == 200
-    data_status = res_status.get_json()
-    assert data_status["is_cached"] is True
-    assert data_status["cache_counts"]["stops"] == 5
-    assert data_status["cache_counts"]["bus_routes"] == 2
+    # 4. Test bus stop search
+    res_bus = client.get("/config/search/places?type=bus_stop&q=High Street")
+    assert res_bus.status_code == 200
+    data_bus = res_bus.get_json()
+    assert len(data_bus["results"]) == 1
+    assert data_bus["results"][0]["id"] == "atco:340000001"
+    assert data_bus["results"][0]["type"] == "bus_stop"
+    assert data_bus["results"][0]["icon"] == "directions_bus"
 
-    # 6. Test generic search when cached
-    res_generic = client.get("/config/timetables/search?q=Oxford&limit=invalid")
-    assert res_generic.status_code == 200
-    data_generic = res_generic.get_json()
-    assert len(data_generic["results"]) > 0
+    res_bus_naptan = client.get("/config/search/places?type=bus&q=Blackbird")
+    assert res_bus_naptan.status_code == 200
+    data_bus_naptan = res_bus_naptan.get_json()
+    assert len(data_bus_naptan["results"]) == 1
+    assert data_bus_naptan["results"][0]["id"] == "naptan:oxf002"
+
+    # 5. Test HA and custom location search
+    res_ha = client.get("/config/search/places?type=ha_location&q=Home")
+    assert res_ha.status_code == 200
+    data_ha = res_ha.get_json()
+    assert len(data_ha["results"]) == 1
+    assert data_ha["results"][0]["id"] == "ha:home"
+    assert data_ha["results"][0]["type"] == "ha_location"
+    assert data_ha["results"][0]["icon"] == "home"
+
+    res_custom = client.get("/config/search/places?type=custom&q=Office")
+    assert res_custom.status_code == 200
+    data_custom = res_custom.get_json()
+    assert len(data_custom["results"]) == 1
+    assert data_custom["results"][0]["id"] == "custom:office"
+    assert data_custom["results"][0]["type"] == "custom_location"
+    assert data_custom["results"][0]["icon"] == "pin_drop"
+
+    # 6. Test all locations search without type filter
+    res_all_q = client.get("/config/search/places?limit=invalid")
+    assert res_all_q.status_code == 200
+    data_all_q = res_all_q.get_json()
+    assert data_all_q["total"] >= 4
 
 
 def test_timetables_ingress_header(client: FlaskClient) -> None:
