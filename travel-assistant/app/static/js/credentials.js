@@ -71,48 +71,15 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function setSectionCollapseState(sectionId, collapse) {
-    const section = document.getElementById(sectionId);
-    if (!section) return;
-    const icon = section.querySelector('.collapse-icon');
-
-    if (collapse) {
-      section.classList.add('collapsed');
-      if (icon) icon.textContent = 'chevron_right';
-    } else {
-      section.classList.remove('collapsed');
-      if (icon) icon.textContent = 'keyboard_arrow_down';
+    if (window.TransitUI && window.TransitUI.CollapsibleManager) {
+      window.TransitUI.CollapsibleManager.setSectionCollapseState(sectionId, collapse);
     }
   }
 
-  // Section toggle handlers - clicking arrow button or section header toggles
-  document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const targetId = btn.getAttribute('data-target');
-      const section = targetId
-        ? document.getElementById(targetId)
-        : btn.closest('.collapsible-section');
-      if (section) {
-        const isCollapsed = section.classList.contains('collapsed');
-        setSectionCollapseState(section.id, !isCollapsed);
-      }
-    });
-  });
-
-  document.querySelectorAll('.section-toggle').forEach((header) => {
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('button, input, select, a, .check-btn, .status-valid-badge')) return;
-      const targetId = header.getAttribute('data-target');
-      const section = targetId
-        ? document.getElementById(targetId)
-        : header.closest('.collapsible-section');
-      if (section) {
-        const isCollapsed = section.classList.contains('collapsed');
-        setSectionCollapseState(section.id, !isCollapsed);
-      }
-    });
-  });
+  // Initialise collapsible section toggle listeners
+  if (window.TransitUI && window.TransitUI.CollapsibleManager) {
+    window.TransitUI.CollapsibleManager.initialise();
+  }
 
   function onSectionInput(serviceKey) {
     const config = serviceSections[serviceKey];

@@ -16,14 +16,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const tables = (currentStats && Array.isArray(currentStats.tables)) ? currentStats.tables : [];
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
 
   function formatDbGridData(tableList) {
     return tableList.map((tbl) => {

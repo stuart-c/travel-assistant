@@ -59,6 +59,9 @@ window.PlaceAutocomplete = (function () {
   };
 
   function escapeHtml(str) {
+    if (window.TransitUI && typeof window.TransitUI.escapeHtml === 'function') {
+      return window.TransitUI.escapeHtml(str);
+    }
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')

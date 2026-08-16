@@ -195,14 +195,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSelectWeekends = document.getElementById('days-select-weekends');
   const btnClearAll = document.getElementById('days-clear-all');
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
+
+  const modalDaySelector = (window.DaySelector && window.DaySelector.bind)
+    ? window.DaySelector.bind({
+        container: '#days-pill-container',
+        selectAllBtn: '#days-select-all',
+        selectWeekdaysBtn: '#days-select-weekdays',
+        selectWeekendsBtn: '#days-select-weekends',
+        clearAllBtn: '#days-clear-all',
+      })
+    : null;
 
   // Parse HH:MM into minutes from midnight
   function timeToMinutes(timeStr) {
@@ -295,6 +305,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setDayValues(values) {
+    if (modalDaySelector) {
+      modalDaySelector.setDays(values);
+      return;
+    }
     dayKeys.forEach((k) => {
       if (dayCheckboxes[k]) {
         dayCheckboxes[k].checked = Boolean(values[k]);
@@ -303,76 +317,78 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Attach change listeners to day checkboxes
-  dayKeys.forEach((k) => {
-    const cb = dayCheckboxes[k];
-    if (cb) {
-      cb.addEventListener('change', () => updateDayPillStyle(cb));
+  if (!modalDaySelector) {
+    // Attach change listeners to day checkboxes
+    dayKeys.forEach((k) => {
+      const cb = dayCheckboxes[k];
+      if (cb) {
+        cb.addEventListener('change', () => updateDayPillStyle(cb));
+      }
+    });
+
+    // Attach quick selection buttons
+    if (btnSelectAll) {
+      btnSelectAll.addEventListener('click', () => {
+        dayKeys.forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = true;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
+      });
     }
-  });
 
-  // Attach quick selection buttons
-  if (btnSelectAll) {
-    btnSelectAll.addEventListener('click', () => {
-      dayKeys.forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = true;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
+    if (btnSelectWeekdays) {
+      btnSelectWeekdays.addEventListener('click', () => {
+        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = true;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
+        ['saturday', 'sunday', 'bank_holiday'].forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = false;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
       });
-    });
-  }
+    }
 
-  if (btnSelectWeekdays) {
-    btnSelectWeekdays.addEventListener('click', () => {
-      ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = true;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
+    if (btnSelectWeekends) {
+      btnSelectWeekends.addEventListener('click', () => {
+        ['saturday', 'sunday'].forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = true;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
+        [
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'friday',
+          'bank_holiday',
+        ].forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = false;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
       });
-      ['saturday', 'sunday', 'bank_holiday'].forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = false;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
-      });
-    });
-  }
+    }
 
-  if (btnSelectWeekends) {
-    btnSelectWeekends.addEventListener('click', () => {
-      ['saturday', 'sunday'].forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = true;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
+    if (btnClearAll) {
+      btnClearAll.addEventListener('click', () => {
+        dayKeys.forEach((k) => {
+          if (dayCheckboxes[k]) {
+            dayCheckboxes[k].checked = false;
+            updateDayPillStyle(dayCheckboxes[k]);
+          }
+        });
       });
-      [
-        'monday',
-        'tuesday',
-        'wednesday',
-        'thursday',
-        'friday',
-        'bank_holiday',
-      ].forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = false;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
-      });
-    });
-  }
-
-  if (btnClearAll) {
-    btnClearAll.addEventListener('click', () => {
-      dayKeys.forEach((k) => {
-        if (dayCheckboxes[k]) {
-          dayCheckboxes[k].checked = false;
-          updateDayPillStyle(dayCheckboxes[k]);
-        }
-      });
-    });
+    }
   }
 
   // Format active days summary HTML badges
@@ -443,37 +459,48 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(startDateHtml),
         gridjs.html(endDateHtml),
         gridjs.html(renderDaysHtml(item)),
-        gridjs.html(`
-          <div class="flex items-center gap-1.5 justify-end">
-            <button 
-              type="button" 
-              class="edit-matrix-btn open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
-              data-index="${index}" 
-              title="Edit timetable grid and timings"
-              aria-label="Edit timetable grid and timings"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">grid_on</span>
-            </button>
-            <button 
-              type="button" 
-              class="edit-timetable-btn edit-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer" 
-              data-index="${index}" 
-              title="Edit timetable metadata"
-              aria-label="Edit timetable metadata"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-            </button>
-            <button 
-              type="button" 
-              class="delete-timetable-btn remove-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
-              data-index="${index}" 
-              title="Delete timetable"
-              aria-label="Delete timetable"
-            >
-              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-            </button>
-          </div>
-        `),
+        gridjs.html(
+          window.TransitUI && window.TransitUI.renderActionButtons
+            ? window.TransitUI.renderActionButtons({
+                index,
+                showGrid: true,
+                gridClass: 'edit-matrix-btn open-editor-btn',
+                editClass: 'edit-timetable-btn edit-row-btn',
+                deleteClass: 'delete-timetable-btn remove-row-btn',
+                gridTitle: 'Edit timetable grid and timings',
+                editTitle: 'Edit timetable metadata',
+                deleteTitle: 'Delete timetable',
+              })
+            : `<div class="flex items-center gap-1.5 justify-end">
+                <button 
+                  type="button" 
+                  class="edit-matrix-btn open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
+                  data-index="${index}" 
+                  title="Edit timetable grid and timings"
+                  aria-label="Edit timetable grid and timings"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">grid_on</span>
+                </button>
+                <button 
+                  type="button" 
+                  class="edit-timetable-btn edit-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer" 
+                  data-index="${index}" 
+                  title="Edit timetable metadata"
+                  aria-label="Edit timetable metadata"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
+                </button>
+                <button 
+                  type="button" 
+                  class="delete-timetable-btn remove-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
+                  data-index="${index}" 
+                  title="Delete timetable"
+                  aria-label="Delete timetable"
+                >
+                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
+                </button>
+              </div>`
+        ),
       ];
     });
   }

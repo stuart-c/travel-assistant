@@ -32,74 +32,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let stagedTables = extractSyncableTables(currentStats);
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
 
-  function parseDate(isoString) {
-    if (!isoString) return null;
+  const formatRelativeTime = (window.TransitUI && window.TransitUI.formatRelativeTime) || function (isoString) {
+    if (!isoString) return 'Never updated';
     const str = String(isoString).trim();
-    if (!str) return null;
     const hasTimezone = str.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(str);
     const normalized = hasTimezone ? str : `${str}Z`;
-    const d = new Date(normalized);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  function formatRelativeTime(isoString) {
-    const date = parseDate(isoString);
-    if (!date) return 'Never updated';
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return 'Never updated';
 
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffSec = Math.floor(diffMs / 1000);
 
-    if (diffSec < 0 || diffSec < 45) {
-      return 'Just now';
-    }
-    if (diffSec < 90) {
-      return '1 minute ago';
-    }
+    if (diffSec < 0 || diffSec < 45) return 'Just now';
+    if (diffSec < 90) return '1 minute ago';
     const diffMins = Math.round(diffSec / 60);
-    if (diffMins < 45) {
-      return `${diffMins} minutes ago`;
-    }
-    if (diffSec < 90 * 60) {
-      return '1 hour ago';
-    }
+    if (diffMins < 45) return `${diffMins} minutes ago`;
+    if (diffSec < 90 * 60) return '1 hour ago';
     const diffHours = Math.round(diffSec / 3600);
-    if (diffHours < 22) {
-      return `${diffHours} hours ago`;
-    }
-    if (diffSec < 36 * 3600) {
-      return 'Yesterday';
-    }
+    if (diffHours < 22) return `${diffHours} hours ago`;
+    if (diffSec < 36 * 3600) return 'Yesterday';
     const diffDays = Math.round(diffSec / 86400);
-    if (diffDays < 25) {
-      return `${diffDays} days ago`;
-    }
-    if (diffDays < 45) {
-      return '1 month ago';
-    }
+    if (diffDays < 25) return `${diffDays} days ago`;
+    if (diffDays < 45) return '1 month ago';
     const diffMonths = Math.round(diffDays / 30);
-    if (diffDays < 345) {
-      return `${diffMonths} months ago`;
-    }
-    if (diffDays < 545) {
-      return '1 year ago';
-    }
+    if (diffDays < 345) return `${diffMonths} months ago`;
+    if (diffDays < 545) return '1 year ago';
     const diffYears = Math.round(diffDays / 365);
     return `${diffYears} years ago`;
-  }
+  };
 
-  function formatExactTime(isoString) {
-    const date = parseDate(isoString);
-    if (!date) return '';
+  const formatExactTime = (window.TransitUI && window.TransitUI.formatExactTime) || function (isoString) {
+    if (!isoString) return '';
+    const str = String(isoString).trim();
+    const hasTimezone = str.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(str);
+    const normalized = hasTimezone ? str : `${str}Z`;
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '';
 
     return new Intl.DateTimeFormat('en-GB', {
       day: 'numeric',
@@ -110,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
       second: '2-digit',
       hour12: false,
     }).format(date);
-  }
+  };
 
   function getDatasetIcon(name) {
     switch (name) {

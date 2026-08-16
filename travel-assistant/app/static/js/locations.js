@@ -50,14 +50,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_LNG = -0.1278;
   const DEFAULT_ZOOM = 13;
 
-  function escapeHtml(str) {
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (str === null || str === undefined) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
+  };
 
   function formatCoord(val) {
     const num = parseFloat(val);
@@ -149,7 +149,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const sourceIconClass = isHa ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500';
       const sourceTitle = isHa ? 'Home Assistant location (Read-only)' : 'Custom location';
 
-      const actionButtons = isHa
+      const actionButtons = window.TransitUI && window.TransitUI.renderActionButtons
+        ? window.TransitUI.renderActionButtons({
+            index,
+            isReadOnly: isHa,
+            editClass: 'edit-location-btn',
+            deleteClass: 'delete-location-btn',
+            viewClass: 'view-location-btn',
+            editTitle: 'Edit location',
+            deleteTitle: 'Delete location',
+            viewTitle: 'View location details',
+          })
+        : isHa
         ? `<button 
              type="button" 
              class="view-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
