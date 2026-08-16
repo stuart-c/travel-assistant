@@ -29,33 +29,28 @@ def journeys() -> Any:
                 if not isinstance(entry, dict):
                     continue
 
+                VALID_LOCATION_TYPES = (
+                    "rail",
+                    "bus",
+                    "tram",
+                    "metro",
+                    "ferry",
+                    "air",
+                    "ha",
+                    "custom",
+                )
+
                 name = str(entry.get("name", "")).strip()
-                from_type = str(entry.get("from_type", "station")).strip().lower()
-                if from_type in ("rail", "train", "station"):
-                    from_type = "station"
-                elif from_type in ("bus", "bus_stop", "stop"):
-                    from_type = "bus_stop"
-                elif from_type in ("ha", "ha_location", "home_assistant"):
-                    from_type = "ha_location"
-                elif from_type in ("custom", "custom_location"):
-                    from_type = "custom_location"
-                else:
-                    from_type = "station"
+                from_type = str(entry.get("from_type", "rail")).strip().lower()
+                if from_type not in VALID_LOCATION_TYPES:
+                    from_type = "rail"
 
                 from_id = str(entry.get("from_id", "")).strip()
                 from_name = str(entry.get("from_name", "")).strip()
 
-                to_type = str(entry.get("to_type", "station")).strip().lower()
-                if to_type in ("rail", "train", "station"):
-                    to_type = "station"
-                elif to_type in ("bus", "bus_stop", "stop"):
-                    to_type = "bus_stop"
-                elif to_type in ("ha", "ha_location", "home_assistant"):
-                    to_type = "ha_location"
-                elif to_type in ("custom", "custom_location"):
-                    to_type = "custom_location"
-                else:
-                    to_type = "station"
+                to_type = str(entry.get("to_type", "rail")).strip().lower()
+                if to_type not in VALID_LOCATION_TYPES:
+                    to_type = "rail"
 
                 to_id = str(entry.get("to_id", "")).strip()
                 to_name = str(entry.get("to_name", "")).strip()

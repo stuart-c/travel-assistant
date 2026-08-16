@@ -8,37 +8,37 @@ from app.views.config import config_bp
 
 STOP_TYPE_CONFIG: Dict[str, Dict[str, str]] = {
     "rail": {
-        "type": "station",
+        "type": "rail",
         "icon": "train",
         "indicator": "Rail",
         "label": "National Rail Station",
     },
     "bus": {
-        "type": "bus_stop",
+        "type": "bus",
         "icon": "directions_bus",
         "indicator": "Bus Stop",
         "label": "Bus Stop",
     },
     "tram": {
-        "type": "tram_stop",
+        "type": "tram",
         "icon": "tram",
         "indicator": "Tram",
         "label": "Tram Stop",
     },
     "metro": {
-        "type": "metro_station",
+        "type": "metro",
         "icon": "subway",
         "indicator": "Metro",
         "label": "Metro Station",
     },
     "ferry": {
-        "type": "ferry_terminal",
+        "type": "ferry",
         "icon": "directions_boat",
         "indicator": "Ferry",
         "label": "Ferry Terminal",
     },
     "air": {
-        "type": "airport",
+        "type": "air",
         "icon": "flight",
         "indicator": "Air",
         "label": "Airport Terminal",
@@ -61,26 +61,15 @@ def search_places() -> Any:
     seen_ids = set()
 
     # Determine which transit stop types to search
-    types_to_search: List[str] = []
-    if not target_type or target_type in ("all", "stop"):
-        types_to_search = ["rail", "bus", "tram", "metro", "ferry", "air"]
-    elif target_type in ("station", "train", "rail"):
-        types_to_search = ["rail"]
-    elif target_type in ("bus_stop", "bus"):
-        types_to_search = ["bus"]
+    if not target_type or target_type == "all":
+        types_to_search = list(STOP_TYPE_CONFIG.keys())
     elif target_type in STOP_TYPE_CONFIG:
         types_to_search = [target_type]
+    else:
+        types_to_search = []
 
     for st_type in types_to_search:
-        meta = STOP_TYPE_CONFIG.get(
-            st_type,
-            {
-                "type": "stop",
-                "icon": "place",
-                "indicator": st_type.title(),
-                "label": f"{st_type.title()} Stop",
-            },
-        )
+        meta = STOP_TYPE_CONFIG[st_type]
         try:
             if query:
                 st_list = Stop.search(query, stop_type=st_type, limit=limit)
@@ -122,23 +111,11 @@ def search_places() -> Any:
 
     # Query Custom & Home Assistant Locations
     # Included by default, or when searching any transit mode, or when specifically requested
-    include_locations = not target_type or target_type in (
-        "location",
-        "ha_location",
-        "custom_location",
-        "ha",
-        "custom",
-        "all",
-        "stop",
-        "bus",
-        "bus_stop",
-        "rail",
-        "train",
-        "station",
-        "tram",
-        "metro",
-        "ferry",
-        "air",
+    include_locations = (
+        not target_type
+        or target_type == "all"
+        or target_type in ("ha", "custom")
+        or target_type in STOP_TYPE_CONFIG
     )
 
     if include_locations:
@@ -150,10 +127,10 @@ def search_places() -> Any:
             )
             for loc in loc_list:
                 is_ha = bool(getattr(loc, "ha", False))
-                loc_type = "ha_location" if is_ha else "custom_location"
-                if target_type in ("ha", "ha_location") and not is_ha:
+                loc_type = "ha" if is_ha else "custom"
+                if target_type == "ha" and not is_ha:
                     continue
-                if target_type in ("custom", "custom_location") and is_ha:
+                if target_type == "custom" and is_ha:
                     continue
 
                 item_id = str(loc.id)

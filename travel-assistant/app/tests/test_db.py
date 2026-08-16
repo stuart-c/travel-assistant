@@ -419,10 +419,10 @@ def test_transfer_models(app: Flask) -> None:
     """Test LocationTransfer and PlatformTransfer models and lookup."""
     with app.app_context():
         loc_t = LocationTransfer.create(
-            from_type="station",
+            from_type="rail",
             from_id="OXF",
             from_name="Oxford Rail Station",
-            to_type="bus_stop",
+            to_type="bus",
             to_id="340000001",
             to_name="Frideswide Square",
             transfer_time_minutes=3,
@@ -432,7 +432,7 @@ def test_transfer_models(app: Flask) -> None:
         )
 
         plat_t = PlatformTransfer.create(
-            location_type="station",
+            location_type="rail",
             location_id="OXF",
             location_name="Oxford Rail Station",
             from_platform="1",
@@ -449,11 +449,11 @@ def test_transfer_models(app: Flask) -> None:
         assert loc_search[0].transfer_time_minutes == 3
 
         # LocationTransfer find_transfer direct and reverse
-        t1 = LocationTransfer.find_transfer("station", "OXF", "bus_stop", "340000001")
+        t1 = LocationTransfer.find_transfer("rail", "OXF", "bus", "340000001")
         assert t1 is not None
         assert t1.id == loc_t.id
 
-        t2 = LocationTransfer.find_transfer("bus_stop", "340000001", "station", "OXF")
+        t2 = LocationTransfer.find_transfer("bus", "340000001", "rail", "OXF")
         assert t2 is not None
         assert t2.id == loc_t.id
 

@@ -103,7 +103,7 @@ class PlatformTransfer(BaseModel):
     """Intra-station platform transfer configuration."""
 
     id = AutoField()
-    location_type = CharField(default="station")
+    location_type = CharField(default="rail")
     location_id = CharField()
     location_name = CharField()
     from_platform = CharField()

@@ -196,8 +196,8 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
             "bank_holiday": False,
             "content": {
                 "stops": [
-                    {"id": "atco:340000001", "name": "Stop 1", "type": "bus_stop"},
-                    {"id": "atco:340000002", "name": "Stop 2", "type": "bus_stop"},
+                    {"id": "atco:340000001", "name": "Stop 1", "type": "bus"},
+                    {"id": "atco:340000002", "name": "Stop 2", "type": "bus"},
                 ],
                 "trips": [
                     {"id": "trip_1", "times": ["08:00", "08:20"]},
@@ -221,7 +221,11 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
             "content": json.dumps(
                 {
                     "stops": [
-                        {"id": "naptan:PAD", "name": "Paddington", "type": "station"}
+                        {
+                            "id": "naptan:PAD",
+                            "name": "Paddington",
+                            "type": "rail",
+                        }
                     ],
                     "trips": [{"id": "trip_3", "times": ["10:00"]}],
                 }
@@ -429,28 +433,28 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
         ]
     ).execute()
 
-    # 3. Test station search (with naptan prefix vs atco prefix)
-    res_st = client.get("/config/search/places?type=station&q=Oxford")
+    # 3. Test rail search (with naptan prefix vs atco prefix)
+    res_st = client.get("/config/search/places?type=rail&q=Oxford")
     assert res_st.status_code == 200
     data_st = res_st.get_json()
     assert len(data_st["results"]) == 1
     assert data_st["results"][0]["id"] == "naptan:OXF"
-    assert data_st["results"][0]["type"] == "station"
+    assert data_st["results"][0]["type"] == "rail"
     assert data_st["results"][0]["icon"] == "train"
 
-    res_pad = client.get("/config/search/places?type=train&q=Paddington")
+    res_pad = client.get("/config/search/places?type=rail&q=Paddington")
     assert res_pad.status_code == 200
     data_pad = res_pad.get_json()
     assert len(data_pad["results"]) == 1
     assert data_pad["results"][0]["id"] == "atco:9100PAD"
 
     # 4. Test bus stop search
-    res_bus = client.get("/config/search/places?type=bus_stop&q=High Street")
+    res_bus = client.get("/config/search/places?type=bus&q=High Street")
     assert res_bus.status_code == 200
     data_bus = res_bus.get_json()
     assert len(data_bus["results"]) == 1
     assert data_bus["results"][0]["id"] == "atco:340000001"
-    assert data_bus["results"][0]["type"] == "bus_stop"
+    assert data_bus["results"][0]["type"] == "bus"
     assert data_bus["results"][0]["icon"] == "directions_bus"
 
     res_bus_naptan = client.get("/config/search/places?type=bus&q=Blackbird")
@@ -460,12 +464,12 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     assert data_bus_naptan["results"][0]["id"] == "naptan:oxf002"
 
     # 5. Test HA and custom location search
-    res_ha = client.get("/config/search/places?type=ha_location&q=Home")
+    res_ha = client.get("/config/search/places?type=ha&q=Home")
     assert res_ha.status_code == 200
     data_ha = res_ha.get_json()
     assert len(data_ha["results"]) == 1
     assert data_ha["results"][0]["id"] == "ha:home"
-    assert data_ha["results"][0]["type"] == "ha_location"
+    assert data_ha["results"][0]["type"] == "ha"
     assert data_ha["results"][0]["icon"] == "home"
 
     res_custom = client.get("/config/search/places?type=custom&q=Office")
@@ -473,7 +477,7 @@ def test_search_places_endpoint(client: FlaskClient) -> None:
     data_custom = res_custom.get_json()
     assert len(data_custom["results"]) == 1
     assert data_custom["results"][0]["id"] == "custom:office"
-    assert data_custom["results"][0]["type"] == "custom_location"
+    assert data_custom["results"][0]["type"] == "custom"
     assert data_custom["results"][0]["icon"] == "pin_drop"
 
     # 6. Test tram, metro, ferry, air stops

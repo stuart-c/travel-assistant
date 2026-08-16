@@ -86,11 +86,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getLocationBadge(type) {
     const t = String(type || '').toLowerCase();
-    if (t === 'station' || t === 'train' || t === 'rail') {
+    if (t === 'rail') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
-    } else if (t === 'bus_stop' || t === 'bus') {
+    } else if (t === 'bus') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
-    } else if (t === 'ha_location' || t === 'ha' || t === 'home_assistant') {
+    } else if (t === 'tram') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">tram</span> Tram</span>`;
+    } else if (t === 'metro') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">subway</span> Metro</span>`;
+    } else if (t === 'ferry') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 dark:ring-1 dark:ring-cyan-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_boat</span> Ferry</span>`;
+    } else if (t === 'air') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 dark:ring-1 dark:ring-purple-500/30"><span class="material-symbols-outlined text-xs leading-none">flight</span> Air</span>`;
+    } else if (t === 'ha') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> Home Assistant</span>`;
     }
     return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
@@ -98,9 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getLocationIcon(type) {
     const t = String(type || '').toLowerCase();
-    if (t === 'station' || t === 'train' || t === 'rail') return 'train';
-    if (t === 'bus_stop' || t === 'bus') return 'directions_bus';
-    if (t === 'ha_location' || t === 'ha' || t === 'home_assistant') return 'home';
+    if (t === 'rail') return 'train';
+    if (t === 'bus') return 'directions_bus';
+    if (t === 'tram') return 'tram';
+    if (t === 'metro') return 'subway';
+    if (t === 'ferry') return 'directions_boat';
+    if (t === 'air') return 'flight';
+    if (t === 'ha') return 'home';
     return 'pin_drop';
   }
 
