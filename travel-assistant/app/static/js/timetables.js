@@ -263,21 +263,21 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="flex items-center gap-1.5">
             <button 
               type="button" 
-              class="edit-row-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-sky-600 hover:text-white hover:bg-sky-600 dark:text-sky-400 dark:hover:bg-sky-700/80 transition-colors cursor-pointer"
+              class="edit-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
               data-index="${index}"
               title="Edit timetable"
+              aria-label="Edit timetable"
             >
-              <span class="material-symbols-outlined text-xs leading-none">edit</span>
-              Edit
+              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
             </button>
             <button 
               type="button" 
-              class="remove-row-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+              class="remove-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
               data-index="${index}"
-              title="Remove timetable"
+              title="Delete timetable"
+              aria-label="Delete timetable"
             >
-              <span class="material-symbols-outlined text-xs leading-none">delete</span>
-              Remove
+              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
             </button>
           </div>
         `),
@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { name: 'Start Date', width: '130px' },
       { name: 'End Date', width: '130px' },
       { name: 'Applicable Days', width: '220px', sort: false },
-      { name: 'Actions', width: '170px', sort: false },
+      { name: 'Actions', width: '80px', sort: false },
     ],
     data: formatGridData(stagedTimetables),
     search: {

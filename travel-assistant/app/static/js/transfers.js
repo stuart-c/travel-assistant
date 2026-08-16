@@ -157,22 +157,24 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
         gridjs.html(`
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1.5">
             <button 
               type="button" 
-              class="edit-loc-row-btn inline-flex items-center p-1.5 text-xs font-semibold rounded-lg text-sky-600 hover:text-white hover:bg-sky-600 dark:text-sky-400 dark:hover:bg-sky-700/80 transition-colors cursor-pointer"
+              class="edit-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
               data-index="${index}"
               title="Edit transfer"
+              aria-label="Edit transfer"
             >
-              <span class="material-symbols-outlined text-sm leading-none">edit</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
             </button>
             <button 
               type="button" 
-              class="remove-loc-row-btn inline-flex items-center p-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+              class="remove-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
               data-index="${index}"
-              title="Remove transfer"
+              title="Delete transfer"
+              aria-label="Delete transfer"
             >
-              <span class="material-symbols-outlined text-sm leading-none">delete</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
             </button>
           </div>
         `)
@@ -218,22 +220,24 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(stepFreeHtml),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
         gridjs.html(`
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1.5">
             <button 
               type="button" 
-              class="edit-plat-row-btn inline-flex items-center p-1.5 text-xs font-semibold rounded-lg text-indigo-600 hover:text-white hover:bg-indigo-600 dark:text-indigo-400 dark:hover:bg-indigo-700/80 transition-colors cursor-pointer"
+              class="edit-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
               data-index="${index}"
-              title="Edit transfer"
+              title="Edit platform transfer"
+              aria-label="Edit platform transfer"
             >
-              <span class="material-symbols-outlined text-sm leading-none">edit</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
             </button>
             <button 
               type="button" 
-              class="remove-plat-row-btn inline-flex items-center p-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+              class="remove-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
               data-index="${index}"
-              title="Remove transfer"
+              title="Delete platform transfer"
+              aria-label="Delete platform transfer"
             >
-              <span class="material-symbols-outlined text-sm leading-none">delete</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
             </button>
           </div>
         `)
@@ -250,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { name: 'Direction', width: '130px' },
       { name: 'Step-Free', width: '100px' },
       { name: 'Notes', width: 'auto' },
-      { name: 'Actions', width: '90px', sort: false }
+      { name: 'Actions', width: '80px', sort: false }
     ],
     data: formatLocationGridData(stagedLocationTransfers),
     search: { placeholder: 'Search inter-location transfers...' },
@@ -262,8 +266,11 @@ document.addEventListener('DOMContentLoaded', () => {
         previous: 'Previous',
         next: 'Next',
         showing: 'Showing',
-        results: () => 'transfers'
-      }
+        of: 'of',
+        to: 'to',
+        results: 'transfers'
+      },
+      noRecordsFound: 'No matching transfers found'
     }
   }).render(locGridWrapper);
 
@@ -277,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { name: 'Direction', width: '130px' },
       { name: 'Step-Free', width: '100px' },
       { name: 'Notes', width: 'auto' },
-      { name: 'Actions', width: '90px', sort: false }
+      { name: 'Actions', width: '80px', sort: false }
     ],
     data: formatPlatformGridData(stagedPlatformTransfers),
     search: { placeholder: 'Search platform transfers...' },

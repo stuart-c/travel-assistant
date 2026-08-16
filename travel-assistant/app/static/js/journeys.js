@@ -196,24 +196,24 @@ document.addEventListener('DOMContentLoaded', () => {
         `),
         gridjs.html(scheduleHtml),
         gridjs.html(`
-          <div class="flex items-center justify-end gap-1.5">
+          <div class="flex items-center gap-1.5">
             <button 
               type="button" 
-              class="edit-journey-btn inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 hover:text-sky-600 hover:bg-sky-50 dark:text-slate-400 dark:hover:text-sky-300 dark:hover:bg-sky-950/50 transition-colors cursor-pointer" 
+              class="edit-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
               data-index="${index}" 
-              title="Edit Journey"
-              aria-label="Edit Journey"
+              title="Edit journey"
+              aria-label="Edit journey"
             >
-              <span class="material-symbols-outlined text-lg">edit</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
             </button>
             <button 
               type="button" 
-              class="delete-journey-btn inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-400 dark:hover:bg-rose-950/50 transition-colors cursor-pointer" 
+              class="delete-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
               data-index="${index}" 
-              title="Delete Journey"
-              aria-label="Delete Journey"
+              title="Delete journey"
+              aria-label="Delete journey"
             >
-              <span class="material-symbols-outlined text-lg">delete</span>
+              <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
             </button>
           </div>
         `),
@@ -240,11 +240,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!gridInstance) {
       gridInstance = new gridjs.Grid({
         columns: [
-          { name: 'Journey', width: '25%' },
-          { name: 'Start Location', width: '22%' },
-          { name: 'End Location', width: '22%' },
-          { name: 'Schedule', width: '21%' },
-          { name: 'Actions', width: '10%', sort: false },
+          { name: 'Journey', width: '26%' },
+          { name: 'Start Location', width: '23%' },
+          { name: 'End Location', width: '23%' },
+          { name: 'Schedule', width: '20%' },
+          { name: 'Actions', width: '80px', sort: false },
         ],
         data: gridData,
         search: {

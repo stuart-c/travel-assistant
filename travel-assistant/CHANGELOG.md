@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).
+- Updated API credentials check buttons on `/config/credentials` into compact 28x28px icon-only check buttons matching the unified action icon design.
+- Tightened Actions column widths across data tables to eliminate redundant whitespace.
+
 ### Fixed
 - Eliminated all synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`, and `DS-{id}` routes).
 - Connected bus stops and railway station synchronisation to public UK NaPTAN open dataset feeds for genuine, complete access node and rail station indexing.
@@ -55,8 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, transfers management, and configuration views with 100% code coverage.
 
 ### Changed
-- Refined Background Sync page (`/config/sync`) to remove the global "Refresh All Datasets" button and backend sync-all endpoint in favour of individual dataset refresh triggers.
-- Formatted dataset timestamps on `/config/sync` into human-friendly relative strings ("x time ago") with British English exact datetime tooltips on hover and 30-second interval updates.
 - Updated `Timetable` database model and schema table `timetables` to support timetable name, optional start and end date validity ranges, and individual day operating flags (`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`, `bank_holiday`).
 - Redesigned Timetables configuration page (`/config/timetables`) and modal dialog with day selection toggles, quick-select helper buttons (*All*, *Weekdays*, *Weekends*, *Clear*), date range pickers with validation, and support for adding and editing timetable entries.
 - Standardised page container width across the entire application to `max-w-5xl`, eliminating layout shifting between the Overview dashboard and Configuration pages.
