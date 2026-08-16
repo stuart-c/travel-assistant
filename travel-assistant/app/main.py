@@ -4,12 +4,16 @@ Provides the Home Assistant Add-on web interface and API endpoints.
 """
 
 import os
+import uuid
 from typing import Any, Dict
 from flask import Flask, render_template, jsonify, request
 
 from app import db
 from app.sync import start_background_worker, sync_all, sync_table
 from app.views.config import config_bp
+
+# Random cache-busting token generated once per application startup
+STARTUP_CACHE_BUST = uuid.uuid4().hex[:8]
 
 
 class IngressMiddleware:
@@ -61,12 +65,13 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
 
     @app.context_processor
     def inject_ingress_path() -> Dict[str, str]:
-        """Inject ingress base path into templates."""
+        """Inject ingress base path and cache busting token into templates."""
         ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
         return {
             "ingress_path": ingress_path,
             "app_version": app.config.get("VERSION", "0.1.0"),
             "app_name": app.config.get("APP_NAME", "Travel Assistant"),
+            "cache_bust": STARTUP_CACHE_BUST,
         }
 
     @app.route("/")

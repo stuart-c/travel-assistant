@@ -173,7 +173,7 @@ def test_get_timetables_page_initial_empty(client: FlaskClient) -> None:
     """Test GET /config/timetables renders empty list."""
     response = client.get("/config/timetables")
     assert response.status_code == 200
-    assert b"Timetables" in response.data
+    assert b"Active Timetables" in response.data
     assert b"No timetables configured" in response.data
     assert b"Add Timetable" in response.data
 

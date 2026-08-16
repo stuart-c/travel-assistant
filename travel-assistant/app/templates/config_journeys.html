@@ -11,7 +11,7 @@
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css?v={{ cache_bust }}">
 
 <div class="space-y-6">
   <!-- Page Header & Action Bar -->
@@ -67,15 +67,7 @@
 </form>
 
 <!-- Add / Edit Journey Modal Dialogue -->
-<dialog id="journey-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl w-[80vw] max-w-5xl min-w-[320px] mx-auto">
-  <!-- 15-Minute Increments Datalist for easy time picking -->
-  <datalist id="time-intervals-datalist">
-    {% for hour in range(24) %}
-      {% for minute in [0, 15, 30, 45] %}
-        <option value="{{ '%02d:%02d' | format(hour, minute) }}"></option>
-      {% endfor %}
-    {% endfor %}
-  </datalist>
+<dialog id="journey-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-2xl w-full mx-auto">
   <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5 max-h-[90vh] overflow-y-auto">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
       <div class="flex items-center gap-2.5">
@@ -257,5 +249,5 @@
 
 <!-- Dependencies: Grid.js and Journeys Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
-<script src="{{ ingress_path }}/static/js/journeys.js"></script>
+<script src="{{ ingress_path }}/static/js/journeys.js?v={{ cache_bust }}"></script>
 {% endblock %}

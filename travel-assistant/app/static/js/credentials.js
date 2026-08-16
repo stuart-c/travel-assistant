@@ -1,7 +1,7 @@
 /**
  * API Credentials View Controller.
- * Manages combined Valid/Check button states, auto-collapsing valid sections,
- * and live credential validation probes.
+ * Manages collapsible service sections, live validation requests,
+ * green 'Valid' status indicators, and on-change revealed 'Check' buttons.
  */
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('credentials-form');
@@ -13,8 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const serviceSections = {
     bus: {
-      sectionId: 'section-bus',
-      btnId: 'check-btn-bus',
+      badgeId: 'status-badge-bus',
       fields: ['bus_api_key'],
       hasValue: () => {
         const val = document.getElementById('bus_api_key')?.value.trim();
@@ -22,8 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     train_s3: {
-      sectionId: 'section-train_s3',
-      btnId: 'check-btn-train_s3',
+      badgeId: 'status-badge-train_s3',
       fields: [
         'train_s3_bucket',
         'train_s3_region',
@@ -37,8 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     train_live: {
-      sectionId: 'section-train_live',
-      btnId: 'check-btn-train_live',
+      badgeId: 'status-badge-train_live',
       fields: ['train_live_api_key', 'train_live_endpoint'],
       hasValue: () => {
         const key = document.getElementById('train_live_api_key')?.value.trim();
@@ -46,17 +43,15 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     },
     open_api: {
-      sectionId: 'section-open_api',
-      btnId: 'check-btn-open_api',
-      fields: ['open_api_key', 'open_api_base_url', 'open_api_model'],
+      badgeId: 'status-badge-open_api',
+      fields: ['open_api_key', 'open_api_base_url'],
       hasValue: () => {
         const key = document.getElementById('open_api_key')?.value.trim();
         return Boolean(key);
       },
     },
     google_maps: {
-      sectionId: 'section-google_maps',
-      btnId: 'check-btn-google_maps',
+      badgeId: 'status-badge-google_maps',
       fields: ['google_maps_api_key', 'google_maps_region'],
       hasValue: () => {
         const key = document.getElementById('google_maps_api_key')?.value.trim();
@@ -65,84 +60,61 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
-  // Section toggle handlers
-  document.querySelectorAll('.section-toggle').forEach((header) => {
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('button, input, select, a')) return;
-      const targetId = header.getAttribute('data-target');
-      const section = targetId
-        ? document.getElementById(targetId)
-        : header.closest('.collapsible-section');
-      if (section) {
-        section.classList.toggle('collapsed');
+  function toggleSection(serviceKey, forceState) {
+    const content = document.getElementById(`collapsible-content-${serviceKey}`);
+    const btn = document.querySelector(`.collapse-toggle-btn[data-service="${serviceKey}"]`);
+    const icon = btn ? btn.querySelector('.collapse-icon') : null;
+    if (!content) return;
+
+    const isCurrentlyHidden = content.classList.contains('hidden');
+    const shouldExpand = forceState !== undefined ? forceState : isCurrentlyHidden;
+
+    if (shouldExpand) {
+      content.classList.remove('hidden');
+      if (icon) icon.textContent = 'keyboard_arrow_down';
+    } else {
+      content.classList.add('hidden');
+      if (icon) icon.textContent = 'chevron_right';
+    }
+  }
+
+  // Bind collapse toggle buttons
+  document.querySelectorAll('.collapse-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const serviceKey = btn.getAttribute('data-service');
+      if (serviceKey) {
+        toggleSection(serviceKey);
       }
     });
   });
 
-  function setCombinedButtonState(serviceKey, state, message = '') {
-    const config = serviceSections[serviceKey];
-    if (!config) return;
-    const btn = document.getElementById(config.btnId);
-    if (!btn) return;
+  function onSectionModified(serviceKey) {
+    const badge = document.getElementById(serviceSections[serviceKey]?.badgeId);
+    const checkBtn = document.querySelector(`.check-btn[data-service="${serviceKey}"]`);
 
-    if (state === 'valid') {
-      btn.disabled = false;
-      btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30 transition-all cursor-pointer';
-      btn.innerHTML =
-        '<span class="material-symbols-outlined text-[17px] leading-none text-emerald-600 dark:text-emerald-400">check_circle</span> <span>Valid</span>';
-      btn.title = message || 'Credentials are valid. Click to re-check.';
-    } else if (state === 'check') {
-      btn.disabled = false;
-      btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-all cursor-pointer';
-      btn.innerHTML =
-        '<span class="material-symbols-outlined text-[17px] leading-none">refresh</span> <span>Check</span>';
-      btn.title = 'Click to validate updated credentials';
-    } else if (state === 'validating') {
-      btn.disabled = true;
-      btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 animate-pulse cursor-wait';
-      btn.innerHTML =
-        '<span class="material-symbols-outlined text-[17px] leading-none animate-spin">sync</span> <span>Validating...</span>';
-      btn.title = 'Validating credentials...';
-    } else if (state === 'invalid') {
-      btn.disabled = false;
-      btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 transition-all cursor-pointer';
-      btn.innerHTML =
-        '<span class="material-symbols-outlined text-[17px] leading-none text-rose-600 dark:text-rose-400">error</span> <span>Invalid</span>';
-      btn.title = message || 'Validation failed. Click to re-check.';
-    } else {
-      // Empty / default state
-      btn.disabled = true;
-      btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-all';
-      btn.innerHTML =
-        '<span class="material-symbols-outlined text-[17px] leading-none">check_circle</span> <span>Check</span>';
-      btn.title = 'Enter credentials to validate';
+    if (badge) {
+      badge.className = 'hidden';
+      badge.innerHTML = '';
+    }
+    if (checkBtn) {
+      checkBtn.classList.remove('hidden');
     }
   }
 
-  // Bind input change listeners: editing switches button to Check
+  // Bind input change listeners to swap Valid badge with Check button
   Object.entries(serviceSections).forEach(([serviceKey, config]) => {
     config.fields.forEach((fieldId) => {
       const el = document.getElementById(fieldId);
       if (el) {
-        const onEdit = () => {
-          if (config.hasValue()) {
-            setCombinedButtonState(serviceKey, 'check');
-          } else {
-            setCombinedButtonState(serviceKey, 'empty');
-          }
-        };
-        el.addEventListener('input', onEdit);
-        el.addEventListener('change', onEdit);
+        el.addEventListener('input', () => onSectionModified(serviceKey));
+        el.addEventListener('change', () => onSectionModified(serviceKey));
       }
     });
   });
 
-  // Track input modifications for dirty manager
+  // Track form dirty status
   if (window.ConfigDirtyManager) {
     form.addEventListener('input', () => {
       window.ConfigDirtyManager.markDirty();
@@ -151,21 +123,37 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       form.reset();
       Object.keys(serviceSections).forEach((serviceKey) => {
-        validateService(serviceKey, false);
+        validateService(serviceKey);
       });
+    });
+
+    form.addEventListener('submit', () => {
+      window.ConfigDirtyManager.markSubmitting();
     });
   }
 
-  async function validateService(serviceKey, isInitialLoad = false) {
+  async function validateService(serviceKey) {
     const config = serviceSections[serviceKey];
     if (!config) return;
+    const badge = document.getElementById(config.badgeId);
+    const checkBtn = document.querySelector(`.check-btn[data-service="${serviceKey}"]`);
+    if (!badge) return;
 
     if (!config.hasValue()) {
-      setCombinedButtonState(serviceKey, 'empty');
+      badge.className = 'hidden';
+      badge.innerHTML = '';
+      if (checkBtn) checkBtn.classList.add('hidden');
       return;
     }
 
-    setCombinedButtonState(serviceKey, 'validating');
+    // Show validating spinner state and hide Check button
+    if (checkBtn) checkBtn.classList.add('hidden');
+    badge.className =
+      'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30 animate-pulse';
+    badge.innerHTML = `
+      <span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping"></span>
+      Validating...
+    `;
 
     const payload = { service: serviceKey };
     config.fields.forEach((fieldId) => {
@@ -187,15 +175,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
 
       if (data.valid) {
-        setCombinedButtonState(serviceKey, 'valid', data.message || 'Valid');
+        badge.className =
+          'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30';
+        badge.title = data.message || 'Valid';
+        badge.innerHTML = `<span>✓</span> Valid`;
+        if (checkBtn) checkBtn.classList.add('hidden');
 
-        // On initial load, collapse sections that contain valid credentials
-        if (isInitialLoad) {
-          const section = document.getElementById(config.sectionId);
-          if (section) {
-            section.classList.add('collapsed');
-          }
-        }
+        // Collapse section by default when check is passing
+        toggleSection(serviceKey, false);
 
         if (
           serviceKey === 'open_api' &&
@@ -223,14 +210,24 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       } else {
-        setCombinedButtonState(
-          serviceKey,
-          'invalid',
-          data.message || 'Validation failed'
-        );
+        badge.className =
+          'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
+        badge.title = data.message || 'Validation failed';
+        badge.innerHTML = `<span>✗</span> <span class="truncate">${
+          data.message || 'Invalid'
+        }</span>`;
+        if (checkBtn) checkBtn.classList.remove('hidden');
+
+        // Expand section to show error
+        toggleSection(serviceKey, true);
       }
     } catch (err) {
-      setCombinedButtonState(serviceKey, 'invalid', err.message || 'Network error');
+      badge.className =
+        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30 max-w-xs truncate';
+      badge.title = err.message || 'Network error';
+      badge.innerHTML = `<span>✗</span> Network error`;
+      if (checkBtn) checkBtn.classList.remove('hidden');
+      toggleSection(serviceKey, true);
     }
   }
 
@@ -239,14 +236,14 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       const service = btn.getAttribute('data-service');
-      if (service && !btn.disabled) {
-        validateService(service, false);
+      if (service) {
+        validateService(service);
       }
     });
   });
 
   // Automatically trigger initial validation on page load for all populated sections
   Object.keys(serviceSections).forEach((serviceKey) => {
-    validateService(serviceKey, true);
+    validateService(serviceKey);
   });
 });
