@@ -13,6 +13,7 @@ All documentation, UI labels, and internal code comments (where standards allow)
 Before making changes, agents **MUST** read all documentation in the root and relevant subdirectories:
 - `README.md`
 - `AGENTS.md` (this file)
+- `TESTING.md`
 - `travel-assistant/DOCS.md`
 - `travel-assistant/CHANGELOG.md`
 
@@ -33,8 +34,15 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
 
 ### Mandatory Verification Scripts
 - **Setup Environment**: `bash scripts/make_venv.sh`
-- **Run Tests & Lints**: `bash scripts/run_tests.sh`
+- **Run Unit Tests & Lints**: `bash scripts/run_tests.sh`
+- **Run Automated UI Tests**: `bash scripts/run_ui_tests.sh`
 - **Full Verification**: `bash scripts/verify_all.sh`
+
+### Sample Database & Agent UI Testing
+- **Generate Sample Database**: `bash scripts/seed_sample_db.sh`
+- **Run Dev Server with Sample DB**: `bash scripts/run_dev.sh --sample-db`
+- **Start Browser Debugging**: `bash scripts/start_browser_debug.sh`
+- **Agent Browser Scenarios**: See [`docs/testing/`](docs/testing/) and [`TESTING.md`](TESTING.md).
 
 ### Quality Targets
 - **Code Coverage**: Aim for 100% unit test code coverage for new backend code.

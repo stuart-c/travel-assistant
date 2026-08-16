@@ -30,16 +30,24 @@ Home Assistant Add-on providing travel and transport intelligence powered by Pyt
    bash scripts/run_tests.sh
    ```
 
-3. **Start Development Server**:
+3. **Run Automated UI & Route Verification**:
    ```bash
-   bash scripts/run_dev.sh
+   bash scripts/run_ui_tests.sh
+   ```
+
+4. **Start Development Server (with Sample Database)**:
+   ```bash
+   # Run against realistic pre-seeded transit data
+   bash scripts/run_dev.sh --sample-db
    ```
    Access the web interface at `http://localhost:8099`.
 
-4. **Verify Everything Pre-Push**:
+5. **Verify Everything Pre-Push**:
    ```bash
    bash scripts/verify_all.sh
    ```
+
+For detailed testing guidelines, test runbooks, and Antigravity `/browser` instructions, see [TESTING.md](TESTING.md).
 
 ## Agent and Contribution Guidelines
 
