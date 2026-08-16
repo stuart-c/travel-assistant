@@ -100,3 +100,15 @@ def test_static_assets_served(client: FlaskClient) -> None:
         response = client.get(asset_path)
         assert response.status_code == 200, f"Failed to load static asset: {asset_path}"
         assert len(response.data) > 0
+
+
+def test_timetables_js_action_button_handlers(client: FlaskClient) -> None:
+    """Test that timetables.js contains matching action button classes and click delegation."""
+    response = client.get("/static/js/timetables.js")
+    assert response.status_code == 200
+    content = response.data.decode("utf-8")
+    assert "edit-matrix-btn" in content
+    assert "open-editor-btn" in content
+    assert "edit-timetable-btn" in content
+    assert "delete-timetable-btn" in content
+    assert "openEditor(idx)" in content

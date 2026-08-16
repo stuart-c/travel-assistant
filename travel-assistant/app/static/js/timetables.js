@@ -447,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="flex items-center gap-1.5 justify-end">
             <button 
               type="button" 
-              class="edit-matrix-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
+              class="edit-matrix-btn open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
               data-index="${index}" 
               title="Edit timetable grid and timings"
               aria-label="Edit timetable grid and timings"
@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </button>
             <button 
               type="button" 
-              class="edit-timetable-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer" 
+              class="edit-timetable-btn edit-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer" 
               data-index="${index}" 
               title="Edit timetable metadata"
               aria-label="Edit timetable metadata"
@@ -465,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </button>
             <button 
               type="button" 
-              class="delete-timetable-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
+              class="delete-timetable-btn remove-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
               data-index="${index}" 
               title="Delete timetable"
               aria-label="Delete timetable"
@@ -645,7 +645,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Delegate Grid.js row actions (Open Editor, Edit Metadata, Delete)
   document.addEventListener('click', (e) => {
-    const openEditorBtn = e.target.closest('.open-editor-btn');
+    const openEditorBtn = e.target.closest(
+      '.edit-matrix-btn, .open-editor-btn'
+    );
     if (openEditorBtn) {
       const idx = parseInt(openEditorBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx)) {
@@ -654,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const editBtn = e.target.closest('.edit-row-btn');
+    const editBtn = e.target.closest('.edit-timetable-btn, .edit-row-btn');
     if (editBtn) {
       const idx = parseInt(editBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx)) {
@@ -663,7 +665,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const removeBtn = e.target.closest('.remove-row-btn');
+    const removeBtn = e.target.closest(
+      '.delete-timetable-btn, .remove-row-btn'
+    );
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
