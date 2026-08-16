@@ -1,6 +1,5 @@
 """Unit tests for transit dataset synchronisation and background worker daemon."""
 
-import time
 from unittest.mock import MagicMock, patch
 import requests
 from flask import Flask
@@ -225,7 +224,7 @@ def test_background_worker_lifecycle(app: Flask) -> None:
     worker = TransitBackgroundWorker(
         app=app,
         check_interval_seconds=1,
-        initial_delay_seconds=0.01,
+        initial_delay_seconds=0.0,
         max_age_seconds=86400,
     )
     assert worker.is_running() is False
@@ -234,7 +233,6 @@ def test_background_worker_lifecycle(app: Flask) -> None:
     # Idempotent start
     worker.start()
 
-    time.sleep(0.05)
     worker.stop()
     assert worker.is_running() is False
 
@@ -253,7 +251,7 @@ def test_global_background_worker_helpers(app: Flask) -> None:
     worker = start_background_worker(
         non_test_app,
         check_interval_seconds=1,
-        initial_delay_seconds=0.01,
+        initial_delay_seconds=0.0,
     )
     assert worker is not None
     assert get_background_worker() is worker
@@ -285,13 +283,12 @@ def test_background_worker_handles_exception_in_loop(app: Flask) -> None:
     worker = TransitBackgroundWorker(
         app=app,
         check_interval_seconds=1,
-        initial_delay_seconds=0.01,
+        initial_delay_seconds=0.0,
     )
     with patch(
         "app.sync.worker.check_and_run_background_sync",
         side_effect=RuntimeError("Loop error"),
     ):
         worker.start()
-        time.sleep(0.05)
         worker.stop()
         assert worker.is_running() is False

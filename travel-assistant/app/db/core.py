@@ -57,18 +57,28 @@ def get_db_path(app: Optional[Flask] = None) -> str:
 
 
 def create_sqlite_database(db_path: str) -> SqliteDatabase:
-    """Create a configured SqliteDatabase instance with WAL pragmas."""
-    if db_path != ":memory:":
+    """Create a configured SqliteDatabase instance with WAL pragmas or URI options."""
+    is_uri = db_path.startswith("file:")
+    is_memory = db_path == ":memory:" or "mode=memory" in db_path
+
+    if not is_uri and not is_memory:
         parent_dir = os.path.dirname(db_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
-    return SqliteDatabase(
-        db_path,
-        pragmas=SQLITE_PRAGMAS,
-        thread_safe=True,
-        autoconnect=True,
-    )
+    pragmas = dict(SQLITE_PRAGMAS)
+    if is_memory:
+        pragmas.pop("journal_mode", None)
+
+    kwargs: Dict[str, Any] = {
+        "pragmas": pragmas,
+        "thread_safe": True,
+        "autoconnect": True,
+    }
+    if is_uri:
+        kwargs["uri"] = True
+
+    return SqliteDatabase(db_path, **kwargs)
 
 
 def run_migrations(database: SqliteDatabase) -> None:
@@ -243,8 +253,10 @@ def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
     db_path = get_db_path(app)
     sqlite_db = create_sqlite_database(db_path)
     db.initialize(sqlite_db)
+    sqlite_db.connect(reuse_if_open=True)
     run_migrations(sqlite_db)
-    if not sqlite_db.is_closed():
+    is_memory = db_path == ":memory:" or "mode=memory" in str(db_path)
+    if not is_memory and not sqlite_db.is_closed():
         sqlite_db.close()
     return sqlite_db
 
@@ -261,7 +273,13 @@ def init_app(app: Flask) -> None:
 
     @app.teardown_request
     def teardown_request(exc: Optional[BaseException] = None) -> None:
-        if db.obj is not None and not db.obj.is_closed():
+        if (
+            db.obj is not None
+            and not db.obj.is_closed()
+            and not (
+                db.obj.database == ":memory:" or "mode=memory" in str(db.obj.database)
+            )
+        ):
             db.obj.close()
 
 
@@ -294,6 +312,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
         # Calculate file size
         if (
             db_path != ":memory:"
+            and not db_path.startswith("file:")
             and os.path.exists(db_path)
             and os.path.isfile(db_path)
         ):

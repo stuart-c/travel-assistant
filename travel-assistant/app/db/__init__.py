@@ -15,18 +15,6 @@ from app.db.core import (
     init_db,
     run_migrations,
 )
-from app.models import (
-    ALL_MODELS,
-    BaseModel,
-    BusRoute,
-    Journey,
-    LocationTransfer,
-    PlatformTransfer,
-    Setting,
-    Stop,
-    SyncMetadata,
-    Timetable,
-)
 
 __all__ = [
     "db",
@@ -39,14 +27,4 @@ __all__ = [
     "create_sqlite_database",
     "run_migrations",
     "SYNCABLE_TABLES",
-    "ALL_MODELS",
-    "BaseModel",
-    "Setting",
-    "Timetable",
-    "Journey",
-    "BusRoute",
-    "Stop",
-    "SyncMetadata",
-    "LocationTransfer",
-    "PlatformTransfer",
 ]

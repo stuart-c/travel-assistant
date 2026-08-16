@@ -1,8 +1,7 @@
 """Pytest configuration and fixtures for Travel Assistant test suite."""
 
-import os
-import tempfile
 from typing import Generator
+import uuid
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
@@ -14,15 +13,9 @@ from app.models.setting import Setting
 
 @pytest.fixture
 def temp_db_path() -> Generator[str, None, None]:
-    """Create a temporary database file for test isolation."""
-    db_fd, db_path = tempfile.mkstemp(suffix=".sqlite3")
-    os.close(db_fd)
-    yield db_path
-    if os.path.exists(db_path):
-        try:
-            os.unlink(db_path)
-        except OSError:
-            pass
+    """Create a temporary in-memory database URI for fast test isolation."""
+    db_uri = f"file:mem_test_{uuid.uuid4().hex}?mode=memory&cache=shared"
+    yield db_uri
 
 
 @pytest.fixture

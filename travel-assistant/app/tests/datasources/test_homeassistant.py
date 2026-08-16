@@ -41,18 +41,19 @@ def test_ha_client_from_settings(app: Flask) -> None:
         assert client_obj.token == "obj-token"
 
 
-def test_ha_client_from_env() -> None:
+def test_ha_client_from_env(app: Flask) -> None:
     """Test HomeAssistantClient URL and token resolution from environment variables."""
-    with patch.dict(
-        os.environ,
-        {
-            "SUPERVISOR_TOKEN": "supervisor-token-789",
-            "SUPERVISOR_URL": "http://supervisor",
-        },
-    ):
-        client = HomeAssistantClient.from_settings()
-        assert client.token == "supervisor-token-789"
-        assert client.base_url == "http://supervisor/core/api"
+    with app.app_context():
+        with patch.dict(
+            os.environ,
+            {
+                "SUPERVISOR_TOKEN": "supervisor-token-789",
+                "SUPERVISOR_URL": "http://supervisor",
+            },
+        ):
+            client = HomeAssistantClient.from_settings()
+            assert client.token == "supervisor-token-789"
+            assert client.base_url == "http://supervisor/core/api"
 
 
 def test_ha_client_headers_missing_token() -> None:
