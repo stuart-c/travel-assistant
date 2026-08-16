@@ -606,5 +606,7 @@ def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert len(locs) == 1
         assert locs[0].name == "Central Office"
         assert locs[0].ha is False
+        assert locs[0].id.startswith("custom:")
+        assert len(locs[0].id) > 7
 
     test_db.close()

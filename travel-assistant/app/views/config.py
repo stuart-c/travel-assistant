@@ -353,12 +353,18 @@ def locations() -> Any:
                 if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
                     continue
 
+                item_id = str(entry.get("id") or "").strip()
+                is_ha = bool(entry.get("ha", False))
+                if not is_ha and (not item_id or not item_id.startswith("custom:")):
+                    item_id = Location.generate_custom_id()
+
                 cleaned_items.append(
                     {
+                        "id": item_id,
                         "name": name,
                         "latitude": round(lat, 6),
                         "longitude": round(lon, 6),
-                        "ha": bool(entry.get("ha", False)),
+                        "ha": is_ha,
                     }
                 )
 
@@ -366,6 +372,11 @@ def locations() -> Any:
                 # Preserve all existing Home Assistant synchronised records
                 existing_ha_records = [
                     {
+                        "id": (
+                            loc.id
+                            if str(loc.id).startswith("ha:")
+                            else f"ha:{loc.name.lower().replace(' ', '_')}"
+                        ),
                         "name": loc.name,
                         "latitude": loc.latitude,
                         "longitude": loc.longitude,
@@ -377,9 +388,24 @@ def locations() -> Any:
                 ]
 
                 # Extract only manual (ha=False) entries from submitted items
-                manual_items = [
-                    item for item in cleaned_items if not item.get("ha", False)
-                ]
+                used_ids = {r["id"] for r in existing_ha_records}
+                manual_items = []
+                for item in cleaned_items:
+                    if item.get("ha", False):
+                        continue
+                    m_id = item.get("id")
+                    if not m_id or m_id in used_ids:
+                        m_id = Location.generate_custom_id()
+                    used_ids.add(m_id)
+                    manual_items.append(
+                        {
+                            "id": m_id,
+                            "name": item["name"],
+                            "latitude": item["latitude"],
+                            "longitude": item["longitude"],
+                            "ha": False,
+                        }
+                    )
 
                 Location.delete().execute()
                 all_records = existing_ha_records + manual_items

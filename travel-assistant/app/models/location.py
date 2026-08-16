@@ -1,7 +1,8 @@
 """Peewee model for configured geographic locations."""
 
+import uuid
 from typing import Any, Dict, List, Optional
-from peewee import AutoField, BooleanField, CharField, FloatField
+from peewee import BooleanField, CharField, FloatField
 
 from app.models.base import BaseModel
 
@@ -9,7 +10,7 @@ from app.models.base import BaseModel
 class Location(BaseModel):
     """Configured geographic location with name and coordinates."""
 
-    id = AutoField()
+    id = CharField(primary_key=True, max_length=100)
     name = CharField()
     latitude = FloatField()
     longitude = FloatField()
@@ -18,6 +19,17 @@ class Location(BaseModel):
     class Meta:
         table_name = "locations"
 
+    @staticmethod
+    def generate_custom_id() -> str:
+        """Generate a short unique identifier for custom locations."""
+        return f"custom:{uuid.uuid4().hex[:8]}"
+
+    def save(self, *args: Any, **kwargs: Any) -> int:
+        """Ensure an ID is generated before saving if not already present."""
+        if not self.id:
+            self.id = self.generate_custom_id()
+        return super().save(*args, **kwargs)
+
     @classmethod
     def search(
         cls,
@@ -25,11 +37,11 @@ class Location(BaseModel):
         limit: int = 50,
         offset: int = 0,
     ) -> List["Location"]:
-        """Search locations by name."""
+        """Search locations by name or identifier."""
         stmt = cls.select()
         if query and query.strip():
             q = f"%{query.strip()}%"
-            stmt = stmt.where(cls.name**q)
+            stmt = stmt.where((cls.name**q) | (cls.id**q))
 
         return list(stmt.offset(offset).limit(limit))
 

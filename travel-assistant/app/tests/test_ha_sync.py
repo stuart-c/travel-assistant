@@ -71,13 +71,16 @@ def test_sync_ha_locations_success_creates_updates_and_prunes(
         names = {loc.name: loc for loc in locations}
         assert "My Custom Café" in names
         assert names["My Custom Café"].ha is False
+        assert names["My Custom Café"].id.startswith("custom:")
 
         assert "Home" in names
+        assert names["Home"].id == "ha:home"
         assert names["Home"].ha is True
         assert names["Home"].latitude == 51.7520
         assert names["Home"].longitude == -1.2577
 
         assert "Office" in names
+        assert names["Office"].id == "ha:office"
         assert names["Office"].ha is True
         assert names["Office"].latitude == 51.5074
 
