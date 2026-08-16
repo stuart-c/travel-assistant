@@ -15,7 +15,7 @@
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css?v={{ cache_bust }}">
 
 <div class="space-y-6" id="sync-page-container" data-ingress-path="{{ ingress_path }}">
   <!-- Dynamic Notification Alert Banner -->
@@ -51,5 +51,5 @@
 
 <!-- Grid.js UMD Script (CDN) and Sync Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
-<script src="{{ ingress_path }}/static/js/sync.js"></script>
+<script src="{{ ingress_path }}/static/js/sync.js?v={{ cache_bust }}"></script>
 {% endblock %}

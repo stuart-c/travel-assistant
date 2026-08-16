@@ -175,8 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const isNever = !tbl.last_updated_at || relativeTime === 'Never updated';
 
       const lastUpdatedHtml = isNever
-        ? `<div class="text-slate-400 dark:text-slate-500 italic text-xs">Never updated</div>`
-        : `<div class="font-medium text-slate-700 dark:text-slate-300 text-xs cursor-help" title="${escapeHtml(exactTime)}">${escapeHtml(relativeTime)}</div>`;
+        ? `<span class="text-slate-400 dark:text-slate-500 italic text-xs">Never updated</span>`
+        : `<span class="font-medium text-slate-700 dark:text-slate-300 text-xs cursor-help" title="${escapeHtml(exactTime)}">${escapeHtml(relativeTime)}</span>`;
 
       const actionHtml = `
         <button 
@@ -199,23 +199,28 @@ document.addEventListener('DOMContentLoaded', () => {
         `),
         gridjs.html(lastUpdatedHtml),
         gridjs.html(statusBadge),
-        gridjs.html(actionHtml),
+        gridjs.html(`
+          <div class="flex items-center justify-end">
+            ${actionHtml}
+          </div>
+        `),
       ];
     });
   }
 
+  const columnsConfig = [
+    { name: 'Dataset', width: 'auto', sort: true },
+    { name: 'Last updated', width: '180px', sort: true },
+    { name: 'Status', width: '160px', sort: false },
+    { name: 'Actions', width: '90px', sort: false },
+  ];
+
   // Initialise Grid.js instance
   const grid = new gridjs.Grid({
-    columns: [
-      { name: 'Dataset', width: 'auto' },
-      { name: 'Last updated', width: '180px' },
-      { name: 'Status', width: '160px' },
-      { name: 'Actions', width: '70px', sort: false },
-    ],
+    columns: columnsConfig,
     data: formatGridData(stagedTables),
     search: false,
     pagination: false,
-    sort: true,
   }).render(gridContainer);
 
   function syncGridDisplay() {
@@ -228,6 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     grid.updateConfig({
+      columns: columnsConfig,
       data: formatGridData(stagedTables),
     }).forceRender();
   }

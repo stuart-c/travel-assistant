@@ -397,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .join(' ');
 
-    return `<div class="flex items-center gap-1 flex-wrap">${badges}</div>`;
+    return `<div class="flex items-center gap-1 flex-nowrap whitespace-nowrap">${badges}</div>`;
   }
 
   // Format data rows for Grid.js list view
@@ -444,7 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(endDateHtml),
         gridjs.html(renderDaysHtml(item)),
         gridjs.html(`
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 justify-end">
             <button 
               type="button" 
               class="open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
@@ -478,21 +478,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const columnsConfig = [
+    { name: 'Timetable Name', width: 'auto', sort: true },
+    { name: 'Type', width: '130px', sort: true },
+    { name: 'Start Date', width: '130px', sort: true },
+    { name: 'End Date', width: '130px', sort: true },
+    { name: 'Applicable Days', width: '280px', sort: false },
+    { name: 'Actions', width: '100px', sort: false },
+  ];
+
   // Initialise Grid.js instance
   const grid = new gridjs.Grid({
-    columns: [
-      { name: 'Timetable Name', width: 'auto' },
-      { name: 'Type', width: '130px' },
-      { name: 'Start Date', width: '120px' },
-      { name: 'End Date', width: '120px' },
-      { name: 'Applicable Days', width: '210px', sort: false },
-      { name: 'Actions', width: '110px', sort: false },
-    ],
+    columns: columnsConfig,
     data: formatGridData(stagedTimetables),
     search: {
       placeholder: 'Search timetables...',
     },
-    sort: true,
     pagination: {
       limit: 8,
       summary: true,
@@ -541,6 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Re-render Grid.js list
     grid
       .updateConfig({
+        columns: columnsConfig,
         data: formatGridData(stagedTimetables),
       })
       .forceRender();

@@ -98,26 +98,28 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isReadOnlyMode) return;
       const pos = e.target.getLatLng();
       updateCoordinateInputs(pos.lat, pos.lng);
+      leafletMap.panTo(pos);
     });
 
     leafletMap.on('click', (e) => {
       if (isReadOnlyMode) return;
-      const { lat, lng } = e.latlng;
-      setMarkerPosition(lat, lng, false);
-      updateCoordinateInputs(lat, lng);
+      setMarkerPosition(e.latlng.lat, e.latlng.lng, true);
     });
   }
 
   function setMarkerPosition(lat, lng, panTo = false) {
-    const validLat = typeof lat === 'number' && !isNaN(lat) ? lat : DEFAULT_LAT;
-    const validLng = typeof lng === 'number' && !isNaN(lng) ? lng : DEFAULT_LNG;
-    const newLatLng = [validLat, validLng];
+    if (!leafletMarker || !leafletMap) return;
+    const safeLat = parseFloat(lat);
+    const safeLng = parseFloat(lng);
+    if (isNaN(safeLat) || isNaN(safeLng)) return;
 
-    if (leafletMarker) {
-      leafletMarker.setLatLng(newLatLng);
+    const newLatLng = [safeLat, safeLng];
+    leafletMarker.setLatLng(newLatLng);
+    if (!isReadOnlyMode) {
+      updateCoordinateInputs(safeLat, safeLng);
     }
 
-    if (panTo && leafletMap) {
+    if (panTo) {
       leafletMap.panTo(newLatLng);
     }
   }
@@ -145,21 +147,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const formattedLng = formatCoord(item.longitude);
       const isHa = Boolean(item.ha);
 
-      const sourceIcon = isHa ? 'home' : 'pin_drop';
-      const sourceIconClass = isHa ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500';
-      const sourceTitle = isHa ? 'Home Assistant location (Read-only)' : 'Custom location';
+      const nameIconHtml = isHa
+        ? `<span class="material-symbols-outlined text-base text-sky-500" title="Home Assistant location">home</span>`
+        : `<span class="material-symbols-outlined text-base text-slate-400 dark:text-slate-500" title="Custom location">pin_drop</span>`;
 
       const actionButtons = isHa
-        ? `<button 
-             type="button" 
-             class="view-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-             data-index="${index}"
-             title="View location details"
-             aria-label="View location details"
-           >
-             <span class="material-symbols-outlined text-[17px] leading-none">visibility</span>
-           </button>`
-        : `<div class="flex items-center gap-1.5">
+        ? `<div class="flex items-center justify-end">
+             <button 
+               type="button" 
+               class="view-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
+               data-index="${index}"
+               title="View location details"
+               aria-label="View location details"
+             >
+               <span class="material-symbols-outlined text-[17px] leading-none">visibility</span>
+             </button>
+           </div>`
+        : `<div class="flex items-center gap-1.5 justify-end">
              <button 
                type="button" 
                class="edit-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
@@ -182,8 +186,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       return [
         gridjs.html(`
-          <div class="flex items-center gap-2.5">
-            <span class="material-symbols-outlined text-lg ${sourceIconClass} shrink-0" title="${escapeHtml(sourceTitle)}">${sourceIcon}</span>
+          <div class="flex items-center gap-2">
+            ${nameIconHtml}
             <span class="font-medium text-slate-900 dark:text-slate-100">${escapeHtml(item.name)}</span>
           </div>
         `),
@@ -198,16 +202,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const columnsConfig = [
+    { name: 'Name', width: 'auto', sort: true },
+    { name: 'Latitude', width: '140px', sort: true },
+    { name: 'Longitude', width: '140px', sort: true },
+    { name: 'Actions', width: '100px', sort: false },
+  ];
+
   // Initialise Grid.js instance
   const grid = new gridjs.Grid({
-    columns: [
-      { name: 'Name', width: 'auto' },
-      { name: 'Latitude', width: '150px' },
-      { name: 'Longitude', width: '150px' },
-      { name: 'Actions', width: '80px', sort: false },
-    ],
+    columns: columnsConfig,
     data: formatGridData(stagedLocations),
-    sort: true,
     search: {
       enabled: true,
       placeholder: 'Search locations...',
@@ -256,15 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (gridContainer) gridContainer.classList.remove('hidden');
     }
 
-    if (gridContainer && gridContainer.querySelector('.gridjs-container')) {
-      if (stagedLocations.length <= 10) {
-        gridContainer.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
-      } else {
-        gridContainer.querySelector('.gridjs-container').removeAttribute('data-single-page');
-      }
-    }
-
     grid.updateConfig({
+      columns: columnsConfig,
       data: formatGridData(stagedLocations),
     }).forceRender();
 
@@ -290,11 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const normalInputClass =
-    'w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 transition-colors';
-  const readOnlyInputClass =
-    'w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100 text-sm font-medium text-slate-400 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed transition-colors select-none';
-
   // Open modal helper
   function openModal(mode = 'add', index = -1) {
     if (modalError) modalError.classList.add('hidden');
@@ -303,26 +296,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (isReadOnlyMode) {
       const item = stagedLocations[index];
-      modalTitle.textContent = 'View Location (Read-Only)';
-      modalIcon.textContent = 'home';
+      modalTitle.textContent = 'View Location';
+      modalIcon.textContent = 'visibility';
       if (haNotice) haNotice.classList.remove('hidden');
 
       nameInput.value = item ? item.name : '';
       nameInput.disabled = true;
       nameInput.readOnly = true;
-      nameInput.className = readOnlyInputClass;
 
       const lat = item ? parseFloat(item.latitude) || DEFAULT_LAT : DEFAULT_LAT;
       const lng = item ? parseFloat(item.longitude) || DEFAULT_LNG : DEFAULT_LNG;
       latInput.value = formatCoord(lat);
       latInput.disabled = true;
       latInput.readOnly = true;
-      latInput.className = readOnlyInputClass;
 
       lngInput.value = formatCoord(lng);
       lngInput.disabled = true;
       lngInput.readOnly = true;
-      lngInput.className = readOnlyInputClass;
 
       if (confirmBtn) confirmBtn.classList.add('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Close';
@@ -351,19 +341,16 @@ document.addEventListener('DOMContentLoaded', () => {
       nameInput.value = item.name || '';
       nameInput.disabled = false;
       nameInput.readOnly = false;
-      nameInput.className = normalInputClass;
 
       const lat = parseFloat(item.latitude) || DEFAULT_LAT;
       const lng = parseFloat(item.longitude) || DEFAULT_LNG;
       latInput.value = formatCoord(lat);
       latInput.disabled = false;
       latInput.readOnly = false;
-      latInput.className = normalInputClass;
 
       lngInput.value = formatCoord(lng);
       lngInput.disabled = false;
       lngInput.readOnly = false;
-      lngInput.className = normalInputClass;
 
       if (confirmBtn) confirmBtn.classList.remove('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
@@ -391,17 +378,14 @@ document.addEventListener('DOMContentLoaded', () => {
       nameInput.value = '';
       nameInput.disabled = false;
       nameInput.readOnly = false;
-      nameInput.className = normalInputClass;
 
       latInput.value = formatCoord(DEFAULT_LAT);
       latInput.disabled = false;
       latInput.readOnly = false;
-      latInput.className = normalInputClass;
 
       lngInput.value = formatCoord(DEFAULT_LNG);
       lngInput.disabled = false;
       lngInput.readOnly = false;
-      lngInput.className = normalInputClass;
 
       if (confirmBtn) confirmBtn.classList.remove('hidden');
       if (cancelModalBtn) cancelModalBtn.textContent = 'Cancel';
@@ -462,8 +446,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const entry = {
         ...(existingId ? { id: existingId } : {}),
         name,
-        latitude: lat,
-        longitude: lng,
+        latitude: parseFloat(lat.toFixed(6)),
+        longitude: parseFloat(lng.toFixed(6)),
         ha: isHa,
       };
 
@@ -473,24 +457,28 @@ document.addEventListener('DOMContentLoaded', () => {
         stagedLocations.push(entry);
       }
 
-      syncState();
       closeModal();
+      syncState();
     });
   }
 
-  // Row button click handlers via event delegation
+  // Row event delegation for View, Edit, and Delete
   document.addEventListener('click', (e) => {
-    const editBtn = e.target.closest('.edit-location-btn');
-    if (editBtn) {
-      const idx = parseInt(editBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx)) openModal('edit', idx);
-      return;
-    }
-
     const viewBtn = e.target.closest('.view-location-btn');
     if (viewBtn) {
       const idx = parseInt(viewBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx)) openModal('view', idx);
+      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        openModal('view', idx);
+      }
+      return;
+    }
+
+    const editBtn = e.target.closest('.edit-location-btn');
+    if (editBtn) {
+      const idx = parseInt(editBtn.getAttribute('data-index'), 10);
+      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        openModal('edit', idx);
+      }
       return;
     }
 
@@ -498,10 +486,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        if (stagedLocations[idx] && stagedLocations[idx].ha) {
+          return; // Synced locations cannot be deleted
+        }
         stagedLocations.splice(idx, 1);
         syncState();
       }
-      return;
     }
   });
 });

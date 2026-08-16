@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Categorised AWS region dropdown with continental groupings (`<optgroup label="Europe">`, `North America`, etc.) and country bias dropdown for Google Maps.
 - 15-minute increment time selector datalist allowing fast 1-click selection and arbitrary manual time editing on journey configuration.
 - Standardised day selector buttons and presets across timetables and journeys.
+- Unique startup cache-busting token (`STARTUP_CACHE_BUST`) injected into template context processors and appended to all static CSS and JavaScript URLs (`?v={{ cache_bust }}`) on application start.
+- Collapsible cards for API Credentials with arrow toggles (`keyboard_arrow_down` when expanded, `chevron_right` when collapsed), automatic collapse when credentials pass validation, green "Valid" status badges, and on-change revealed "Check" buttons.
+- Dedicated `Status` column on the Background Sync page (`/config/sync`) displaying dataset synchronisation state pills.
+
+### Changed
+- Refined Timetables table column widths (widened Applicable Days to 280px and Actions to 100px) with `flex-nowrap` to prevent day badge wrapping and eliminate header truncation.
+- Removed redundant Source column from Locations table, placing source indicator icons (`home` for Home Assistant synced locations, `pin_drop` for custom locations) next to location names.
+- Hid exact database byte count into a hover tooltip on the formatted database size metric on `/config/db`.
+- Explicitly configured per-column sorting across Grid.js tables, disabling sort arrows on action and status columns.
 - Unified `Stop` Peewee model and SQLite `stops` table consolidating all UK public transport nodes (bus stops, rail stations, metro, tram, ferry, and air terminals) with `stop_type` classification and batch upsert optimisations.
 - NaPTAN datasource integration (`NaptanClient`) fetching open national access nodes from the Department for Transport NaPTAN API (`https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv`).
 - Unified transit synchronisation pipeline (`sync_stops`) populating all UK transit stops in a single background sync task.

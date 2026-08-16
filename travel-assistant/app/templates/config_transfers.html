@@ -11,26 +11,23 @@
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css?v={{ cache_bust }}">
 
 <div class="space-y-8">
   <!-- Section 1: Inter-Location Transfers -->
-  <section class="collapsible-section rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="section-loc-transfers">
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div class="flex items-center gap-3 cursor-pointer select-none section-toggle flex-1" data-target="section-loc-transfers">
-        <span class="material-symbols-outlined text-slate-400 text-2xl collapsible-chevron">expand_more</span>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-xl">directions_walk</span>
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Inter-Location Transfers</h2>
-          </div>
-          <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-            Walking connections between rail stations, bus stops, and coach terminals.
-          </p>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-xl">directions_walk</span>
+          <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Inter-Location Transfers</h2>
         </div>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          Walking connections between rail stations, bus stops, and coach terminals.
+        </p>
       </div>
 
-      <div class="flex items-center gap-2 shrink-0">
+      <div>
         <button 
           type="button" 
           id="open-add-location-modal-btn" 
@@ -44,7 +41,7 @@
     </div>
 
     <!-- Grid.js Container Mount Point -->
-    <div class="collapsible-body mt-6">
+    <div class="mt-6">
       <div id="location-transfers-grid-wrapper"></div>
       
       <!-- Empty state container when 0 items -->
@@ -66,22 +63,19 @@
   </section>
 
   <!-- Section 2: Platform & Stand Transfers -->
-  <section class="collapsible-section rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="section-plat-transfers">
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div class="flex items-center gap-3 cursor-pointer select-none section-toggle flex-1" data-target="section-plat-transfers">
-        <span class="material-symbols-outlined text-slate-400 text-2xl collapsible-chevron">expand_more</span>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-xl">transfer_within_a_station</span>
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform &amp; Stand Transfers</h2>
-          </div>
-          <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-            Intra-station connections between platforms at rail stations or stands at bus terminals.
-          </p>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-xl">transfer_within_a_station</span>
+          <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform &amp; Stand Transfers</h2>
         </div>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          Intra-station connections between platforms at rail stations or stands at bus terminals.
+        </p>
       </div>
 
-      <div class="flex items-center gap-2 shrink-0">
+      <div>
         <button 
           type="button" 
           id="open-add-platform-modal-btn" 
@@ -95,7 +89,7 @@
     </div>
 
     <!-- Grid.js Container Mount Point -->
-    <div class="collapsible-body mt-6">
+    <div class="mt-6">
       <div id="platform-transfers-grid-wrapper"></div>
       
       <!-- Empty state container when 0 items -->
@@ -126,7 +120,7 @@
 </form>
 
 <!-- 1. Add / Edit Inter-Location Transfer Modal -->
-<dialog id="location-transfer-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl w-[80vw] max-w-5xl min-w-[320px] mx-auto">
+<dialog id="location-transfer-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-2xl w-full mx-auto">
   <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
       <div class="flex items-center gap-2.5">
@@ -348,7 +342,7 @@
 </dialog>
 
 <!-- 2. Add / Edit Platform & Stand Transfer Modal -->
-<dialog id="platform-transfer-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl w-[80vw] max-w-5xl min-w-[320px] mx-auto">
+<dialog id="platform-transfer-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-xl w-full mx-auto">
   <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
       <div class="flex items-center gap-2.5">
@@ -524,5 +518,5 @@
 
 <!-- Grid.js UMD Script (CDN) and Transfers Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
-<script src="{{ ingress_path }}/static/js/transfers.js"></script>
+<script src="{{ ingress_path }}/static/js/transfers.js?v={{ cache_bust }}"></script>
 {% endblock %}

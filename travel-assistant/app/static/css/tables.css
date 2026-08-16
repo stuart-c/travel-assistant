@@ -46,6 +46,13 @@
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   color: #64748b !important;
+  white-space: nowrap !important;
+}
+.gridjs-th-content {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+  white-space: nowrap !important;
 }
 .gridjs-td {
   background-color: #ffffff !important;
@@ -83,26 +90,6 @@
   background-color: #0284c7 !important;
   border-color: #0284c7 !important;
   color: #ffffff !important;
-}
-
-/* Hide pagination if requested or if single page */
-.hide-pagination .gridjs-pagination,
-.gridjs-container[data-single-page="true"] .gridjs-pagination {
-  display: none !important;
-}
-
-/* Collapsible sections animation and chevron rotation */
-.collapsible-section {
-  transition: all 0.2s ease-in-out;
-}
-.collapsible-chevron {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.collapsed .collapsible-chevron {
-  transform: rotate(-90deg);
-}
-.collapsed .collapsible-body {
-  display: none !important;
 }
 
 /* Dark mode support via .dark class */
