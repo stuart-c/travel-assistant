@@ -71,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Removed hardcoded sample timetable dataset (`SAMPLE_TIMETABLE_DATA`) and location search dataset (`SAMPLE_LOCATION_SEARCH_DATA`) from `app/views/config.py`, ensuring all search endpoints strictly query local cached SQLite datasets and return clean empty states when unpopulated.
 
+### Fixed
+- Added automatic SQLite schema migration in `run_migrations` for legacy `timetables` tables, resolving `peewee.OperationalError: no such column: t1.start_date` on `/config/timetables` while preserving existing timetable records.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added

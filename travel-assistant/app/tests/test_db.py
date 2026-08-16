@@ -11,10 +11,12 @@ from app.db import (
     get_db_path,
     get_db_stats,
     init_app,
+    run_migrations,
 )
 from app.models import (
     BusRoute,
     BusStop,
+    Location,
     LocationTransfer,
     PlatformTransfer,
     Setting,
@@ -494,3 +496,115 @@ def test_get_db_stats(app: Flask) -> None:
             t["name"] == "bus_routes" and t["sync_status"] == "success"
             for t in stats["tables"]
         )
+
+
+def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
+    """Test run_migrations upgrades legacy timetables schema without dropping existing rows."""
+    db_file = str(tmp_path / "legacy_timetable_test.db")
+    test_db = SqliteDatabase(db_file)
+    test_db.connect()
+
+    # Create legacy table definition without new schedule fields
+    test_db.execute_sql("""
+        CREATE TABLE "timetables" (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+            "created_at" DATETIME NOT NULL,
+            "updated_at" DATETIME NOT NULL,
+            "transport_type" VARCHAR(50) NOT NULL,
+            "name" VARCHAR(255) NOT NULL,
+            "identifier" VARCHAR(255) NOT NULL,
+            "status" VARCHAR(255) NOT NULL DEFAULT 'active'
+        );
+        """)
+    test_db.execute_sql("""
+        INSERT INTO "timetables" (
+            "created_at", "updated_at", "transport_type", "name", "identifier", "status"
+        ) VALUES (
+            '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'bus',
+            'Oxford Tube Express', 'OX-TUBE', 'active'
+        );
+        """)
+
+    # Run migrations
+    run_migrations(test_db)
+
+    # Inspect columns
+    col_cursor = test_db.execute_sql('PRAGMA table_info("timetables")')
+    cols = [col[1] for col in col_cursor.fetchall()]
+    assert "start_date" in cols
+    assert "end_date" in cols
+    assert "monday" in cols
+    assert "sunday" in cols
+    assert "bank_holiday" in cols
+
+    # Verify querying and to_dict work seamlessly with Peewee model
+    with test_db.bind_ctx([Timetable]):
+        entries = list(Timetable.select())
+        assert len(entries) == 1
+        t = entries[0]
+        assert t.name == "Oxford Tube Express"
+        assert t.start_date is None
+        assert t.end_date is None
+        assert t.monday is True
+        assert t.bank_holiday is True
+
+        d = t.to_dict()
+        assert d["name"] == "Oxford Tube Express"
+        assert d["start_date"] is None
+        assert d["monday"] is True
+
+        # Verify insert and retrieval from migrated schema
+        t2 = Timetable.create(
+            name="New Commute Schedule",
+            start_date="2026-09-01",
+            end_date="2026-12-31",
+            monday=True,
+            saturday=False,
+        )
+        assert t2.id is not None
+        queried_t2 = Timetable.get_by_id(t2.id)
+        assert queried_t2.start_date.isoformat() == "2026-09-01"
+
+    test_db.close()
+
+
+def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
+    """Test run_migrations upgrades legacy locations schema to add ha flag."""
+    db_file = str(tmp_path / "legacy_location_test.db")
+    test_db = SqliteDatabase(db_file)
+    test_db.connect()
+
+    # Create legacy table definition without ha column
+    test_db.execute_sql("""
+        CREATE TABLE "locations" (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+            "created_at" DATETIME NOT NULL,
+            "updated_at" DATETIME NOT NULL,
+            "name" VARCHAR(255) NOT NULL,
+            "latitude" REAL NOT NULL,
+            "longitude" REAL NOT NULL
+        );
+        """)
+    test_db.execute_sql("""
+        INSERT INTO "locations" (
+            "created_at", "updated_at", "name", "latitude", "longitude"
+        ) VALUES (
+            '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'Central Office', 51.753, -1.26
+        );
+        """)
+
+    # Run migrations
+    run_migrations(test_db)
+
+    # Inspect columns
+    col_cursor = test_db.execute_sql('PRAGMA table_info("locations")')
+    cols = [col[1] for col in col_cursor.fetchall()]
+    assert "ha" in cols
+
+    with test_db.bind_ctx([Location]):
+        locs = list(Location.select())
+        assert len(locs) == 1
+        assert locs[0].name == "Central Office"
+        assert locs[0].ha is False
+
+    test_db.close()
