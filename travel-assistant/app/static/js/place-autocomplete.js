@@ -141,7 +141,7 @@ window.PlaceAutocomplete = (function () {
 
     function renderDropdown(items) {
       const filterBarHtml = `
-        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/90 dark:bg-slate-800/90 sticky top-0 z-10 backdrop-blur-xs">
+        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800 sticky top-0 z-10">
           <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
             ${PLACE_TYPE_FILTERS.map((f) => {
               const isActive = f.type === activeFilter;
