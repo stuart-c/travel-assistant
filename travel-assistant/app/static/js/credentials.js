@@ -68,10 +68,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = !enabled;
     if (enabled) {
       btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:text-sky-900 dark:border-sky-700 dark:bg-sky-950/70 dark:text-sky-300 dark:hover:bg-sky-900 transition-colors cursor-pointer';
+        'check-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer';
     } else {
       btn.className =
-        'check-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-colors';
+        'check-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed transition-colors';
     }
   }
 

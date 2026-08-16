@@ -159,31 +159,31 @@ document.addEventListener('DOMContentLoaded', () => {
       const actionButtons = isHa
         ? `<button 
              type="button" 
-             class="view-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-sky-600 hover:text-sky-900 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/60 transition-colors cursor-pointer"
+             class="view-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
              data-index="${index}"
-             title="View Location Details"
+             title="View location details"
+             aria-label="View location details"
            >
-             <span class="material-symbols-outlined text-xs leading-none">visibility</span>
-             View
+             <span class="material-symbols-outlined text-[17px] leading-none">visibility</span>
            </button>`
         : `<div class="flex items-center gap-1.5">
              <button 
                type="button" 
-               class="edit-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+               class="edit-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
                data-index="${index}"
-               title="Edit Location"
+               title="Edit location"
+               aria-label="Edit location"
              >
-               <span class="material-symbols-outlined text-xs leading-none">edit</span>
-               Edit
+               <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
              </button>
              <button 
                type="button" 
-               class="delete-location-btn inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:bg-rose-700/80 transition-colors cursor-pointer"
+               class="delete-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
                data-index="${index}"
-               title="Delete Location"
+               title="Delete location"
+               aria-label="Delete location"
              >
-               <span class="material-symbols-outlined text-xs leading-none">delete</span>
-               Delete
+               <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
              </button>
            </div>`;
 
@@ -213,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { name: 'Latitude', width: '130px' },
       { name: 'Longitude', width: '130px' },
       { name: 'Source', width: '150px' },
-      { name: 'Actions', width: '150px', sort: false },
+      { name: 'Actions', width: '80px', sort: false },
     ],
     data: formatGridData(stagedLocations),
     sort: true,
