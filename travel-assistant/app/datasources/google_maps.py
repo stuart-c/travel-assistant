@@ -107,13 +107,13 @@ class GoogleMapsClient(BaseDataSource):
         return self._client
 
     def validate_credentials(self) -> Dict[str, Any]:
-        """Validate credentials against Google Maps Platform with zero billable SKU cost.
+        """Validate credentials against Google Maps Platform services.
 
-        Sends an unparameterised probe to the Geocoding endpoint. Google evaluates authentication
-        and API restrictions prior to parameter validation:
-        - INVALID_REQUEST: Authentication succeeded without executing a billable query ($0 cost).
-        - REQUEST_DENIED: Authentication rejected (invalid key, unauthorised project, etc.).
-
+        Sends a lightweight geocoding probe request to verify the API key and service activation:
+        - HTTP 200 with geocoding results confirms valid authentication and enabled APIs.
+        - REQUEST_DENIED: Authentication rejected (invalid key, unauthorised project,
+          billing required).
+        - OVER_QUERY_LIMIT: Quota or rate limit exceeded.
 
         Returns:
             Dict containing 'valid' (bool), 'message' (str), and provider metadata.
@@ -127,8 +127,8 @@ class GoogleMapsClient(BaseDataSource):
 
         try:
             client = self.get_client()
-            # Probe call with empty address triggers INVALID_REQUEST on valid auth
-            client.geocode("")
+            # Probe geocoding request to verify key validity and service access
+            client.geocode("London", region=self.region)
             return {
                 "valid": True,
                 "message": "Google Maps credentials valid.",
@@ -138,11 +138,10 @@ class GoogleMapsClient(BaseDataSource):
             status = getattr(e, "status", "")
             message = getattr(e, "message", str(e))
 
-            if status == "INVALID_REQUEST":
-                # Valid credentials confirmed without consuming billable geocoding SKU
+            if status in ("OK", "ZERO_RESULTS"):
                 return {
                     "valid": True,
-                    "message": "Google Maps credentials valid (zero-cost probe verified).",
+                    "message": "Google Maps credentials valid.",
                     "provider": self.provider_name,
                 }
             if status == "REQUEST_DENIED":

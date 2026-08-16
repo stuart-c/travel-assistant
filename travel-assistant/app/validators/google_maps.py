@@ -10,7 +10,7 @@ def validate_google_maps_api_key(
     region: Optional[str] = None,
     timeout: float = 5.0,
 ) -> Tuple[bool, str]:
-    """Validate Google Maps API key using a zero-cost parameter probe.
+    """Validate Google Maps API key using a geocoding probe.
 
     Args:
         api_key: Google Maps Platform API key.

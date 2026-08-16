@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automated schema migration in `run_migrations` dropping legacy `bus_stops` and `stations` tables and creating `stops`.
 
 ### Fixed
+- Fixed Google Maps API credential validation error (`HTTP Error: 400`) by executing an active geocoding probe query instead of an empty query parameter.
 - Disabled browser caching across all configuration pages and endpoints by serving explicit `Cache-Control: no-cache, no-store, must-revalidate, max-age=0`, `Pragma: no-cache`, and `Expires: 0` response headers alongside HTML head meta tags, ensuring settings changes appear immediately without stale browser caching.
 - Eliminated all synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`, and `DS-{id}` routes).
 - Connected bus stops and railway station synchronisation to public UK NaPTAN open dataset feeds for genuine, complete access node and rail station indexing.
