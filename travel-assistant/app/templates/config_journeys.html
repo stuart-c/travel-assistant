@@ -61,7 +61,7 @@
 </div>
 
 <!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/journeys/search">
+<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/search/places">
   <input type="hidden" name="journeys_json" id="journeys_json" value="">
   <script id="initial-journeys-data" type="application/json">{{ journeys | tojson }}</script>
 </form>

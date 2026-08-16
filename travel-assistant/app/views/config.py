@@ -15,7 +15,6 @@ from flask import (
 
 from app.db import get_db_stats
 from app.models import (
-    BusRoute,
     Journey,
     Location,
     LocationTransfer,
@@ -205,116 +204,146 @@ def timetables() -> Any:
     )
 
 
-@config_bp.route("/timetables/search", methods=["GET"])
-def search_timetables() -> Any:
-    """Search and lookup timetable feeds, stations, and bus routes."""
-    transport_type = request.args.get("type", "").lower().strip()
+@config_bp.route("/search/places", methods=["GET"])
+def search_places() -> Any:
+    """Search public transit stops, Home Assistant zones, and custom locations."""
+    target_type = request.args.get("type", "").lower().strip()
     query = request.args.get("q", "").strip()
-    limit_raw = request.args.get("limit", "25").strip()
+    limit_raw = request.args.get("limit", "15").strip()
     try:
-        limit = max(1, min(int(limit_raw), 100))
+        limit = max(1, min(int(limit_raw), 50))
     except ValueError:
-        limit = 25
-
-    stops_count = Stop.select().count()
-    routes_count = BusRoute.select().count()
-    cache_counts = {
-        "stops": stops_count,
-        "bus_routes": routes_count,
-    }
+        limit = 15
 
     results: List[Dict[str, Any]] = []
-    is_cached = True
+    seen_ids = set()
 
-    if transport_type in ("station", "train", "stations"):
-        is_cached = stops_count > 0
-        if is_cached:
-            results = [
-                {
-                    "transport_type": "train",
-                    "name": s.name,
-                    "identifier": s.naptan_code or s.atco_code,
-                    "crs_code": s.naptan_code or s.atco_code,
-                    "description": f"National Rail Station - {s.naptan_code or s.atco_code}",
-                }
-                for s in Stop.search(query, stop_type="rail", limit=limit)
-            ]
-    elif transport_type in ("bus_stop", "stop", "bus_stops", "stops"):
-        is_cached = stops_count > 0
-        if is_cached:
-            results = [
-                {
-                    "transport_type": "bus",
-                    "name": s.name + (f" ({s.indicator})" if s.indicator else ""),
-                    "identifier": s.atco_code,
-                    "atco_code": s.atco_code,
-                    "description": "Bus Stop"
-                    + (f", {s.locality}" if s.locality else "")
-                    + f" - {s.atco_code}",
-                }
-                for s in Stop.search(query, stop_type="bus", limit=limit)
-            ]
-    elif transport_type in ("bus_route", "route", "bus_routes", "routes", "bus"):
-        is_cached = routes_count > 0
-        if is_cached:
-            results = [
-                {
-                    "transport_type": "bus",
-                    "name": f"Route {r.route_number}"
-                    + (
-                        f" ({r.origin} - {r.destination})"
-                        if r.origin and r.destination
-                        else ""
-                    ),
-                    "identifier": r.route_number,
-                    "route_number": r.route_number,
-                    "description": r.description
-                    or (
-                        f"Operated by {r.operator_name}"
-                        if r.operator_name
-                        else "Bus route"
-                    ),
-                }
-                for r in BusRoute.search(query, limit=limit)
-            ]
-    elif transport_type in ("status", "status_check"):
-        is_cached = (stops_count > 0) or (routes_count > 0)
-        results = []
-    else:
-        # Generic search across cached stations and bus routes
-        is_cached = (stops_count > 0) or (routes_count > 0)
-        if is_cached:
-            st_res = [
-                {
-                    "transport_type": "train",
-                    "name": s.name,
-                    "identifier": s.naptan_code or s.atco_code,
-                    "crs_code": s.naptan_code or s.atco_code,
-                    "description": f"National Rail Station - {s.naptan_code or s.atco_code}",
-                }
-                for s in Stop.search(query, stop_type="rail", limit=limit)
-            ]
-            rt_res = [
-                {
-                    "transport_type": "bus",
-                    "name": f"Route {r.route_number}",
-                    "identifier": r.route_number,
-                    "route_number": r.route_number,
-                    "description": r.description or "Bus route",
-                }
-                for r in BusRoute.search(query, limit=limit)
-            ]
-            results = (st_res + rt_res)[:limit]
+    # Query Rail Stations
+    if not target_type or target_type in (
+        "station",
+        "train",
+        "rail",
+        "stop",
+        "all",
+    ):
+        try:
+            st_list = (
+                Stop.search(query, stop_type="rail", limit=limit)
+                if query
+                else list(Stop.select().where(Stop.stop_type == "rail").limit(limit))
+            )
+            for st in st_list:
+                item_id = (
+                    f"naptan:{st.naptan_code}"
+                    if st.naptan_code
+                    else f"atco:{st.atco_code}"
+                )
+                if item_id not in seen_ids:
+                    seen_ids.add(item_id)
+                    results.append(
+                        {
+                            "id": item_id,
+                            "name": st.name,
+                            "type": "station",
+                            "description": (
+                                f"National Rail Station - "
+                                f"{st.naptan_code or st.atco_code}"
+                            ),
+                            "indicator": "Rail",
+                            "icon": "train",
+                            "latitude": st.latitude,
+                            "longitude": st.longitude,
+                        }
+                    )
+        except Exception:
+            pass
 
-    return jsonify(
-        {
-            "results": results,
-            "total": len(results),
-            "is_cached": is_cached,
-            "cache_counts": cache_counts,
-            "type": transport_type,
-        }
-    )
+    # Query Bus Stops
+    if not target_type or target_type in ("bus_stop", "bus", "stop", "all"):
+        try:
+            stop_list = (
+                Stop.search(query, stop_type="bus", limit=limit)
+                if query
+                else list(Stop.select().where(Stop.stop_type == "bus").limit(limit))
+            )
+            for sp in stop_list:
+                item_id = (
+                    f"naptan:{sp.naptan_code}"
+                    if sp.naptan_code
+                    else f"atco:{sp.atco_code}"
+                )
+                if item_id not in seen_ids:
+                    seen_ids.add(item_id)
+                    loc_suffix = f", {sp.locality}" if sp.locality else ""
+                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
+                    results.append(
+                        {
+                            "id": item_id,
+                            "name": f"{sp.name}{ind_text}",
+                            "type": "bus_stop",
+                            "description": (f"Bus Stop{loc_suffix} - {sp.atco_code}"),
+                            "indicator": sp.indicator or "Bus Stop",
+                            "icon": "directions_bus",
+                            "latitude": sp.latitude,
+                            "longitude": sp.longitude,
+                        }
+                    )
+        except Exception:
+            pass
+
+    # Query Custom & Home Assistant Locations
+    if not target_type or target_type in (
+        "location",
+        "ha_location",
+        "custom_location",
+        "ha",
+        "custom",
+        "all",
+    ):
+        try:
+            loc_list = (
+                Location.search(query, limit=limit)
+                if query
+                else list(Location.select().limit(limit))
+            )
+            for loc in loc_list:
+                is_ha = bool(getattr(loc, "ha", False))
+                loc_type = "ha_location" if is_ha else "custom_location"
+                if target_type and target_type not in (
+                    "location",
+                    "all",
+                    loc_type,
+                    "ha" if is_ha else "custom",
+                ):
+                    continue
+
+                item_id = str(loc.id)
+                if item_id not in seen_ids:
+                    seen_ids.add(item_id)
+                    icon = "home" if is_ha else "pin_drop"
+                    indicator = "Home Assistant" if is_ha else "Custom"
+                    desc = (
+                        f"{indicator} Location - "
+                        f"({loc.latitude:.4f}, {loc.longitude:.4f})"
+                        if loc.latitude is not None and loc.longitude is not None
+                        else f"{indicator} Location"
+                    )
+                    results.append(
+                        {
+                            "id": item_id,
+                            "name": loc.name,
+                            "type": loc_type,
+                            "description": desc,
+                            "indicator": indicator,
+                            "icon": icon,
+                            "latitude": loc.latitude,
+                            "longitude": loc.longitude,
+                        }
+                    )
+        except Exception:
+            pass
+
+    return jsonify({"results": results[:limit], "total": len(results[:limit])})
 
 
 @config_bp.route("/locations", methods=["GET", "POST"])
@@ -442,13 +471,29 @@ def transfers() -> Any:
                 if not isinstance(entry, dict):
                     continue
                 from_type = str(entry.get("from_type", "station")).lower().strip()
-                if from_type not in ["station", "bus_stop"]:
+                if from_type in ("rail", "train", "station"):
+                    from_type = "station"
+                elif from_type in ("bus", "bus_stop", "stop"):
+                    from_type = "bus_stop"
+                elif from_type in ("ha", "ha_location", "home_assistant"):
+                    from_type = "ha_location"
+                elif from_type in ("custom", "custom_location"):
+                    from_type = "custom_location"
+                else:
                     from_type = "station"
                 from_id = str(entry.get("from_id", "")).strip()
                 from_name = str(entry.get("from_name", "")).strip()
 
                 to_type = str(entry.get("to_type", "bus_stop")).lower().strip()
-                if to_type not in ["station", "bus_stop"]:
+                if to_type in ("rail", "train", "station"):
+                    to_type = "station"
+                elif to_type in ("bus", "bus_stop", "stop"):
+                    to_type = "bus_stop"
+                elif to_type in ("ha", "ha_location", "home_assistant"):
+                    to_type = "ha_location"
+                elif to_type in ("custom", "custom_location"):
+                    to_type = "custom_location"
+                else:
                     to_type = "bus_stop"
                 to_id = str(entry.get("to_id", "")).strip()
                 to_name = str(entry.get("to_name", "")).strip()
@@ -483,7 +528,15 @@ def transfers() -> Any:
                 if not isinstance(entry, dict):
                     continue
                 loc_type = str(entry.get("location_type", "station")).lower().strip()
-                if loc_type not in ["station", "bus_stop"]:
+                if loc_type in ("rail", "train", "station"):
+                    loc_type = "station"
+                elif loc_type in ("bus", "bus_stop", "stop"):
+                    loc_type = "bus_stop"
+                elif loc_type in ("ha", "ha_location", "home_assistant"):
+                    loc_type = "ha_location"
+                elif loc_type in ("custom", "custom_location"):
+                    loc_type = "custom_location"
+                else:
                     loc_type = "station"
                 location_id = str(entry.get("location_id", "")).strip()
                 location_name = str(entry.get("location_name", "")).strip()
@@ -539,69 +592,6 @@ def transfers() -> Any:
     )
 
 
-@config_bp.route("/transfers/search", methods=["GET"])
-def search_transfers_locations() -> Any:
-    """Search stations and bus stops for transfer configuration lookup."""
-    target_type = request.args.get("type", "").lower().strip()
-    query = request.args.get("q", "").lower().strip()
-
-    results: List[Dict[str, str]] = []
-    seen_keys = set()
-
-    # Query local SQLite stations
-    if not target_type or target_type == "station":
-        try:
-            st_list = (
-                Stop.search(query, stop_type="rail", limit=15)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "rail").limit(10))
-            )
-            for st in st_list:
-                st_code = st.naptan_code or st.atco_code
-                key = f"station:{st_code}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    results.append(
-                        {
-                            "type": "station",
-                            "id": st_code,
-                            "name": st.name,
-                            "description": f"National Rail Station - {st_code}",
-                            "indicator": "Platforms",
-                        }
-                    )
-        except Exception:
-            pass
-
-    # Query local SQLite bus stops
-    if not target_type or target_type == "bus_stop":
-        try:
-            stop_list = (
-                Stop.search(query, stop_type="bus", limit=15)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "bus").limit(10))
-            )
-            for sp in stop_list:
-                key = f"bus_stop:{sp.atco_code}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    loc_suffix = f", {sp.locality}" if sp.locality else ""
-                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
-                    results.append(
-                        {
-                            "type": "bus_stop",
-                            "id": sp.atco_code,
-                            "name": f"{sp.name}{ind_text}",
-                            "description": f"Bus Stop{loc_suffix} - {sp.atco_code}",
-                            "indicator": sp.indicator or "Stop",
-                        }
-                    )
-        except Exception:
-            pass
-
-    return jsonify({"results": results, "total": len(results)})
-
-
 @config_bp.route("/journeys", methods=["GET", "POST"])
 def journeys() -> Any:
     """Manage configured travel journeys and multi-time-window schedules."""
@@ -619,9 +609,32 @@ def journeys() -> Any:
 
                 name = str(entry.get("name", "")).strip()
                 from_type = str(entry.get("from_type", "station")).strip().lower()
+                if from_type in ("rail", "train", "station"):
+                    from_type = "station"
+                elif from_type in ("bus", "bus_stop", "stop"):
+                    from_type = "bus_stop"
+                elif from_type in ("ha", "ha_location", "home_assistant"):
+                    from_type = "ha_location"
+                elif from_type in ("custom", "custom_location"):
+                    from_type = "custom_location"
+                else:
+                    from_type = "station"
+
                 from_id = str(entry.get("from_id", "")).strip()
                 from_name = str(entry.get("from_name", "")).strip()
+
                 to_type = str(entry.get("to_type", "station")).strip().lower()
+                if to_type in ("rail", "train", "station"):
+                    to_type = "station"
+                elif to_type in ("bus", "bus_stop", "stop"):
+                    to_type = "bus_stop"
+                elif to_type in ("ha", "ha_location", "home_assistant"):
+                    to_type = "ha_location"
+                elif to_type in ("custom", "custom_location"):
+                    to_type = "custom_location"
+                else:
+                    to_type = "station"
+
                 to_id = str(entry.get("to_id", "")).strip()
                 to_name = str(entry.get("to_name", "")).strip()
 
@@ -699,118 +712,6 @@ def journeys() -> Any:
         journeys=current_journeys,
         active_tab="journeys",
     )
-
-
-@config_bp.route("/journeys/search", methods=["GET"])
-def search_journey_locations() -> Any:
-    """Search stations, bus stops, and custom/Home Assistant locations for journey configuration."""
-    target_type = request.args.get("type", "").lower().strip()
-    query = request.args.get("q", "").strip()
-    limit_raw = request.args.get("limit", "15").strip()
-    try:
-        limit = max(1, min(int(limit_raw), 50))
-    except ValueError:
-        limit = 15
-
-    results: List[Dict[str, Any]] = []
-    seen_keys = set()
-
-    # Query Rail Stations
-    if not target_type or target_type in ("station", "train", "rail"):
-        try:
-            st_list = (
-                Stop.search(query, stop_type="rail", limit=limit)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "rail").limit(limit))
-            )
-            for st in st_list:
-                st_code = st.naptan_code or st.atco_code
-                key = f"station:{st_code}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    results.append(
-                        {
-                            "type": "station",
-                            "id": st_code,
-                            "name": st.name,
-                            "description": f"National Rail Station - {st_code}",
-                            "indicator": "Rail",
-                            "icon": "train",
-                        }
-                    )
-        except Exception:
-            pass
-
-    # Query Bus Stops
-    if not target_type or target_type in ("bus_stop", "bus", "stop"):
-        try:
-            stop_list = (
-                Stop.search(query, stop_type="bus", limit=limit)
-                if query
-                else list(Stop.select().where(Stop.stop_type == "bus").limit(limit))
-            )
-            for sp in stop_list:
-                key = f"bus_stop:{sp.atco_code}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    loc_suffix = f", {sp.locality}" if sp.locality else ""
-                    ind_text = f" ({sp.indicator})" if sp.indicator else ""
-                    results.append(
-                        {
-                            "type": "bus_stop",
-                            "id": sp.atco_code,
-                            "name": f"{sp.name}{ind_text}",
-                            "description": f"Bus Stop{loc_suffix} - {sp.atco_code}",
-                            "indicator": sp.indicator or "Bus Stop",
-                            "icon": "directions_bus",
-                        }
-                    )
-        except Exception:
-            pass
-
-    # Query Custom & Home Assistant Locations
-    if not target_type or target_type in (
-        "location",
-        "ha_location",
-        "custom_location",
-        "ha",
-        "custom",
-    ):
-        try:
-            loc_list = (
-                Location.search(query, limit=limit)
-                if query
-                else list(Location.select().limit(limit))
-            )
-            for loc in loc_list:
-                is_ha = bool(getattr(loc, "ha", False))
-                loc_type = "ha_location" if is_ha else "custom_location"
-                if target_type and target_type not in ("location", loc_type):
-                    continue
-
-                key = f"{loc_type}:{loc.id}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    icon = "home" if is_ha else "pin_drop"
-                    indicator = "Home Assistant" if is_ha else "Custom"
-                    desc = (
-                        f"{indicator} Location - "
-                        f"({loc.latitude:.4f}, {loc.longitude:.4f})"
-                    )
-                    results.append(
-                        {
-                            "type": loc_type,
-                            "id": str(loc.id),
-                            "name": loc.name,
-                            "description": desc,
-                            "indicator": indicator,
-                            "icon": icon,
-                        }
-                    )
-        except Exception:
-            pass
-
-    return jsonify({"results": results, "total": len(results)})
 
 
 @config_bp.route("/db", methods=["GET"])

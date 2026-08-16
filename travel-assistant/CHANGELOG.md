@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NaPTAN datasource integration (`NaptanClient`) fetching open national access nodes from the Department for Transport NaPTAN API (`https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv`).
 - Unified transit synchronisation pipeline (`sync_stops`) populating all UK transit stops in a single background sync task.
 
-### Changed
+- Consolidated location search endpoint (`GET /config/search/places`) providing unified multi-modal search across rail stations, bus stops, Home Assistant locations, and custom locations with standardised namespaced identifiers (`naptan:<crs>`, `atco:<code>`, `ha:<id>`, `custom:<hex>`).
+- Removed obsolete, redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, and `/config/journeys/search`) in favour of the single `/config/search/places` endpoint.
+- Updated Journey and Transfer configurations and modals to support all location types seamlessly.
 - Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).
 - Updated API credentials check buttons on `/config/credentials` into compact 28x28px icon-only check buttons matching the unified action icon design.
 - Tightened Actions column widths across data tables to eliminate redundant whitespace.

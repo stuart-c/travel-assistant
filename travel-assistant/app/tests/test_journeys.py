@@ -220,32 +220,36 @@ def test_config_journeys_search(
     sample_bus_stop: Stop,
     sample_custom_location: Location,
 ) -> None:
-    """Test GET /config/journeys/search returns categorised locations with icons."""
+    """Test GET /config/search/places returns categorised locations with icons and IDs."""
     # Test broad search
-    response = client.get("/config/journeys/search?q=London")
+    response = client.get("/config/search/places?q=London")
     assert response.status_code == 200
     data = response.get_json()
     assert "results" in data
     assert any(
-        item["type"] == "station" and item["icon"] == "train"
+        item["type"] == "station"
+        and item["icon"] == "train"
+        and item["id"] == "naptan:WAT"
         for item in data["results"]
     )
 
     # Test bus stop search
-    response_bus = client.get("/config/journeys/search?q=Euston&type=bus_stop")
+    response_bus = client.get("/config/search/places?q=Euston&type=bus_stop")
     assert response_bus.status_code == 200
     data_bus = response_bus.get_json()
     assert len(data_bus["results"]) >= 1
     assert data_bus["results"][0]["icon"] == "directions_bus"
     assert data_bus["results"][0]["indicator"] == "Stop E"
+    assert data_bus["results"][0]["id"] == "atco:490000077E"
 
     # Test custom location search
-    response_custom = client.get("/config/journeys/search?q=Home&type=custom_location")
+    response_custom = client.get("/config/search/places?q=Home&type=custom_location")
     assert response_custom.status_code == 200
     data_custom = response_custom.get_json()
     assert len(data_custom["results"]) >= 1
     assert data_custom["results"][0]["icon"] == "pin_drop"
     assert data_custom["results"][0]["indicator"] == "Custom"
+    assert data_custom["results"][0]["id"] == str(sample_custom_location.id)
 
 
 def test_db_stats_includes_journeys(app: Flask) -> None:

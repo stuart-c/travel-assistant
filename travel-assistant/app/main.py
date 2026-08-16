@@ -93,13 +93,6 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
             }
         )
 
-    @app.route("/api/timetables/search")
-    def api_search_timetables() -> Any:
-        """Search and lookup timetable feeds, stations, and bus routes."""
-        from app.views.config import search_timetables
-
-        return search_timetables()
-
     @app.route("/api/sync", methods=["POST"], strict_slashes=False)
     @app.route("/api/sync/<table_name>", methods=["POST"], strict_slashes=False)
     def api_sync(table_name: str = "all") -> Any:

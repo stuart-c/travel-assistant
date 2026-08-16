@@ -1,6 +1,5 @@
 """Unit tests for the Travel Assistant Flask application."""
 
-from flask import Flask
 from flask.testing import FlaskClient
 
 
@@ -55,38 +54,6 @@ def test_page_404_html_response(client: FlaskClient) -> None:
     response = client.get("/unknown-page")
     assert response.status_code == 404
     assert b"Page not found" in response.data
-
-
-def test_api_timetables_search_endpoint(client: FlaskClient, app: Flask) -> None:
-    """Test that /api/timetables/search returns search results and handles unpopulated states."""
-    from app.models import BusRoute
-
-    # Unpopulated state
-    response = client.get("/api/timetables/search?type=bus")
-    assert response.status_code == 200
-    data = response.get_json()
-    assert "results" in data
-    assert data["results"] == []
-    assert data["total"] == 0
-
-    # Populated state
-    with app.app_context():
-        BusRoute.bulk_upsert(
-            [
-                {
-                    "route_number": "1",
-                    "operator_name": "Oxford Bus Company",
-                    "origin": "Blackbird Leys",
-                    "destination": "Oxford City Centre",
-                }
-            ]
-        )
-
-    res_pop = client.get("/api/timetables/search?type=bus_route")
-    assert res_pop.status_code == 200
-    data_pop = res_pop.get_json()
-    assert len(data_pop["results"]) == 1
-    assert data_pop["results"][0]["route_number"] == "1"
 
 
 def test_api_sync_endpoints(client: FlaskClient) -> None:

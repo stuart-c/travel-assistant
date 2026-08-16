@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('journeys-form');
   if (!form) return;
 
-  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/journeys/search';
+  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
   // Parse initial data payload
   const initialScript = document.getElementById('initial-journeys-data');
