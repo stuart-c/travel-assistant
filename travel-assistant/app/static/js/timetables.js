@@ -395,9 +395,9 @@ document.addEventListener('DOMContentLoaded', () => {
           : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 opacity-40';
         return `<span class="inline-flex items-center justify-center min-w-[20px] px-1 py-0.5 rounded text-[10px] ${cls}" title="${d.title}">${d.label}</span>`;
       })
-      .join(' ');
+      .join('');
 
-    return `<div class="flex items-center gap-1 flex-nowrap whitespace-nowrap">${badges}</div>`;
+    return `<div class="flex items-center gap-1 flex-nowrap whitespace-nowrap" style="white-space: nowrap !important; flex-wrap: nowrap !important;">${badges}</div>`;
   }
 
   // Format data rows for Grid.js list view
@@ -491,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const grid = new gridjs.Grid({
     columns: columnsConfig,
     data: formatGridData(stagedTimetables),
+    sort: true,
     search: {
       placeholder: 'Search timetables...',
     },

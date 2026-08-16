@@ -98,15 +98,42 @@
   display: none !important;
 }
 
+/* Disable sort styling and hide sort buttons on non-sortable headers */
+.gridjs-th:not(.gridjs-th-sort),
+th[data-column-id="actions"],
+th[data-column-id="schedule"],
+th[data-column-id="applicable days"] {
+  cursor: default !important;
+}
+.gridjs-th:not(.gridjs-th-sort) .gridjs-sort,
+.gridjs-th:not(.gridjs-th-sort) button.gridjs-sort,
+th[data-column-id="actions"] .gridjs-sort,
+th[data-column-id="actions"] button.gridjs-sort,
+th[data-column-id="schedule"] .gridjs-sort,
+th[data-column-id="schedule"] button.gridjs-sort,
+th[data-column-id="applicable days"] .gridjs-sort,
+th[data-column-id="applicable days"] button.gridjs-sort {
+  display: none !important;
+}
+
+/* Enforce single-line non-wrapping for Applicable Days column */
+td[data-column-id="applicable days"],
+th[data-column-id="applicable days"] {
+  white-space: nowrap !important;
+}
+
 /* Collapsible sections animation and chevron rotation */
 .collapsible-section {
   transition: all 0.2s ease-in-out;
 }
-.collapsible-chevron {
+.collapsible-chevron,
+.collapse-icon {
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
 }
-.collapsed .collapsible-chevron {
-  transform: rotate(-90deg);
+.collapsed .collapsible-chevron,
+.collapsed .collapse-icon {
+  transform: rotate(-90deg) !important;
 }
 .collapsed .collapsible-body {
   display: none !important;

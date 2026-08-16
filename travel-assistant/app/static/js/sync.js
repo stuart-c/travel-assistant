@@ -215,6 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const grid = new gridjs.Grid({
     columns: columnsConfig,
     data: formatGridData(stagedTables),
+    sort: true,
     search: false,
     pagination: false,
   }).render(gridContainer);

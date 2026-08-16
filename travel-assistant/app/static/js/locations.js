@@ -209,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const grid = new gridjs.Grid({
     columns: columnsConfig,
     data: formatGridData(stagedLocations),
+    sort: true,
     search: {
       enabled: true,
       placeholder: 'Search locations...',
