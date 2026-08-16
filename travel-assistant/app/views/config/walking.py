@@ -10,7 +10,7 @@ from app.views.config.common import save_bulk_config
 
 
 def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Validate and sanitize a single walking route item."""
+    """Validate and sanitise a single walking route item."""
     if not isinstance(entry, dict):
         return None
 

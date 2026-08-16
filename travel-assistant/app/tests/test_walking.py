@@ -304,3 +304,57 @@ def test_db_stats_includes_walking(app: Flask) -> None:
         assert walking_table is not None
         assert walking_table["row_count"] == 1
         assert walking_table["syncable"] is False
+
+
+def test_clean_walking_item() -> None:
+    """Test clean_walking_item validator with various valid and invalid inputs."""
+    from app.views.config.walking import clean_walking_item
+
+    # Non-dict
+    assert clean_walking_item("not a dict") is None
+    assert clean_walking_item(123) is None
+
+    # Missing mandatory fields
+    assert clean_walking_item({"start_id": "s1", "start_name": "S1"}) is None
+    assert clean_walking_item({"finish_id": "f1", "finish_name": "F1"}) is None
+    assert clean_walking_item({}) is None
+
+    # Invalid types fallback to custom
+    res = clean_walking_item(
+        {
+            "start_type": "invalid_type",
+            "start_id": "s1",
+            "start_name": "Start",
+            "finish_type": "another_invalid",
+            "finish_id": "f1",
+            "finish_name": "Finish",
+            "time_needed_minutes": "not_a_number",
+            "bidirectional": False,
+        }
+    )
+    assert res is not None
+    assert res["start_type"] == "custom"
+    assert res["finish_type"] == "custom"
+    assert res["time_needed_minutes"] == 5
+    assert res["bidirectional"] is False
+
+    # Valid item
+    valid = clean_walking_item(
+        {
+            "start_type": "rail",
+            "start_id": "9100KNGX",
+            "start_name": "King's Cross",
+            "finish_type": "bus",
+            "finish_id": "490000077E",
+            "finish_name": "Stop E",
+            "time_needed_minutes": "12",
+            "bidirectional": "true",
+        }
+    )
+    assert valid is not None
+    assert valid["start_type"] == "rail"
+    assert valid["start_id"] == "9100KNGX"
+    assert valid["finish_type"] == "bus"
+    assert valid["finish_id"] == "490000077E"
+    assert valid["time_needed_minutes"] == 12
+    assert valid["bidirectional"] is True

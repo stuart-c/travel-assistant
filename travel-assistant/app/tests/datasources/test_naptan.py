@@ -45,7 +45,7 @@ def test_naptan_from_settings(app: Flask) -> None:
         assert custom_client.endpoint == "https://custom.naptan.api/stops.csv"
 
 
-@patch("requests.get")
+@patch("app.datasources.naptan.requests.get")
 def test_naptan_fetch_stops_success(mock_get: MagicMock) -> None:
     """Test fetch_stops parses CSV content correctly."""
     csv_data = """ATCOCode,NaptanCode,StopType,CommonName,Indicator,LocalityName,Latitude,Longitude
@@ -80,7 +80,7 @@ def test_naptan_fetch_stops_success(mock_get: MagicMock) -> None:
     assert stops[2]["longitude"] is None
 
 
-@patch("requests.get")
+@patch("app.datasources.naptan.requests.get")
 def test_naptan_fetch_stops_limit(mock_get: MagicMock) -> None:
     """Test fetch_stops respects the limit argument."""
     csv_data = """ATCOCode,CommonName
@@ -94,7 +94,7 @@ def test_naptan_fetch_stops_limit(mock_get: MagicMock) -> None:
     assert len(stops) == 2
 
 
-@patch("requests.get")
+@patch("app.datasources.naptan.requests.get")
 def test_naptan_fetch_stops_errors(mock_get: MagicMock) -> None:
     """Test fetch_stops error handling."""
     client = NaptanClient()
@@ -115,7 +115,7 @@ def test_naptan_fetch_stops_errors(mock_get: MagicMock) -> None:
         client.fetch_stops()
 
 
-@patch("requests.get")
+@patch("app.datasources.naptan.requests.get")
 def test_naptan_fetch_rail_stations_success(mock_get: MagicMock) -> None:
     """Test fetch_rail_stations parses rail station CSV content correctly."""
     csv_data = """ATCOCode,CrsRef,CommonName,TiplocRef,Latitude,Longitude,StopType,Operator
@@ -141,7 +141,7 @@ def test_naptan_fetch_rail_stations_success(mock_get: MagicMock) -> None:
     assert stations[2]["crs_code"] == "PAD"
 
 
-@patch("requests.get")
+@patch("app.datasources.naptan.requests.get")
 def test_naptan_fetch_rail_stations_limit_and_errors(mock_get: MagicMock) -> None:
     """Test fetch_rail_stations limit and error branches."""
     csv_data = """ATCOCode,CrsRef,CommonName,StopType
