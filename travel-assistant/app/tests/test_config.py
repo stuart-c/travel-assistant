@@ -537,7 +537,7 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"Background Sync" in response.data
     assert b"Transit Datasets" in response.data
-    assert b"sync-all-btn" in response.data
+    assert b"sync-all-btn" not in response.data
     assert b"sync-grid-wrapper" in response.data
     assert b"initial-sync-stats" in response.data
     assert b"/static/js/sync.js" in response.data
@@ -558,24 +558,14 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert loc_entry["syncable"] is True
 
 
-def test_sync_db_table_endpoint_all(
-    client: FlaskClient, monkeypatch: MonkeyPatch
-) -> None:
-    """Test POST /config/db/sync triggers sync_all."""
-    from app.views import config
-
-    mock_sync_all = MagicMock(
-        return_value={"success": True, "total_records": 100, "tables": {}}
-    )
-    monkeypatch.setattr(config, "sync_all", mock_sync_all)
-
-    response = client.post("/config/db/sync")
-    assert response.status_code == 200
+def test_sync_db_table_endpoint_all_rejected(client: FlaskClient) -> None:
+    """Test POST /config/db/sync/all returns 400 as bulk synchronisation is removed."""
+    response = client.post("/config/db/sync/all")
+    assert response.status_code == 400
     data = response.get_json()
-    assert data["success"] is True
-    assert data["total_records"] == 100
-    assert "stats" in data
-    mock_sync_all.assert_called_once_with(force=True)
+    assert data["success"] is False
+    assert data["status"] == "error"
+    assert "Bulk dataset synchronisation is not supported" in data["message"]
 
 
 def test_sync_db_table_endpoint_specific_success(
