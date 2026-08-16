@@ -221,20 +221,24 @@ def test_check_and_run_background_sync(app: Flask) -> None:
 
 def test_background_worker_lifecycle(app: Flask) -> None:
     """Test TransitBackgroundWorker start, loop execution, and stop."""
-    worker = TransitBackgroundWorker(
-        app=app,
-        check_interval_seconds=1,
-        initial_delay_seconds=0.0,
-        max_age_seconds=86400,
-    )
-    assert worker.is_running() is False
-    worker.start()
-    assert worker.is_running() is True
-    # Idempotent start
-    worker.start()
+    with patch(
+        "app.sync.worker.check_and_run_background_sync",
+        return_value={"triggered_count": 0},
+    ):
+        worker = TransitBackgroundWorker(
+            app=app,
+            check_interval_seconds=1,
+            initial_delay_seconds=0.0,
+            max_age_seconds=86400,
+        )
+        assert worker.is_running() is False
+        worker.start()
+        assert worker.is_running() is True
+        # Idempotent start
+        worker.start()
 
-    worker.stop()
-    assert worker.is_running() is False
+        worker.stop()
+        assert worker.is_running() is False
 
 
 def test_global_background_worker_helpers(app: Flask) -> None:
@@ -248,20 +252,24 @@ def test_global_background_worker_helpers(app: Flask) -> None:
     # Test with non-testing config
     non_test_app = Flask(__name__)
     non_test_app.config["TESTING"] = False
-    worker = start_background_worker(
-        non_test_app,
-        check_interval_seconds=1,
-        initial_delay_seconds=0.0,
-    )
-    assert worker is not None
-    assert get_background_worker() is worker
+    with patch(
+        "app.sync.worker.check_and_run_background_sync",
+        return_value={"triggered_count": 0},
+    ):
+        worker = start_background_worker(
+            non_test_app,
+            check_interval_seconds=1,
+            initial_delay_seconds=0.0,
+        )
+        assert worker is not None
+        assert get_background_worker() is worker
 
-    # Calling start again returns existing instance
-    w2 = start_background_worker(non_test_app)
-    assert w2 is worker
+        # Calling start again returns existing instance
+        w2 = start_background_worker(non_test_app)
+        assert w2 is worker
 
-    stop_background_worker()
-    assert get_background_worker() is None
+        stop_background_worker()
+        assert get_background_worker() is None
 
 
 def test_sync_all_with_table_error(app: Flask) -> None:
