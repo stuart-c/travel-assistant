@@ -150,14 +150,18 @@ def test_credentials_page_and_validation(client: FlaskClient) -> None:
     assert "API credentials saved successfully." in post_resp.get_data(as_text=True)
 
     # Test async validator endpoint
-    val_resp = client.post(
-        "/config/credentials/validate",
-        json={"service": "bus", "bus_api_key": "invalid-test-key"},
-    )
-    assert val_resp.status_code == 200
-    val_data = json.loads(val_resp.get_data(as_text=True))
-    assert val_data.get("valid") is False
-    assert "Invalid Bus API key" in val_data.get("message", "")
+    from unittest.mock import MagicMock, patch
+
+    mock_resp = MagicMock(status_code=401)
+    with patch("app.datasources.bods.requests.get", return_value=mock_resp):
+        val_resp = client.post(
+            "/config/credentials/validate",
+            json={"service": "bus", "bus_api_key": "invalid-test-key"},
+        )
+        assert val_resp.status_code == 200
+        val_data = json.loads(val_resp.get_data(as_text=True))
+        assert val_data.get("valid") is False
+        assert "Invalid Bus API key" in val_data.get("message", "")
 
 
 def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
