@@ -4,46 +4,8 @@ from typing import Any, Dict, List
 from flask import jsonify, request
 
 from app.models import Location, Stop
+from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
-
-STOP_TYPE_CONFIG: Dict[str, Dict[str, str]] = {
-    "rail": {
-        "type": "rail",
-        "icon": "train",
-        "indicator": "Rail",
-        "label": "National Rail Station",
-    },
-    "bus": {
-        "type": "bus",
-        "icon": "directions_bus",
-        "indicator": "Bus Stop",
-        "label": "Bus Stop",
-    },
-    "tram": {
-        "type": "tram",
-        "icon": "tram",
-        "indicator": "Tram",
-        "label": "Tram Stop",
-    },
-    "metro": {
-        "type": "metro",
-        "icon": "subway",
-        "indicator": "Metro",
-        "label": "Metro Station",
-    },
-    "ferry": {
-        "type": "ferry",
-        "icon": "directions_boat",
-        "indicator": "Ferry",
-        "label": "Ferry Terminal",
-    },
-    "air": {
-        "type": "air",
-        "icon": "flight",
-        "indicator": "Air",
-        "label": "Airport Terminal",
-    },
-}
 
 
 @config_bp.route("/search/places", methods=["GET"])
@@ -62,14 +24,14 @@ def search_places() -> Any:
 
     # Determine which transit stop types to search
     if not target_type or target_type == "all":
-        types_to_search = list(STOP_TYPE_CONFIG.keys())
-    elif target_type in STOP_TYPE_CONFIG:
+        types_to_search = list(TRANSPORT_MODES.keys())
+    elif target_type in TRANSPORT_MODES:
         types_to_search = [target_type]
     else:
         types_to_search = []
 
     for st_type in types_to_search:
-        meta = STOP_TYPE_CONFIG[st_type]
+        meta = TRANSPORT_MODES[st_type]
         try:
             if query:
                 st_list = Stop.search(query, stop_type=st_type, limit=limit)
@@ -97,7 +59,7 @@ def search_places() -> Any:
                             "name": f"{st.name}{ind_text}",
                             "type": meta["type"],
                             "description": (
-                                f"{meta['label']}{loc_suffix} - "
+                                f"{meta['description_label']}{loc_suffix} - "
                                 f"{st.naptan_code or st.atco_code}"
                             ),
                             "indicator": st.indicator or meta["indicator"],

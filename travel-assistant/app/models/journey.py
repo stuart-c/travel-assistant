@@ -1,10 +1,9 @@
 """Peewee model for configured journeys and multi-time-window schedules."""
 
-import json
 from typing import Any, Dict, List, Optional
-from peewee import AutoField, CharField, TextField
+from peewee import AutoField, CharField
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, JSONField
 
 
 class Journey(BaseModel):
@@ -18,7 +17,7 @@ class Journey(BaseModel):
     to_type = CharField()
     to_id = CharField()
     to_name = CharField()
-    time_settings = TextField(default="[]")
+    time_settings = JSONField(default=list)
 
     class Meta:
         table_name = "journeys"
@@ -29,19 +28,14 @@ class Journey(BaseModel):
 
     def get_time_settings(self) -> List[Dict[str, Any]]:
         """Deserialise and return configured time settings list."""
-        if not self.time_settings:
-            return []
-        try:
-            parsed = json.loads(self.time_settings)
-            if isinstance(parsed, list):
-                return parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
+        val = self.time_settings
+        if isinstance(val, list):
+            return val
         return []
 
     def set_time_settings(self, settings_list: List[Dict[str, Any]]) -> None:
-        """Serialise and store time settings list as JSON."""
-        self.time_settings = json.dumps(settings_list or [])
+        """Serialise and store time settings list."""
+        self.time_settings = settings_list or []
 
     def to_dict(self, recurse: bool = False, **kwargs: Any) -> Dict[str, Any]:
         """Convert journey model to dictionary with parsed time settings."""

@@ -229,6 +229,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showToast(category, htmlContent) {
+    if (window.TransitUI && window.TransitUI.showNotification) {
+      window.TransitUI.showNotification(toastBox, htmlContent, category, { isHtml: true });
+      return;
+    }
     if (!toastBox) return;
 
     toastBox.className = 'mb-6 p-4 rounded-xl text-sm font-medium border flex items-center gap-3 transition-all';

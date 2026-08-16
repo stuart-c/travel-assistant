@@ -360,6 +360,72 @@ window.TransitUI = (function () {
       });
     },
   };
+  /**
+   * Display a styled notification alert banner in a container element.
+   *
+   * @param {HTMLElement|string} container - The container element or selector.
+   * @param {string} message - Text or HTML message content.
+   * @param {'success'|'error'|'info'|'warning'} [type='info'] - Alert category.
+   * @param {Object} [options] - Configuration options.
+   * @param {number} [options.autoDismissMs] - Auto dismiss timeout in ms (default 0 = permanent until replaced).
+   * @param {boolean} [options.isHtml=false] - Whether message contains HTML.
+   */
+  function showNotification(container, message, type = 'info', options = {}) {
+    const el = typeof container === 'string' ? document.querySelector(container) : container;
+    if (!el) return;
+
+    const isSuccess = type === 'success';
+    const isError = type === 'error';
+    const isWarning = type === 'warning';
+
+    const icon = isSuccess ? 'check_circle' : isError ? 'error' : isWarning ? 'warning' : 'info';
+
+    el.className = el.className
+      .replace(/\b(bg|text|border)-(emerald|rose|amber|sky|slate)-[^\s]+/g, '')
+      .trim();
+
+    let typeClasses = 'bg-sky-50 border-sky-200 text-sky-800 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300';
+    let iconClass = 'text-sky-600 dark:text-sky-400';
+
+    if (isSuccess) {
+      typeClasses = 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-300';
+      iconClass = 'text-emerald-600 dark:text-emerald-400';
+    } else if (isError) {
+      typeClasses = 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300';
+      iconClass = 'text-rose-600 dark:text-rose-400';
+    } else if (isWarning) {
+      typeClasses = 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-300';
+      iconClass = 'text-amber-600 dark:text-amber-400';
+    }
+
+    el.classList.add(
+      'p-4',
+      'rounded-xl',
+      'text-sm',
+      'font-medium',
+      'border',
+      'flex',
+      'items-center',
+      'gap-3',
+      'transition-all',
+      ...typeClasses.split(' ')
+    );
+    el.classList.remove('hidden');
+
+    const msgHtml = options.isHtml ? message : escapeHtml(message);
+    el.innerHTML = `
+      <span class="material-symbols-outlined text-xl shrink-0 leading-none ${iconClass}">${icon}</span>
+      <div class="flex-1">${msgHtml}</div>
+    `;
+
+    const autoDismiss = options.autoDismissMs !== undefined ? options.autoDismissMs : 0;
+    if (autoDismiss > 0) {
+      clearTimeout(el._dismissTimeout);
+      el._dismissTimeout = setTimeout(() => {
+        el.classList.add('hidden');
+      }, autoDismiss);
+    }
+  }
 
   return {
     escapeHtml,
@@ -372,5 +438,6 @@ window.TransitUI = (function () {
     formatExactTime,
     formatDaysSummary,
     CollapsibleManager,
+    showNotification,
   };
 })();

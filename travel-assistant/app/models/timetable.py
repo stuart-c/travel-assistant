@@ -1,10 +1,9 @@
 """Peewee model for configured transport timetables."""
 
-import json
 from typing import Any, Dict, List, Optional
-from peewee import AutoField, BooleanField, CharField, DateField, TextField
+from peewee import AutoField, BooleanField, CharField, DateField
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, JSONField
 
 
 class Timetable(BaseModel):
@@ -23,29 +22,24 @@ class Timetable(BaseModel):
     saturday = BooleanField(default=True)
     sunday = BooleanField(default=True)
     bank_holiday = BooleanField(default=True)
-    content = TextField(default='{"stops":[], "trips":[]}')
+    content = JSONField(default=lambda: {"stops": [], "trips": []})
 
     class Meta:
         table_name = "timetables"
 
     def get_content(self) -> Dict[str, Any]:
         """Deserialise and return configured timetable stops and trips."""
-        if not self.content:
-            return {"stops": [], "trips": []}
-        try:
-            parsed = json.loads(self.content)
-            if isinstance(parsed, dict):
-                return {
-                    "stops": parsed.get("stops", []),
-                    "trips": parsed.get("trips", []),
-                }
-        except (json.JSONDecodeError, TypeError):
-            pass
+        val = self.content
+        if isinstance(val, dict):
+            return {
+                "stops": val.get("stops", []),
+                "trips": val.get("trips", []),
+            }
         return {"stops": [], "trips": []}
 
     def set_content(self, content_data: Dict[str, Any]) -> None:
-        """Serialise and store timetable grid contents as JSON."""
-        clean_content = {
+        """Serialise and store timetable grid contents."""
+        self.content = {
             "stops": (
                 content_data.get("stops", []) if isinstance(content_data, dict) else []
             ),
@@ -53,7 +47,6 @@ class Timetable(BaseModel):
                 content_data.get("trips", []) if isinstance(content_data, dict) else []
             ),
         }
-        self.content = json.dumps(clean_content)
 
     def to_dict(self, recurse: bool = False, **kwargs: Any) -> Dict[str, Any]:
         """Convert timetable model to dictionary with parsed grid contents."""
