@@ -15,7 +15,7 @@ from app.datasources import (
     DataSourceConfigError,
     DataSourceConnectionError,
     DataSourceError,
-    TrainLiveClient,
+    NaptanClient,
     TrainS3Client,
 )
 from app.db import SYNCABLE_TABLES, db, init_db
@@ -105,69 +105,16 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
 
 
 def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise bus stops using configured Bus Open Data Service (BODS) credentials."""
+    """Synchronise bus stops using public NaPTAN open dataset."""
     _ensure_db_initialized(app)
     start_time = time.time()
 
     with db.connection_context():
-        client = BodsClient.from_settings()
-        if not client.api_key:
-            msg = "Bus API Key not configured in Settings > API Credentials"
-            SyncMetadata.record_skipped("bus_stops", msg)
-            return {
-                "table": "bus_stops",
-                "status": "skipped_no_credentials",
-                "records": 0,
-                "message": msg,
-                "duration_seconds": 0.0,
-            }
-
         SyncMetadata.record_start("bus_stops")
 
         try:
-            url = (
-                client.base_url.rstrip("/") + "/"
-                if "/dataset" in client.base_url
-                else f"{client.base_url}/dataset/"
-            )
-            params = {"api_key": client.api_key, "limit": 25}
-            response = requests.get(url, params=params, timeout=client.timeout)
-
-            if response.status_code in (401, 403):
-                err_msg = (
-                    f"BODS authentication failed (HTTP {response.status_code}): "
-                    "Invalid Bus API key."
-                )
-                duration = round(time.time() - start_time, 2)
-                SyncMetadata.record_error("bus_stops", err_msg, duration)
-                return {
-                    "table": "bus_stops",
-                    "status": "error",
-                    "records": 0,
-                    "message": err_msg,
-                    "duration_seconds": duration,
-                }
-
-            response.raise_for_status()
-            data = response.json()
-            results = data.get("results", [])
-
-            stops_to_upsert: List[Dict[str, Any]] = []
-            for item in results:
-                feed_id = str(item.get("id", ""))
-                operator_name = item.get("operator_name", "") or item.get("name", "")
-                atco_code = f"BODS-FEED-{feed_id}"
-                stops_to_upsert.append(
-                    {
-                        "atco_code": atco_code,
-                        "naptan_code": None,
-                        "name": f"{operator_name} Transit Feed Area",
-                        "indicator": "Feed Hub",
-                        "locality": item.get("url", ""),
-                        "latitude": None,
-                        "longitude": None,
-                    }
-                )
+            client = NaptanClient.from_settings()
+            stops_to_upsert = client.fetch_stops()
 
             if stops_to_upsert:
                 BusStop.bulk_upsert(stops_to_upsert)
@@ -179,12 +126,12 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
                 "table": "bus_stops",
                 "status": "success",
                 "records": count,
-                "message": f"Successfully synchronised {count} bus stop references from BODS.",
+                "message": f"Successfully synchronised {count} bus stop access nodes from NaPTAN.",
                 "duration_seconds": duration,
             }
-        except requests.exceptions.RequestException as exc:
+        except (DataSourceConnectionError, requests.exceptions.RequestException) as exc:
             duration = round(time.time() - start_time, 2)
-            err_msg = f"Network or API error while contacting BODS: {str(exc)}"
+            err_msg = f"Network or API error while contacting NaPTAN: {str(exc)}"
             SyncMetadata.record_error("bus_stops", err_msg, duration)
             return {
                 "table": "bus_stops",
@@ -207,61 +154,22 @@ def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
 
 
 def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise rail stations using configured Train S3 storage or Darwin live credentials."""
+    """Synchronise rail stations using configured Train S3 storage or NaPTAN public open data."""
     _ensure_db_initialized(app)
     start_time = time.time()
 
     with db.connection_context():
         s3_client = TrainS3Client.from_settings()
-        live_client = TrainLiveClient.from_settings()
-
-        if not s3_client.bucket_name and not live_client.api_key:
-            msg = (
-                "Train credentials (S3 bucket or Live API key) not configured in "
-                "Settings > API Credentials"
-            )
-            SyncMetadata.record_skipped("stations", msg)
-            return {
-                "table": "stations",
-                "status": "skipped_no_credentials",
-                "records": 0,
-                "message": msg,
-                "duration_seconds": 0.0,
-            }
-
         SyncMetadata.record_start("stations")
 
         try:
             stations_to_upsert: List[Dict[str, Any]] = []
 
             if s3_client.bucket_name:
-                try:
-                    stations_to_upsert = s3_client.fetch_stations(key="stations.json")
-                except DataSourceError as de:
-                    if "NoSuchKey" in str(de) or "404" in str(de):
-                        stations_to_upsert.append(
-                            {
-                                "crs_code": "S3-HUB",
-                                "name": f"S3 Darwin Feed ({s3_client.bucket_name})",
-                                "tiploc_code": None,
-                                "latitude": None,
-                                "longitude": None,
-                                "operator": "National Rail Timetable Bucket",
-                            }
-                        )
-                    else:
-                        raise de
-            elif live_client.api_key:
-                stations_to_upsert.append(
-                    {
-                        "crs_code": "LDBWS-HUB",
-                        "name": "National Rail Live Gateway Hub",
-                        "tiploc_code": None,
-                        "latitude": None,
-                        "longitude": None,
-                        "operator": "Darwin LDBWS",
-                    }
-                )
+                stations_to_upsert = s3_client.fetch_stations(key="stations.json")
+            else:
+                naptan_client = NaptanClient.from_settings()
+                stations_to_upsert = naptan_client.fetch_rail_stations()
 
             if stations_to_upsert:
                 Station.bulk_upsert(stations_to_upsert)
@@ -278,7 +186,7 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
         except DataSourceError as exc:
             duration = round(time.time() - start_time, 2)
-            err_msg = f"AWS S3 error while reading station records: {str(exc)}"
+            err_msg = f"DataSource error while reading station records: {str(exc)}"
             SyncMetadata.record_error("stations", err_msg, duration)
             return {
                 "table": "stations",

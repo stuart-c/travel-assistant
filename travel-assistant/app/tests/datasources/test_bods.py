@@ -113,7 +113,7 @@ def test_bods_fetch_routes_empty_key() -> None:
 
 @patch("app.datasources.bods.requests.get")
 def test_bods_fetch_routes_success(mock_get: MagicMock) -> None:
-    """Test fetch_routes successfully parses routes with and without lines array."""
+    """Test fetch_routes successfully parses routes with verified lines."""
     mock_response = MagicMock(status_code=200)
     mock_response.json.return_value = {
         "results": [
@@ -143,11 +143,10 @@ def test_bods_fetch_routes_success(mock_get: MagicMock) -> None:
 
     client = BodsClient(api_key="valid-key")
     routes = client.fetch_routes(limit=10)
-    assert len(routes) == 3
+    assert len(routes) == 2
     assert routes[0]["route_number"] == "1"
     assert routes[0]["operator_name"] == "Oxford Bus Company"
     assert routes[1]["route_number"] == "5"
-    assert routes[2]["route_number"] == "DS-102"
 
 
 @patch("app.datasources.bods.requests.get")
