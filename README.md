@@ -43,7 +43,7 @@ Home Assistant Add-on providing travel and transport intelligence powered by Pyt
 
 ## Agent and Contribution Guidelines
 
-Please read [AGENTS.md](AGENTS.md) before making contributions. All development follows a PR-based git worktree workflow with British English language conventions.
+Please read [AGENTS.md](AGENTS.md) before making contributions. All development follows a PR-based workflow with British English language conventions.
 
 ## License
 
