@@ -5,7 +5,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app.db import get_db_stats
-from app.models import Location
+from app.models import Location, SyncMetadata
 
 
 def test_location_model_crud(app: Flask) -> None:
@@ -242,13 +242,17 @@ def test_post_locations_skips_invalid_entries(client: FlaskClient, app: Flask) -
 
 
 def test_db_stats_includes_locations(app: Flask) -> None:
-    """Test get_db_stats inspects and reports records for locations table."""
+    """Test get_db_stats inspects and reports records for locations table and marks it syncable."""
     with app.app_context():
         Location.create(name="Stats Location 1", latitude=51.5, longitude=-0.1)
         Location.create(name="Stats Location 2", latitude=51.6, longitude=-0.2)
+        SyncMetadata.record_success("ha_locations", 2, 0.25)
 
         stats = get_db_stats(app)
         assert "tables" in stats
         loc_table = next((t for t in stats["tables"] if t["name"] == "locations"), None)
         assert loc_table is not None
         assert loc_table["row_count"] == 2
+        assert loc_table["syncable"] is True
+        assert loc_table["sync_status"] == "success"
+        assert loc_table["last_updated_at"] is not None

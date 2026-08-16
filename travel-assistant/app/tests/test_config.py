@@ -543,6 +543,20 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert b"/static/js/sync.js" in response.data
     assert b"standard-action-bar" not in response.data
 
+    # Verify locations table is marked as syncable in payload
+    html = response.get_data(as_text=True)
+    import re
+
+    match = re.search(
+        r'<script id="initial-sync-stats"[^>]*>(.*?)</script>', html, re.DOTALL
+    )
+    assert match is not None
+    payload = json.loads(match.group(1))
+    tables = payload.get("tables", [])
+    loc_entry = next((t for t in tables if t["name"] == "locations"), None)
+    assert loc_entry is not None
+    assert loc_entry["syncable"] is True
+
 
 def test_sync_db_table_endpoint_all(
     client: FlaskClient, monkeypatch: MonkeyPatch
