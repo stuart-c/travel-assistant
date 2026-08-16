@@ -215,11 +215,6 @@ class Stop(BaseModel):
         return list(cls.select().offset(offset).limit(limit))
 
 
-# Backwards compatibility aliases
-BusStop = Stop
-Station = Stop
-
-
 class SyncMetadata(BaseModel):
     """Synchronization status and telemetry for transit tables."""
 

@@ -191,12 +191,6 @@ def test_sync_table_dispatch(app: Flask) -> None:
             res = sync_table("stops")
             assert res["status"] == "success"
 
-            # Compatibility aliases
-            res_bus = sync_table("bus_stops")
-            assert res_bus["status"] == "success"
-            res_st = sync_table("stations")
-            assert res_st["status"] == "success"
-
 
 def test_sync_all(app: Flask) -> None:
     """Test sync_all runs all registered transit synchronisations."""

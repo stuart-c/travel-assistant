@@ -77,3 +77,9 @@ When a PR is merged, tidy the local environment:
 ## 7. GitHub CLI Authentication
 To facilitate automated interactions, agents use a Personal Access Token (PAT) stored in a `.gh_token` file in the repository root or existing `gh` configuration.
 - The `.gh_token` file is included in `.gitignore` to prevent accidental commits. Never share or commit this file.
+
+## 8. No Backward-Compatibility Aliases
+This repository is a self-contained Home Assistant add-on application and is not consumed as an external library or package.
+- **Never create backward-compatibility aliases, wrappers, or fallbacks** when refactoring, replacing, or removing classes, models, functions, or endpoints.
+- When replacing a model or function (e.g. `BusStop` / `Station` -> `Stop`), update all call sites, imports, database schemas, and unit tests directly, and delete obsolete identifiers entirely.
+- Avoid introducing legacy aliases as they add dead code and unnecessary complexity.

@@ -161,11 +161,6 @@ def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
 
 
-# Backwards compatibility aliases
-sync_bus_stops = sync_stops
-sync_stations = sync_stops
-
-
 def sync_table(
     table_name: str,
     force: bool = False,
@@ -175,7 +170,7 @@ def sync_table(
     norm_name = table_name.lower().strip()
     if norm_name == "bus_routes":
         return sync_bus_routes(app=app)
-    elif norm_name in ("stops", "bus_stops", "stations", "naptan", "transit_stops"):
+    elif norm_name in ("stops", "transit_stops", "naptan"):
         return sync_stops(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
         return sync_ha_locations(app=app)

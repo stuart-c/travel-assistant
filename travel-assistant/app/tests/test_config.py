@@ -613,7 +613,7 @@ def test_sync_db_table_endpoint_specific_error(
     )
     monkeypatch.setattr(config, "sync_table", mock_sync_table)
 
-    response = client.post("/config/db/sync/bus_stops")
+    response = client.post("/config/db/sync/stops")
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False
