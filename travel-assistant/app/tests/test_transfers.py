@@ -5,10 +5,9 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app.models import (
-    BusStop,
     LocationTransfer,
     PlatformTransfer,
-    Station,
+    Stop,
 )
 
 
@@ -184,9 +183,20 @@ def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None
 
     # 2. Populated test
     with app.app_context():
-        Station.bulk_upsert([{"crs_code": "PAD", "name": "London Paddington"}])
-        BusStop.bulk_upsert(
-            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        Stop.bulk_upsert(
+            [
+                {
+                    "atco_code": "9100PAD",
+                    "naptan_code": "PAD",
+                    "stop_type": "rail",
+                    "name": "London Paddington",
+                },
+                {
+                    "atco_code": "490000001",
+                    "stop_type": "bus",
+                    "name": "Victoria Coach Station",
+                },
+            ]
         )
 
     response = client.get("/config/transfers/search")
@@ -204,9 +214,20 @@ def test_search_transfers_locations_station_filter(
 ) -> None:
     """Test GET /config/transfers/search with type=station filter."""
     with app.app_context():
-        Station.bulk_upsert([{"crs_code": "PAD", "name": "London Paddington"}])
-        BusStop.bulk_upsert(
-            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        Stop.bulk_upsert(
+            [
+                {
+                    "atco_code": "9100PAD",
+                    "naptan_code": "PAD",
+                    "stop_type": "rail",
+                    "name": "London Paddington",
+                },
+                {
+                    "atco_code": "490000001",
+                    "stop_type": "bus",
+                    "name": "Victoria Coach Station",
+                },
+            ]
         )
 
     response = client.get("/config/transfers/search?type=station")
@@ -222,9 +243,20 @@ def test_search_transfers_locations_bus_stop_filter(
 ) -> None:
     """Test GET /config/transfers/search with type=bus_stop filter."""
     with app.app_context():
-        Station.bulk_upsert([{"crs_code": "PAD", "name": "London Paddington"}])
-        BusStop.bulk_upsert(
-            [{"atco_code": "490000001", "name": "Victoria Coach Station"}]
+        Stop.bulk_upsert(
+            [
+                {
+                    "atco_code": "9100PAD",
+                    "naptan_code": "PAD",
+                    "stop_type": "rail",
+                    "name": "London Paddington",
+                },
+                {
+                    "atco_code": "490000001",
+                    "stop_type": "bus",
+                    "name": "Victoria Coach Station",
+                },
+            ]
         )
 
     response = client.get("/config/transfers/search?type=bus_stop")
@@ -238,7 +270,16 @@ def test_search_transfers_locations_bus_stop_filter(
 def test_search_transfers_locations_query(client: FlaskClient, app: Flask) -> None:
     """Test GET /config/transfers/search with matching and non-matching queries."""
     with app.app_context():
-        Station.bulk_upsert([{"crs_code": "OXF", "name": "Oxford Rail Station"}])
+        Stop.bulk_upsert(
+            [
+                {
+                    "atco_code": "9100OXF",
+                    "naptan_code": "OXF",
+                    "stop_type": "rail",
+                    "name": "Oxford Rail Station",
+                }
+            ]
+        )
 
     res_match = client.get("/config/transfers/search?q=Oxford")
     assert res_match.status_code == 200

@@ -16,13 +16,12 @@ from flask import (
 from app.db import get_db_stats
 from app.models import (
     BusRoute,
-    BusStop,
     Journey,
     Location,
     LocationTransfer,
     PlatformTransfer,
     Setting,
-    Station,
+    Stop,
     Timetable,
 )
 from app.sync import sync_table
@@ -217,12 +216,12 @@ def search_timetables() -> Any:
     except ValueError:
         limit = 25
 
-    stations_count = Station.select().count()
-    stops_count = BusStop.select().count()
+    stops_count = Stop.select().count()
     routes_count = BusRoute.select().count()
 
     cache_counts = {
-        "stations": stations_count,
+        "stops": stops_count,
+        "stations": stops_count,
         "bus_stops": stops_count,
         "bus_routes": routes_count,
     }
@@ -231,18 +230,17 @@ def search_timetables() -> Any:
     is_cached = True
 
     if transport_type in ("station", "train", "stations"):
-        is_cached = stations_count > 0
+        is_cached = stops_count > 0
         if is_cached:
             results = [
                 {
                     "transport_type": "train",
                     "name": s.name,
-                    "identifier": s.crs_code,
-                    "crs_code": s.crs_code,
-                    "description": f"National Rail Station - {s.crs_code}"
-                    + (f" ({s.operator})" if s.operator else ""),
+                    "identifier": s.naptan_code or s.atco_code,
+                    "crs_code": s.naptan_code or s.atco_code,
+                    "description": f"National Rail Station - {s.naptan_code or s.atco_code}",
                 }
-                for s in Station.search(query, limit=limit)
+                for s in Stop.search(query, stop_type="rail", limit=limit)
             ]
     elif transport_type in ("bus_stop", "stop", "bus_stops", "stops"):
         is_cached = stops_count > 0
@@ -257,7 +255,7 @@ def search_timetables() -> Any:
                     + (f", {s.locality}" if s.locality else "")
                     + f" - {s.atco_code}",
                 }
-                for s in BusStop.search(query, limit=limit)
+                for s in Stop.search(query, stop_type="bus", limit=limit)
             ]
     elif transport_type in ("bus_route", "route", "bus_routes", "routes", "bus"):
         is_cached = routes_count > 0
@@ -283,21 +281,21 @@ def search_timetables() -> Any:
                 for r in BusRoute.search(query, limit=limit)
             ]
     elif transport_type in ("status", "status_check"):
-        is_cached = (stations_count > 0) or (stops_count > 0 and routes_count > 0)
+        is_cached = (stops_count > 0) or (routes_count > 0)
         results = []
     else:
         # Generic search across cached stations and bus routes
-        is_cached = (stations_count > 0) or (stops_count > 0) or (routes_count > 0)
+        is_cached = (stops_count > 0) or (routes_count > 0)
         if is_cached:
             st_res = [
                 {
                     "transport_type": "train",
                     "name": s.name,
-                    "identifier": s.crs_code,
-                    "crs_code": s.crs_code,
-                    "description": f"National Rail Station - {s.crs_code}",
+                    "identifier": s.naptan_code or s.atco_code,
+                    "crs_code": s.naptan_code or s.atco_code,
+                    "description": f"National Rail Station - {s.naptan_code or s.atco_code}",
                 }
-                for s in Station.search(query, limit=limit)
+                for s in Stop.search(query, stop_type="rail", limit=limit)
             ]
             rt_res = [
                 {
@@ -531,21 +529,21 @@ def search_transfers_locations() -> Any:
     if not target_type or target_type == "station":
         try:
             st_list = (
-                Station.search(query, limit=15)
+                Stop.search(query, stop_type="rail", limit=15)
                 if query
-                else list(Station.select().limit(10))
+                else list(Stop.select().where(Stop.stop_type == "rail").limit(10))
             )
             for st in st_list:
-                key = f"station:{st.crs_code}"
+                st_code = st.naptan_code or st.atco_code
+                key = f"station:{st_code}"
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    op_suffix = f" ({st.operator})" if st.operator else ""
                     results.append(
                         {
                             "type": "station",
-                            "id": st.crs_code,
+                            "id": st_code,
                             "name": st.name,
-                            "description": f"National Rail Station - {st.crs_code}{op_suffix}",
+                            "description": f"National Rail Station - {st_code}",
                             "indicator": "Platforms",
                         }
                     )
@@ -556,9 +554,9 @@ def search_transfers_locations() -> Any:
     if not target_type or target_type == "bus_stop":
         try:
             stop_list = (
-                BusStop.search(query, limit=15)
+                Stop.search(query, stop_type="bus", limit=15)
                 if query
-                else list(BusStop.select().limit(10))
+                else list(Stop.select().where(Stop.stop_type == "bus").limit(10))
             )
             for sp in stop_list:
                 key = f"bus_stop:{sp.atco_code}"
@@ -698,21 +696,21 @@ def search_journey_locations() -> Any:
     if not target_type or target_type in ("station", "train", "rail"):
         try:
             st_list = (
-                Station.search(query, limit=limit)
+                Stop.search(query, stop_type="rail", limit=limit)
                 if query
-                else list(Station.select().limit(limit))
+                else list(Stop.select().where(Stop.stop_type == "rail").limit(limit))
             )
             for st in st_list:
-                key = f"station:{st.crs_code}"
+                st_code = st.naptan_code or st.atco_code
+                key = f"station:{st_code}"
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    op_suffix = f" ({st.operator})" if st.operator else ""
                     results.append(
                         {
                             "type": "station",
-                            "id": st.crs_code,
+                            "id": st_code,
                             "name": st.name,
-                            "description": f"National Rail Station - {st.crs_code}{op_suffix}",
+                            "description": f"National Rail Station - {st_code}",
                             "indicator": "Rail",
                             "icon": "train",
                         }
@@ -724,9 +722,9 @@ def search_journey_locations() -> Any:
     if not target_type or target_type in ("bus_stop", "bus", "stop"):
         try:
             stop_list = (
-                BusStop.search(query, limit=limit)
+                Stop.search(query, stop_type="bus", limit=limit)
                 if query
-                else list(BusStop.select().limit(limit))
+                else list(Stop.select().where(Stop.stop_type == "bus").limit(limit))
             )
             for sp in stop_list:
                 key = f"bus_stop:{sp.atco_code}"

@@ -18,7 +18,7 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLE_NAMES = ("bus_routes", "bus_stops", "stations", "ha_locations")
+SYNCABLE_TABLE_NAMES = ("bus_routes", "stops", "ha_locations")
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -79,15 +79,20 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
-    from app.models.transit import BusRoute, BusStop, Station, SyncMetadata
+    from app.models.transit import BusRoute, Stop, SyncMetadata
+
+    try:
+        database.execute_sql('DROP TABLE IF EXISTS "bus_stops"')
+        database.execute_sql('DROP TABLE IF EXISTS "stations"')
+    except Exception:
+        pass
 
     all_models = [
         Setting,
         Timetable,
         SyncMetadata,
         BusRoute,
-        BusStop,
-        Station,
+        Stop,
         LocationTransfer,
         PlatformTransfer,
         Location,
@@ -202,7 +207,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
-    from app.models.transit import BusRoute, BusStop, Station, SyncMetadata
+    from app.models.transit import BusRoute, Stop, SyncMetadata
 
     db_path = get_db_path(app)
 
@@ -264,8 +269,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "timetables": Timetable,
             "sync_metadata": SyncMetadata,
             "bus_routes": BusRoute,
-            "bus_stops": BusStop,
-            "stations": Station,
+            "stops": Stop,
             "location_transfers": LocationTransfer,
             "platform_transfers": PlatformTransfer,
             "locations": Location,

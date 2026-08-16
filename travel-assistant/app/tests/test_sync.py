@@ -1,17 +1,14 @@
 """Unit tests for transit dataset synchronisation and background worker daemon."""
 
-import json
 import time
 from unittest.mock import MagicMock, patch
 import requests
-from botocore.exceptions import ClientError
 from flask import Flask
 
 from app.models import (
     BusRoute,
-    BusStop,
     Setting,
-    Station,
+    Stop,
     SyncMetadata,
 )
 from app.sync import (
@@ -22,8 +19,7 @@ from app.sync import (
     stop_background_worker,
     sync_all,
     sync_bus_routes,
-    sync_bus_stops,
-    sync_stations,
+    sync_stops,
     sync_table,
 )
 
@@ -127,165 +123,49 @@ def test_sync_bus_routes_unexpected_exception(app: Flask) -> None:
             assert "Unexpected error" in res["message"]
 
 
-def test_sync_bus_stops_success(app: Flask) -> None:
-    """Test sync_bus_stops successfully parses NaPTAN bus stop records."""
+def test_sync_stops_success(app: Flask) -> None:
+    """Test sync_stops successfully parses NaPTAN CSV access nodes."""
     with app.app_context():
         csv_data = (
-            "ATCOCode,NaptanCode,CommonName,Indicator,LocalityName,Latitude,Longitude,StopType\n"
-            "0100BRP90310,bstpwat,Broad Quay,Stop C3,Bristol,51.452,-2.597,BCT\n"
-            "0100BRP90311,,Anchor Road,,Bristol,51.450,-2.598,BCT\n"
+            "ATCOCode,NaptanCode,StopType,CommonName,Indicator,LocalityName,Latitude,Longitude\n"
+            "0100BRP90310,bstpwat,BCT,Broad Quay,Stop C3,Bristol,51.452,-2.597\n"
+            "9100PADTON,PAD,RLY,London Paddington,Platforms,London,51.517,-0.177\n"
         )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = csv_data
         with patch("requests.get", return_value=mock_resp):
-            res = sync_bus_stops(app=app)
+            res = sync_stops(app=app)
             assert res["status"] == "success"
             assert res["records"] == 2
+            assert "UK transit stops" in res["message"]
 
-        stops = list(BusStop.select())
+        stops = list(Stop.select())
         assert len(stops) == 2
         assert stops[0].atco_code == "0100BRP90310"
-        assert stops[0].name == "Broad Quay"
+        assert stops[0].stop_type == "bus"
+        assert stops[1].atco_code == "9100PADTON"
+        assert stops[1].stop_type == "rail"
 
 
-def test_sync_bus_stops_network_and_unexpected_exceptions(app: Flask) -> None:
-    """Test sync_bus_stops exception capturing."""
+def test_sync_stops_network_and_unexpected_exceptions(app: Flask) -> None:
+    """Test sync_stops exception capturing for connection and runtime errors."""
     with app.app_context():
         with patch(
             "requests.get", side_effect=requests.exceptions.ConnectionError("Failed")
         ):
-            res = sync_bus_stops(app=app)
+            res = sync_stops(app=app)
             assert res["status"] == "error"
-            assert "Network or API error" in res["message"]
+            assert "Network or connection error" in res["message"]
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.text = "ATCOCode,CommonName\n010,Stop"
+        mock_resp.text = "ATCOCode,CommonName\n0100A,Stop A\n"
         with patch("requests.get", return_value=mock_resp):
             with patch.object(
-                BusStop, "bulk_upsert", side_effect=RuntimeError("Fatal error")
+                Stop, "bulk_upsert", side_effect=RuntimeError("Fatal error")
             ):
-                res = sync_bus_stops(app=app)
-                assert res["status"] == "error"
-                assert "Unexpected error" in res["message"]
-
-
-def test_sync_stations_naptan_success(app: Flask) -> None:
-    """Test sync_stations fetches railway stations via NaPTAN when S3 is not configured."""
-    with app.app_context():
-        csv_data = """ATCOCode,CrsRef,CommonName,TiplocRef,Latitude,Longitude,StopType,Operator
-9100OXFD,OXF,Oxford Rail Station,OXFD,51.753,-1.270,RLY,GWR
-9100DID,DID,Didcot Parkway,DIDCOT,51.610,-1.240,RLY,GWR
-"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = csv_data
-        with patch("requests.get", return_value=mock_resp):
-            res = sync_stations(app=app)
-            assert res["status"] == "success"
-            assert res["records"] == 2
-
-        stations = list(Station.select())
-        assert len(stations) == 2
-        assert Station.get_by_crs("OXF") is not None
-        assert Station.get_by_crs("DID") is not None
-
-
-def test_sync_stations_s3_success_with_json(app: Flask) -> None:
-    """Test sync_stations parses stations.json from configured S3 bucket."""
-    with app.app_context():
-        Setting.set_val("train_s3_bucket", "my-transit-bucket")
-        Setting.set_val("train_s3_access_key", "AKIA12345")
-        Setting.set_val("train_s3_secret_key", "secret123")
-        Setting.set_val("train_s3_region", "eu-west-1")
-
-        mock_s3 = MagicMock()
-        mock_body = MagicMock()
-        station_json = json.dumps(
-            [
-                {
-                    "crs_code": "OXF",
-                    "name": "Oxford",
-                    "tiploc_code": "OXFD",
-                    "latitude": 51.753,
-                    "longitude": -1.27,
-                    "operator": "GWR",
-                },
-                {
-                    "crs_code": "DID",
-                    "name": "Didcot Parkway",
-                    "tiploc_code": "DIDCOT",
-                    "latitude": 51.61,
-                    "longitude": -1.24,
-                    "operator": "GWR",
-                },
-            ]
-        ).encode("utf-8")
-        mock_body.read.return_value = station_json
-        mock_s3.get_object.return_value = {"Body": mock_body}
-
-        mock_session = MagicMock()
-        mock_session.client.return_value = mock_s3
-
-        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
-            res = sync_stations(app=app)
-            assert res["status"] == "success"
-            assert res["records"] == 2
-
-        assert Station.select().count() == 2
-        oxf = Station.get_by_crs("OXF")
-        assert oxf is not None
-        assert oxf.name == "Oxford"
-
-
-def test_sync_stations_s3_nosuchkey_error(app: Flask) -> None:
-    """Test sync_stations reports error when stations.json is missing in S3."""
-    with app.app_context():
-        Setting.set_val("train_s3_bucket", "test-bucket")
-
-        mock_s3 = MagicMock()
-        err_response = {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}
-        mock_s3.get_object.side_effect = ClientError(err_response, "GetObject")
-
-        mock_session = MagicMock()
-        mock_session.client.return_value = mock_s3
-
-        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
-            res = sync_stations(app=app)
-            assert res["status"] == "error"
-            assert res["records"] == 0
-            assert "DataSource error" in res["message"]
-
-
-def test_sync_stations_errors(app: Flask) -> None:
-    """Test sync_stations handles S3 and unexpected errors."""
-    with app.app_context():
-        Setting.set_val("train_s3_bucket", "invalid-bucket")
-
-        mock_s3 = MagicMock()
-        err_response = {"Error": {"Code": "AccessDenied", "Message": "Denied"}}
-        mock_s3.get_object.side_effect = ClientError(err_response, "GetObject")
-
-        mock_session = MagicMock()
-        mock_session.client.return_value = mock_s3
-
-        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
-            res = sync_stations(app=app)
-            assert res["status"] == "error"
-            assert "DataSource error" in res["message"]
-
-        mock_body = MagicMock()
-        mock_body.read.return_value = json.dumps(
-            [{"crs_code": "OXF", "name": "Oxford"}]
-        ).encode("utf-8")
-        mock_s3.get_object.side_effect = None
-        mock_s3.get_object.return_value = {"Body": mock_body}
-        with patch("app.datasources.train_s3.boto3.Session", return_value=mock_session):
-            with patch.object(
-                Station, "bulk_upsert", side_effect=RuntimeError("DB crash")
-            ):
-                res = sync_stations(app=app)
+                res = sync_stops(app=app)
                 assert res["status"] == "error"
                 assert "Unexpected error" in res["message"]
 
@@ -305,18 +185,17 @@ def test_sync_table_dispatch(app: Flask) -> None:
             assert res["status"] == "success"
 
         with patch(
-            "app.sync.transit_sync.sync_bus_stops",
+            "app.sync.transit_sync.sync_stops",
             return_value={"status": "success", "records": 3},
         ):
-            res = sync_table("bus_stops")
+            res = sync_table("stops")
             assert res["status"] == "success"
 
-        with patch(
-            "app.sync.transit_sync.sync_stations",
-            return_value={"status": "success", "records": 8},
-        ):
-            res = sync_table("stations")
-            assert res["status"] == "success"
+            # Compatibility aliases
+            res_bus = sync_table("bus_stops")
+            assert res_bus["status"] == "success"
+            res_st = sync_table("stations")
+            assert res_st["status"] == "success"
 
 
 def test_sync_all(app: Flask) -> None:
@@ -326,8 +205,8 @@ def test_sync_all(app: Flask) -> None:
             mock_sync.return_value = {"status": "success", "records": 2}
             res = sync_all(app=app)
             assert res["success"] is True
-            assert res["total_records"] == 8
-            assert len(res["tables"]) == 4
+            assert res["total_records"] == 6
+            assert len(res["tables"]) == 3
 
 
 def test_check_and_run_background_sync(app: Flask) -> None:
@@ -336,15 +215,13 @@ def test_check_and_run_background_sync(app: Flask) -> None:
         # bus_routes and ha_locations are up to date
         SyncMetadata.record_success("bus_routes", 10, 1.0)
         SyncMetadata.record_success("ha_locations", 5, 0.5)
-        # bus_stops is not synced
-        # stations is not synced
+        # stops is not synced
 
         with patch("app.sync.transit_sync.sync_table") as mock_sync:
             mock_sync.return_value = {"status": "success", "records": 1}
             res = check_and_run_background_sync(app=app, max_age_seconds=86400)
-            assert res["triggered_count"] == 2
-            assert "bus_stops" in res["results"]
-            assert "stations" in res["results"]
+            assert res["triggered_count"] == 1
+            assert "stops" in res["results"]
             assert "bus_routes" not in res["results"]
             assert "ha_locations" not in res["results"]
 
@@ -403,11 +280,10 @@ def test_sync_all_with_table_error(app: Flask) -> None:
                 {"status": "success", "records": 5},
                 {"status": "error", "records": 0, "message": "Failed"},
                 {"status": "success", "records": 3},
-                {"status": "success", "records": 2},
             ]
             res = sync_all(app=app)
             assert res["success"] is False
-            assert res["total_records"] == 10
+            assert res["total_records"] == 8
 
 
 def test_background_worker_handles_exception_in_loop(app: Flask) -> None:

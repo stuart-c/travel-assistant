@@ -6,28 +6,30 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app.db import get_db_stats
-from app.models import BusStop, Journey, Location, Station
+from app.models import Journey, Location, Stop
 
 
 @pytest.fixture
-def sample_station(app: Flask) -> Station:
+def sample_station(app: Flask) -> Stop:
     """Create a sample railway station record."""
     with app.app_context():
-        return Station.create(
-            crs_code="WAT",
+        return Stop.create(
+            atco_code="9100WAT",
+            naptan_code="WAT",
+            stop_type="rail",
             name="London Waterloo",
-            operator="South Western Railway",
             latitude=51.5031,
             longitude=-0.1132,
         )
 
 
 @pytest.fixture
-def sample_bus_stop(app: Flask) -> BusStop:
+def sample_bus_stop(app: Flask) -> Stop:
     """Create a sample bus stop record."""
     with app.app_context():
-        return BusStop.create(
+        return Stop.create(
             atco_code="490000077E",
+            stop_type="bus",
             name="Euston Station",
             indicator="Stop E",
             locality="Euston",
@@ -48,7 +50,7 @@ def sample_custom_location(app: Flask) -> Location:
 
 
 def test_journey_model_lifecycle(
-    app: Flask, sample_station: Station, sample_custom_location: Location
+    app: Flask, sample_station: Stop, sample_custom_location: Location
 ) -> None:
     """Test Journey model creation, time settings serialisation, and retrieval."""
     with app.app_context():
@@ -73,7 +75,7 @@ def test_journey_model_lifecycle(
             from_id=str(sample_custom_location.id),
             from_name=sample_custom_location.name,
             to_type="station",
-            to_id=sample_station.crs_code,
+            to_id=sample_station.naptan_code or sample_station.atco_code,
             to_name=sample_station.name,
         )
         journey.set_time_settings(time_windows)
@@ -98,7 +100,7 @@ def test_journey_model_lifecycle(
         assert retrieved.get_time_settings() == []
 
 
-def test_journey_search_and_stats(app: Flask, sample_station: Station) -> None:
+def test_journey_search_and_stats(app: Flask, sample_station: Stop) -> None:
     """Test Journey search helper and stats aggregate."""
     with app.app_context():
         Journey.create(
@@ -214,8 +216,8 @@ def test_config_journeys_post_invalid_json(client: FlaskClient) -> None:
 
 def test_config_journeys_search(
     client: FlaskClient,
-    sample_station: Station,
-    sample_bus_stop: BusStop,
+    sample_station: Stop,
+    sample_bus_stop: Stop,
     sample_custom_location: Location,
 ) -> None:
     """Test GET /config/journeys/search returns categorised locations with icons."""

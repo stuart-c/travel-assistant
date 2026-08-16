@@ -25,6 +25,7 @@ from app.models import (
     PlatformTransfer,
     Setting,
     Station,
+    Stop,
     SyncMetadata,
     Timetable,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "Timetable",
     "Journey",
     "BusRoute",
+    "Stop",
     "BusStop",
     "Station",
     "SyncMetadata",
