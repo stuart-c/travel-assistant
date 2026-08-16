@@ -92,6 +92,27 @@
   color: #ffffff !important;
 }
 
+/* Hide pagination if requested or if single page */
+.hide-pagination .gridjs-pagination,
+.gridjs-container[data-single-page="true"] .gridjs-pagination {
+  display: none !important;
+}
+
+/* Collapsible sections animation and chevron rotation */
+.collapsible-section {
+  transition: all 0.2s ease-in-out;
+}
+.collapsible-chevron {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsed .collapsible-chevron {
+  transform: rotate(-90deg);
+}
+.collapsed .collapsible-body {
+  display: none !important;
+}
+
+
 /* Dark mode support via .dark class */
 .dark .gridjs-wrapper {
   border-color: rgba(30, 41, 59, 0.9);

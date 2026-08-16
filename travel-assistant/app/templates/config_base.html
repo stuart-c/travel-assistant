@@ -127,27 +127,25 @@
 
         {% block action_bar %}
         <!-- Standard Action Bar: Save & Discard (Top Right) -->
-        <div class="flex flex-wrap items-center gap-3 shrink-0" id="standard-action-bar">
-          <span id="dirty-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-            No unsaved changes
-          </span>
-
+        <div class="flex flex-wrap items-center gap-2.5 shrink-0" id="standard-action-bar">
           <button 
             type="button" 
             id="config-discard-btn" 
-            class="inline-flex items-center justify-center px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
+            class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
             disabled
           >
-            Discard Changes
+            <span class="material-symbols-outlined text-base leading-none">undo</span>
+            <span>Discard Changes</span>
           </button>
 
           <button 
             type="button" 
             id="config-save-btn" 
-            class="inline-flex items-center justify-center px-4 py-1.5 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 shadow-sm transition-all cursor-pointer opacity-90"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all"
+            disabled
           >
-            Save Changes
+            <span class="material-symbols-outlined text-base leading-none">save</span>
+            <span>Save Changes</span>
           </button>
         </div>
         {% endblock %}

@@ -171,7 +171,15 @@
 </form>
 
 <!-- Add/Edit Timetable Modal Dialog -->
-<dialog id="timetable-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl max-w-xl w-full mx-auto">
+<dialog id="timetable-modal" class="p-0 rounded-2xl backdrop:bg-slate-900/60 bg-transparent shadow-2xl w-[80vw] max-w-5xl min-w-[320px] mx-auto">
+  <!-- 15-Minute Increments Datalist for easy time picking -->
+  <datalist id="time-intervals-datalist">
+    {% for hour in range(24) %}
+      {% for minute in [0, 15, 30, 45] %}
+        <option value="{{ '%02d:%02d' | format(hour, minute) }}"></option>
+      {% endfor %}
+    {% endfor %}
+  </datalist>
   <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7 dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xl space-y-5">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
       <div class="flex items-center gap-2.5">
@@ -365,6 +373,7 @@
           <input 
             type="time" 
             id="retime_start_time" 
+            list="time-intervals-datalist"
             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           >
         </div>
