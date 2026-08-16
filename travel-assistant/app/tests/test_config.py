@@ -336,7 +336,7 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
 
 def test_search_timetables_endpoint(client: FlaskClient) -> None:
     """Test GET /config/timetables/search across cached datasets and unpopulated states."""
-    from app.models import BusRoute, BusStop, Station
+    from app.models import BusRoute, Stop
 
     # 1. Test empty response when nothing cached
     res_all = client.get("/config/timetables/search")
@@ -367,22 +367,25 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert data_sample_query["is_cached"] is False
 
     # 2. Test Station search with cached station records
-    Station.bulk_upsert(
+    Stop.bulk_upsert(
         [
             {
-                "crs_code": "OXF",
+                "atco_code": "9100OXF",
+                "naptan_code": "OXF",
+                "stop_type": "rail",
                 "name": "Oxford",
-                "operator": "Great Western Railway",
             },
             {
-                "crs_code": "PAD",
+                "atco_code": "9100PAD",
+                "naptan_code": "PAD",
+                "stop_type": "rail",
                 "name": "London Paddington",
-                "operator": "Great Western Railway",
             },
             {
-                "crs_code": "BHM",
+                "atco_code": "9100BHM",
+                "naptan_code": "BHM",
+                "stop_type": "rail",
                 "name": "Birmingham New Street",
-                "operator": "CrossCountry",
             },
         ]
     )
@@ -401,16 +404,18 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert data_st_q["results"][0]["crs_code"] == "PAD"
 
     # 3. Test Bus Stop search with cached bus stops
-    BusStop.bulk_upsert(
+    Stop.bulk_upsert(
         [
             {
                 "atco_code": "340000001",
+                "stop_type": "bus",
                 "name": "High Street Stop T1",
                 "locality": "Oxford",
                 "indicator": "Stop T1",
             },
             {
                 "atco_code": "340000002",
+                "stop_type": "bus",
                 "name": "Blackbird Leys Leisure Centre",
                 "locality": "Oxford",
                 "indicator": "opp",
@@ -465,8 +470,7 @@ def test_search_timetables_endpoint(client: FlaskClient) -> None:
     assert res_status.status_code == 200
     data_status = res_status.get_json()
     assert data_status["is_cached"] is True
-    assert data_status["cache_counts"]["stations"] == 3
-    assert data_status["cache_counts"]["bus_stops"] == 2
+    assert data_status["cache_counts"]["stops"] == 5
     assert data_status["cache_counts"]["bus_routes"] == 2
 
     # 6. Test generic search when cached
@@ -609,7 +613,7 @@ def test_sync_db_table_endpoint_specific_error(
     )
     monkeypatch.setattr(config, "sync_table", mock_sync_table)
 
-    response = client.post("/config/db/sync/bus_stops")
+    response = client.post("/config/db/sync/stops")
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False

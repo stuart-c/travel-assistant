@@ -29,7 +29,7 @@ class BusRoute(BaseModel):
         table_name = "bus_routes"
 
     @classmethod
-    def bulk_upsert(cls, routes: List[Dict[str, Any]], batch_size: int = 100) -> int:
+    def bulk_upsert(cls, routes: List[Dict[str, Any]], batch_size: int = 500) -> int:
         """Insert or replace a list of bus route records in batches."""
         if not routes:
             return 0
@@ -50,8 +50,15 @@ class BusRoute(BaseModel):
             if r.get("route_number")
         ]
 
+        if not rows:
+            return 0
+
+        total = 0
         with cls._meta.database.atomic():
-            return cls.insert_many(rows).execute()
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i : i + batch_size]
+                total += cls.insert_many(batch).execute()
+        return total
 
     @classmethod
     def get_by_route_number(cls, route_number: str) -> List["BusRoute"]:
@@ -76,24 +83,25 @@ class BusRoute(BaseModel):
         return list(cls.select().offset(offset).limit(limit))
 
 
-class BusStop(BaseModel):
-    """Bus stop / NaPTAN access node representation."""
+class Stop(BaseModel):
+    """Unified public transport access node representation (NaPTAN)."""
 
     id = AutoField()
     atco_code = CharField(unique=True, index=True)
-    naptan_code = CharField(null=True)
-    name = CharField()
+    naptan_code = CharField(null=True, index=True)
+    stop_type = CharField(index=True, default="bus")
+    name = CharField(index=True)
     indicator = CharField(null=True)
     locality = CharField(null=True)
     latitude = FloatField(null=True)
     longitude = FloatField(null=True)
 
     class Meta:
-        table_name = "bus_stops"
+        table_name = "stops"
 
     @classmethod
-    def bulk_upsert(cls, stops: List[Dict[str, Any]], batch_size: int = 100) -> int:
-        """Upsert a list of bus stops, updating name and coordinates on duplicate ATCO code."""
+    def bulk_upsert(cls, stops: List[Dict[str, Any]], batch_size: int = 500) -> int:
+        """Upsert a list of transit stops in chunked batches within an atomic transaction."""
         if not stops:
             return 0
 
@@ -101,10 +109,21 @@ class BusStop(BaseModel):
         rows = [
             {
                 "atco_code": str(s.get("atco_code", "")).strip(),
-                "naptan_code": s.get("naptan_code"),
+                "naptan_code": (
+                    str(s.get("naptan_code") or s.get("crs_code") or "").strip() or None
+                ),
+                "stop_type": str(s.get("stop_type", "bus")).strip().lower() or "bus",
                 "name": str(s.get("name", "")).strip(),
-                "indicator": s.get("indicator"),
-                "locality": s.get("locality"),
+                "indicator": (
+                    str(s.get("indicator")).strip()
+                    if s.get("indicator") is not None
+                    else None
+                ),
+                "locality": (
+                    str(s.get("locality")).strip()
+                    if s.get("locality") is not None
+                    else None
+                ),
                 "latitude": s.get("latitude"),
                 "longitude": s.get("longitude"),
                 "created_at": now,
@@ -114,122 +133,80 @@ class BusStop(BaseModel):
             if s.get("atco_code") and s.get("name")
         ]
 
+        if not rows:
+            return 0
+
+        total = 0
         with cls._meta.database.atomic():
-            return (
-                cls.insert_many(rows)
-                .on_conflict(
-                    conflict_target=[cls.atco_code],
-                    preserve=[
-                        cls.naptan_code,
-                        cls.name,
-                        cls.indicator,
-                        cls.locality,
-                        cls.latitude,
-                        cls.longitude,
-                        cls.updated_at,
-                    ],
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i : i + batch_size]
+                total += (
+                    cls.insert_many(batch)
+                    .on_conflict(
+                        conflict_target=[cls.atco_code],
+                        preserve=[
+                            cls.naptan_code,
+                            cls.stop_type,
+                            cls.name,
+                            cls.indicator,
+                            cls.locality,
+                            cls.latitude,
+                            cls.longitude,
+                            cls.updated_at,
+                        ],
+                    )
+                    .execute()
                 )
-                .execute()
-            )
+        return total
 
     @classmethod
-    def get_by_atco(cls, atco_code: str) -> Optional["BusStop"]:
-        """Retrieve a bus stop by unique ATCO code."""
+    def get_by_atco(cls, atco_code: str) -> Optional["Stop"]:
+        """Retrieve a stop by unique ATCO code."""
         try:
             return cls.get(cls.atco_code == atco_code.strip())
         except cls.DoesNotExist:
             return None
 
     @classmethod
-    def search(cls, query: str, limit: int = 50) -> List["BusStop"]:
-        """Search bus stops by name, ATCO code, or locality."""
-        q = f"%{query.strip()}%"
-        return list(
-            cls.select()
-            .where((cls.name**q) | (cls.atco_code**q) | (cls.locality**q))
-            .limit(limit)
-        )
-
-    @classmethod
-    def get_all(cls, limit: int = 100, offset: int = 0) -> List["BusStop"]:
-        """Retrieve paginated bus stops."""
-        return list(cls.select().offset(offset).limit(limit))
-
-
-class Station(BaseModel):
-    """National Rail passenger station representation."""
-
-    id = AutoField()
-    crs_code = CharField(unique=True, index=True, max_length=10)
-    name = CharField()
-    tiploc_code = CharField(null=True)
-    latitude = FloatField(null=True)
-    longitude = FloatField(null=True)
-    operator = CharField(null=True)
-
-    class Meta:
-        table_name = "stations"
-
-    @classmethod
-    def bulk_upsert(cls, stations: List[Dict[str, Any]], batch_size: int = 100) -> int:
-        """Upsert a list of rail stations, updating name and operator on duplicate CRS."""
-        if not stations:
-            return 0
-
-        now = datetime.datetime.utcnow()
-        rows = [
-            {
-                "crs_code": str(st.get("crs_code", "")).upper().strip(),
-                "name": str(st.get("name", "")).strip(),
-                "tiploc_code": st.get("tiploc_code"),
-                "latitude": st.get("latitude"),
-                "longitude": st.get("longitude"),
-                "operator": st.get("operator"),
-                "created_at": now,
-                "updated_at": now,
-            }
-            for st in stations
-            if st.get("crs_code") and st.get("name")
-        ]
-
-        with cls._meta.database.atomic():
-            return (
-                cls.insert_many(rows)
-                .on_conflict(
-                    conflict_target=[cls.crs_code],
-                    preserve=[
-                        cls.name,
-                        cls.tiploc_code,
-                        cls.latitude,
-                        cls.longitude,
-                        cls.operator,
-                        cls.updated_at,
-                    ],
-                )
-                .execute()
-            )
-
-    @classmethod
-    def get_by_crs(cls, crs_code: str) -> Optional["Station"]:
-        """Retrieve a station by 3-letter CRS code."""
+    def get_by_code(cls, code: str) -> Optional["Stop"]:
+        """Retrieve a stop by ATCO code, NaPTAN code, or CRS code."""
+        c = code.strip()
         try:
-            return cls.get(cls.crs_code == crs_code.upper().strip())
+            return cls.get((cls.atco_code == c) | (cls.naptan_code == c))
         except cls.DoesNotExist:
             return None
 
     @classmethod
-    def search(cls, query: str, limit: int = 50) -> List["Station"]:
-        """Search rail stations by name, CRS code, or TIPLOC code."""
+    def search(
+        cls,
+        query: str,
+        stop_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List["Stop"]:
+        """Search transit stops by name, ATCO code, NaPTAN code, or locality.
+
+        Optionally filters by stop_type.
+        """
         q = f"%{query.strip()}%"
-        return list(
-            cls.select()
-            .where((cls.name**q) | (cls.crs_code**q) | (cls.tiploc_code**q))
-            .limit(limit)
+        conditions = (
+            (cls.name**q)
+            | (cls.atco_code**q)
+            | (cls.naptan_code**q)
+            | (cls.locality**q)
         )
+        if stop_type:
+            st = stop_type.strip().lower()
+            if st in ("rail", "train", "station", "stations"):
+                conditions = conditions & (cls.stop_type.in_(["rail", "metro", "tram"]))
+            elif st in ("bus", "bus_stop", "bus_stops"):
+                conditions = conditions & (cls.stop_type == "bus")
+            else:
+                conditions = conditions & (cls.stop_type == st)
+        return list(cls.select().where(conditions).limit(limit))
 
     @classmethod
-    def get_all(cls, limit: int = 100, offset: int = 0) -> List["Station"]:
-        """Retrieve paginated rail stations."""
+    def get_all(cls, limit: int = 100, offset: int = 0) -> List["Stop"]:
+        """Retrieve paginated transit stops."""
         return list(cls.select().offset(offset).limit(limit))
 
 

@@ -5,8 +5,7 @@ from app.sync.transit_sync import (
     check_and_run_background_sync,
     sync_all,
     sync_bus_routes,
-    sync_bus_stops,
-    sync_stations,
+    sync_stops,
     sync_table,
 )
 from app.sync.worker import (
@@ -18,8 +17,7 @@ from app.sync.worker import (
 
 __all__ = [
     "sync_bus_routes",
-    "sync_bus_stops",
-    "sync_stations",
+    "sync_stops",
     "sync_ha_locations",
     "sync_table",
     "sync_all",

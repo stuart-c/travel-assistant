@@ -1,4 +1,4 @@
-"""Client library for NaPTAN (National Public Transport Access Node) bus stop datasets."""
+"""Client library for NaPTAN (National Public Transport Access Node) transit datasets."""
 
 import csv
 import io
@@ -10,29 +10,58 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
+from app.models.setting import Setting
 
 DEFAULT_NAPTAN_STOPS_URL = (
     "https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv"
 )
 
 
+def classify_stop_type(naptan_stop_type: str) -> str:
+    """Classify a NaPTAN StopType into a canonical transit category."""
+    st = (naptan_stop_type or "").upper().strip()
+    if st in ("BCT", "BCS", "BCP", "BST"):
+        return "bus"
+    elif st in ("RLY", "RPL", "RSE"):
+        return "rail"
+    elif st in ("MET", "PLT"):
+        return "metro"
+    elif st in ("TMU",):
+        return "tram"
+    elif st in ("FTD", "FER"):
+        return "ferry"
+    elif st in ("AIR", "GAT"):
+        return "air"
+    return "bus" if not st else "other"
+
+
 class NaptanClient(BaseDataSource):
-    """Datasource client for NaPTAN public transit access nodes and bus stops."""
+    """Datasource client for NaPTAN public transit access nodes and stops."""
 
     provider_name: str = "naptan"
 
     def __init__(
         self,
         endpoint: str = DEFAULT_NAPTAN_STOPS_URL,
-        timeout: int = 20,
+        timeout: int = 30,
     ) -> None:
-        self.endpoint = endpoint
+        self.endpoint = endpoint or DEFAULT_NAPTAN_STOPS_URL
         self.timeout = timeout
 
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "NaptanClient":
         """Instantiate NaptanClient (NaPTAN requires no API key)."""
-        return cls()
+        getter = (
+            settings.get_val
+            if hasattr(settings, "get_val")
+            else (settings.get if hasattr(settings, "get") else Setting.get_val)
+        )
+        endpoint = (
+            getter("naptan_stops_url", DEFAULT_NAPTAN_STOPS_URL)
+            if getter
+            else DEFAULT_NAPTAN_STOPS_URL
+        )
+        return cls(endpoint=endpoint or DEFAULT_NAPTAN_STOPS_URL)
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Validate NaPTAN service availability (public open data)."""
@@ -42,10 +71,10 @@ class NaptanClient(BaseDataSource):
         }
 
     def fetch_stops(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Fetch bus stops from NaPTAN CSV feed.
+        """Fetch transit access nodes from NaPTAN CSV feed.
 
         Returns:
-            List of dictionaries representing bus stops for repository insertion.
+            List of dictionaries representing transit stops for repository insertion.
         """
         try:
             response = requests.get(self.endpoint, timeout=self.timeout)
@@ -55,12 +84,6 @@ class NaptanClient(BaseDataSource):
             stops: List[Dict[str, Any]] = []
 
             for row in reader:
-                stop_type = (
-                    (row.get("StopType") or row.get("stop_type") or "").strip().upper()
-                )
-                if stop_type and not stop_type.startswith(("BC", "BCT", "BCS", "BCQ")):
-                    continue
-
                 atco_code = row.get("ATCOCode") or row.get("atco_code") or ""
                 name = row.get("CommonName") or row.get("name") or ""
                 if not atco_code or not name:
@@ -75,6 +98,9 @@ class NaptanClient(BaseDataSource):
                 except (ValueError, TypeError):
                     lat, lon = None, None
 
+                raw_stop_type = row.get("StopType") or row.get("stop_type") or ""
+                stop_type = classify_stop_type(raw_stop_type)
+
                 stops.append(
                     {
                         "atco_code": atco_code.strip(),
@@ -82,6 +108,7 @@ class NaptanClient(BaseDataSource):
                             row.get("NaptanCode") or row.get("naptan_code") or ""
                         ).strip()
                         or None,
+                        "stop_type": stop_type,
                         "name": name.strip(),
                         "indicator": (
                             row.get("Indicator") or row.get("indicator") or ""

@@ -5,7 +5,7 @@ bus stops, and rail station datasets using modular datasource clients.
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from flask import Flask
 import requests
 
@@ -16,13 +16,11 @@ from app.datasources import (
     DataSourceConnectionError,
     DataSourceError,
     NaptanClient,
-    TrainS3Client,
 )
 from app.db import SYNCABLE_TABLES, db, init_db
 from app.models import (
     BusRoute,
-    BusStop,
-    Station,
+    Stop,
     SyncMetadata,
 )
 from app.sync.ha_sync import sync_ha_locations
@@ -104,92 +102,47 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
 
 
-def sync_bus_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise bus stops using public NaPTAN open dataset."""
+def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
+    """Synchronise transit access nodes (bus, rail, metro, tram, ferry) using UK NaPTAN dataset."""
     _ensure_db_initialized(app)
     start_time = time.time()
 
     with db.connection_context():
-        SyncMetadata.record_start("bus_stops")
+        SyncMetadata.record_start("stops")
 
         try:
             client = NaptanClient.from_settings()
             stops_to_upsert = client.fetch_stops()
-
             if stops_to_upsert:
-                BusStop.bulk_upsert(stops_to_upsert)
+                Stop.bulk_upsert(stops_to_upsert)
 
             duration = round(time.time() - start_time, 2)
             count = len(stops_to_upsert)
-            SyncMetadata.record_success("bus_stops", count, duration)
+            SyncMetadata.record_success("stops", count, duration)
             return {
-                "table": "bus_stops",
+                "table": "stops",
                 "status": "success",
                 "records": count,
-                "message": f"Successfully synchronised {count} bus stop access nodes from NaPTAN.",
+                "message": f"Successfully synchronised {count} UK transit stops from NaPTAN.",
                 "duration_seconds": duration,
             }
         except (DataSourceConnectionError, requests.exceptions.RequestException) as exc:
             duration = round(time.time() - start_time, 2)
-            err_msg = f"Network or API error while contacting NaPTAN: {str(exc)}"
-            SyncMetadata.record_error("bus_stops", err_msg, duration)
+            err_msg = f"Network or connection error while contacting NaPTAN: {str(exc)}"
+            SyncMetadata.record_error("stops", err_msg, duration)
             return {
-                "table": "bus_stops",
+                "table": "stops",
                 "status": "error",
                 "records": 0,
                 "message": err_msg,
-                "duration_seconds": duration,
-            }
-        except Exception as exc:
-            duration = round(time.time() - start_time, 2)
-            err_msg = f"Unexpected error during bus stop synchronisation: {str(exc)}"
-            SyncMetadata.record_error("bus_stops", err_msg, duration)
-            return {
-                "table": "bus_stops",
-                "status": "error",
-                "records": 0,
-                "message": err_msg,
-                "duration_seconds": duration,
-            }
-
-
-def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise rail stations using configured Train S3 storage or NaPTAN public open data."""
-    _ensure_db_initialized(app)
-    start_time = time.time()
-
-    with db.connection_context():
-        s3_client = TrainS3Client.from_settings()
-        SyncMetadata.record_start("stations")
-
-        try:
-            stations_to_upsert: List[Dict[str, Any]] = []
-
-            if s3_client.bucket_name:
-                stations_to_upsert = s3_client.fetch_stations(key="stations.json")
-            else:
-                naptan_client = NaptanClient.from_settings()
-                stations_to_upsert = naptan_client.fetch_rail_stations()
-
-            if stations_to_upsert:
-                Station.bulk_upsert(stations_to_upsert)
-
-            duration = round(time.time() - start_time, 2)
-            count = len(stations_to_upsert)
-            SyncMetadata.record_success("stations", count, duration)
-            return {
-                "table": "stations",
-                "status": "success",
-                "records": count,
-                "message": f"Successfully synchronised {count} rail station records.",
                 "duration_seconds": duration,
             }
         except DataSourceError as exc:
             duration = round(time.time() - start_time, 2)
-            err_msg = f"DataSource error while reading station records: {str(exc)}"
-            SyncMetadata.record_error("stations", err_msg, duration)
+            err_msg = str(exc)
+            SyncMetadata.record_error("stops", err_msg, duration)
             return {
-                "table": "stations",
+                "table": "stops",
                 "status": "error",
                 "records": 0,
                 "message": err_msg,
@@ -197,12 +150,10 @@ def sync_stations(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
         except Exception as exc:
             duration = round(time.time() - start_time, 2)
-            err_msg = (
-                f"Unexpected error during rail station synchronisation: {str(exc)}"
-            )
-            SyncMetadata.record_error("stations", err_msg, duration)
+            err_msg = f"Unexpected error during NaPTAN stop synchronisation: {str(exc)}"
+            SyncMetadata.record_error("stops", err_msg, duration)
             return {
-                "table": "stations",
+                "table": "stops",
                 "status": "error",
                 "records": 0,
                 "message": err_msg,
@@ -219,10 +170,8 @@ def sync_table(
     norm_name = table_name.lower().strip()
     if norm_name == "bus_routes":
         return sync_bus_routes(app=app)
-    elif norm_name == "bus_stops":
-        return sync_bus_stops(app=app)
-    elif norm_name == "stations":
-        return sync_stations(app=app)
+    elif norm_name in ("stops", "transit_stops", "naptan"):
+        return sync_stops(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
         return sync_ha_locations(app=app)
     else:

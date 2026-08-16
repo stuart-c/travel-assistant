@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Unified `Stop` Peewee model and SQLite `stops` table consolidating all UK public transport nodes (bus stops, rail stations, metro, tram, ferry, and air terminals) with `stop_type` classification and batch upsert optimisations.
+- NaPTAN datasource integration (`NaptanClient`) fetching open national access nodes from the Department for Transport NaPTAN API (`https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv`).
+- Unified transit synchronisation pipeline (`sync_stops`) populating all UK transit stops in a single background sync task.
+
 ### Changed
 - Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).
 - Updated API credentials check buttons on `/config/credentials` into compact 28x28px icon-only check buttons matching the unified action icon design.
 - Tightened Actions column widths across data tables to eliminate redundant whitespace.
+- Replaced separate `bus_stops` and `stations` synchronisation routines and database tables with the consolidated `stops` pipeline on `/config/sync` and `/config/db`.
+- Updated timetable, transfer, and journey location search endpoints (`/config/timetables/search`, `/config/transfers/search`, `/config/journeys/search`) to query the unified `Stop` model with `stop_type` filtering.
+- Automated schema migration in `run_migrations` dropping legacy `bus_stops` and `stations` tables and creating `stops`.
 
 ### Fixed
 - Eliminated all synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`, and `DS-{id}` routes).

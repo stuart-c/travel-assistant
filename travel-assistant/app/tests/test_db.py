@@ -15,12 +15,11 @@ from app.db import (
 )
 from app.models import (
     BusRoute,
-    BusStop,
     Location,
     LocationTransfer,
     PlatformTransfer,
     Setting,
-    Station,
+    Stop,
     SyncMetadata,
     Timetable,
 )
@@ -191,13 +190,14 @@ def test_bus_route_model(app: Flask) -> None:
         assert len(all_res) == 2
 
 
-def test_bus_stop_model(app: Flask) -> None:
-    """Test BusStop model upsert, on_conflict resolution, and search."""
+def test_stop_model(app: Flask) -> None:
+    """Test Stop model upsert, on_conflict resolution, and search."""
     with app.app_context():
         stops = [
             {
                 "atco_code": "340000001",
                 "naptan_code": "oxfgpa",
+                "stop_type": "bus",
                 "name": "Frideswide Square",
                 "indicator": "R1",
                 "locality": "Oxford",
@@ -207,29 +207,48 @@ def test_bus_stop_model(app: Flask) -> None:
             {
                 "atco_code": "340000002",
                 "naptan_code": "oxfgpb",
+                "stop_type": "bus",
                 "name": "Gloucester Green",
                 "indicator": "Bay 1",
                 "locality": "Oxford",
                 "latitude": 51.754,
                 "longitude": -1.262,
             },
+            {
+                "atco_code": "9100PADTON",
+                "naptan_code": "PAD",
+                "stop_type": "rail",
+                "name": "London Paddington",
+                "indicator": "Platforms",
+                "locality": "London",
+                "latitude": 51.517,
+                "longitude": -0.177,
+            },
             {"atco_code": ""},  # invalid
         ]
-        assert BusStop.bulk_upsert([]) == 0
-        BusStop.bulk_upsert(stops)
+        assert Stop.bulk_upsert([]) == 0
+        Stop.bulk_upsert(stops)
 
-        stop = BusStop.get_by_atco("340000001")
+        stop = Stop.get_by_atco("340000001")
         assert stop is not None
         assert stop.name == "Frideswide Square"
+        assert stop.stop_type == "bus"
+
+        # Lookup by code (CRS / NaPTAN)
+        pad = Stop.get_by_code("PAD")
+        assert pad is not None
+        assert pad.name == "London Paddington"
 
         # Non-existent
-        assert BusStop.get_by_atco("999999999") is None
+        assert Stop.get_by_atco("999999999") is None
+        assert Stop.get_by_code("XYZ") is None
 
         # Upsert with updated name on conflict
         updated_stops = [
             {
                 "atco_code": "340000001",
                 "naptan_code": "oxfgpa",
+                "stop_type": "bus",
                 "name": "Frideswide Square (Renamed)",
                 "indicator": "R1",
                 "locality": "Oxford Central",
@@ -237,77 +256,27 @@ def test_bus_stop_model(app: Flask) -> None:
                 "longitude": -1.269,
             }
         ]
-        BusStop.bulk_upsert(updated_stops)
-        stop_after = BusStop.get_by_atco("340000001")
+        Stop.bulk_upsert(updated_stops)
+        stop_after = Stop.get_by_atco("340000001")
         assert stop_after.name == "Frideswide Square (Renamed)"
         assert stop_after.locality == "Oxford Central"
 
-        # Search
-        search_res = BusStop.search("Gloucester")
+        # Search across all
+        search_res = Stop.search("Gloucester")
         assert len(search_res) == 1
         assert search_res[0].atco_code == "340000002"
 
-        # Get all
-        all_stops = BusStop.get_all(limit=10)
-        assert len(all_stops) == 2
+        # Search with stop_type filter
+        rail_res = Stop.search("Paddington", stop_type="rail")
+        assert len(rail_res) == 1
+        assert rail_res[0].atco_code == "9100PADTON"
 
-
-def test_station_model(app: Flask) -> None:
-    """Test Station model upsert, on_conflict update, and lookup."""
-    with app.app_context():
-        stations = [
-            {
-                "crs_code": "oxf",
-                "name": "Oxford",
-                "tiploc_code": "OXFD",
-                "latitude": 51.753,
-                "longitude": -1.269,
-                "operator": "GWR",
-            },
-            {
-                "crs_code": "pad",
-                "name": "London Paddington",
-                "tiploc_code": "PADTON",
-                "latitude": 51.517,
-                "longitude": -0.177,
-                "operator": "GWR",
-            },
-            {"crs_code": ""},  # invalid
-        ]
-        assert Station.bulk_upsert([]) == 0
-        Station.bulk_upsert(stations)
-
-        st = Station.get_by_crs("OXF")
-        assert st is not None
-        assert st.name == "Oxford"
-        assert st.crs_code == "OXF"
-
-        assert Station.get_by_crs("XYZ") is None
-
-        # Upsert with update
-        updated_st = [
-            {
-                "crs_code": "OXF",
-                "name": "Oxford Central Station",
-                "tiploc_code": "OXFD",
-                "latitude": 51.753,
-                "longitude": -1.269,
-                "operator": "Chiltern",
-            }
-        ]
-        Station.bulk_upsert(updated_st)
-        st_after = Station.get_by_crs("OXF")
-        assert st_after.name == "Oxford Central Station"
-        assert st_after.operator == "Chiltern"
-
-        # Search
-        res = Station.search("Paddington")
-        assert len(res) == 1
-        assert res[0].crs_code == "PAD"
+        bus_res = Stop.search("Paddington", stop_type="bus")
+        assert len(bus_res) == 0
 
         # Get all
-        all_st = Station.get_all()
-        assert len(all_st) == 2
+        all_stops = Stop.get_all(limit=10)
+        assert len(all_stops) == 3
 
 
 def test_sync_metadata_model(app: Flask) -> None:

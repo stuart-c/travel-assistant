@@ -5,11 +5,32 @@ import pytest
 import requests
 from flask import Flask
 
-from app.datasources.naptan import NaptanClient
+from app.datasources.naptan import NaptanClient, classify_stop_type
 from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
+from app.models.setting import Setting
+
+
+def test_classify_stop_type() -> None:
+    """Test classification of NaPTAN StopTypes into canonical categories."""
+    assert classify_stop_type("BCT") == "bus"
+    assert classify_stop_type("BCS") == "bus"
+    assert classify_stop_type("BCP") == "bus"
+    assert classify_stop_type("BST") == "bus"
+    assert classify_stop_type("RLY") == "rail"
+    assert classify_stop_type("RPL") == "rail"
+    assert classify_stop_type("RSE") == "rail"
+    assert classify_stop_type("MET") == "metro"
+    assert classify_stop_type("PLT") == "metro"
+    assert classify_stop_type("TMU") == "tram"
+    assert classify_stop_type("FTD") == "ferry"
+    assert classify_stop_type("FER") == "ferry"
+    assert classify_stop_type("AIR") == "air"
+    assert classify_stop_type("GAT") == "air"
+    assert classify_stop_type("TXR") == "other"
+    assert classify_stop_type("") == "bus"
 
 
 def test_naptan_from_settings(app: Flask) -> None:
@@ -19,32 +40,44 @@ def test_naptan_from_settings(app: Flask) -> None:
         assert client.provider_name == "naptan"
         assert client.validate_credentials()["valid"] is True
 
+        Setting.set_val("naptan_stops_url", "https://custom.naptan.api/stops.csv")
+        custom_client = NaptanClient.from_settings()
+        assert custom_client.endpoint == "https://custom.naptan.api/stops.csv"
+
 
 @patch("requests.get")
 def test_naptan_fetch_stops_success(mock_get: MagicMock) -> None:
     """Test fetch_stops parses CSV content correctly."""
-    csv_data = """ATCOCode,NaptanCode,CommonName,Indicator,LocalityName,Latitude,Longitude
-0100BRP90310,bstpwat,Broad Quay,Stop C3,Bristol,51.452,-2.597
-0100BRP90311,,Anchor Road,,Bristol,invalid_lat,invalid_lon
+    csv_data = """ATCOCode,NaptanCode,StopType,CommonName,Indicator,LocalityName,Latitude,Longitude
+0100BRP90310,bstpwat,BCT,Broad Quay,Stop C3,Bristol,51.452,-2.597
+9100PADTON,PAD,RLY,London Paddington,Platforms,London,51.517,-0.177
+0100BRP90311,,BCT,Anchor Road,,Bristol,invalid_lat,invalid_lon
 ,,Empty Row,,,,
 """
     mock_get.return_value = MagicMock(status_code=200, text=csv_data)
 
     client = NaptanClient()
     stops = client.fetch_stops()
-    assert len(stops) == 2
+    assert len(stops) == 3
     assert stops[0]["atco_code"] == "0100BRP90310"
     assert stops[0]["naptan_code"] == "bstpwat"
+    assert stops[0]["stop_type"] == "bus"
     assert stops[0]["name"] == "Broad Quay"
     assert stops[0]["indicator"] == "Stop C3"
     assert stops[0]["latitude"] == 51.452
     assert stops[0]["longitude"] == -2.597
 
-    # Stop 2 has invalid lat/lon
-    assert stops[1]["atco_code"] == "0100BRP90311"
-    assert stops[1]["naptan_code"] is None
-    assert stops[1]["latitude"] is None
-    assert stops[1]["longitude"] is None
+    # Rail station
+    assert stops[1]["atco_code"] == "9100PADTON"
+    assert stops[1]["naptan_code"] == "PAD"
+    assert stops[1]["stop_type"] == "rail"
+    assert stops[1]["name"] == "London Paddington"
+
+    # Stop 3 has invalid lat/lon
+    assert stops[2]["atco_code"] == "0100BRP90311"
+    assert stops[2]["naptan_code"] is None
+    assert stops[2]["latitude"] is None
+    assert stops[2]["longitude"] is None
 
 
 @patch("requests.get")
