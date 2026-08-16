@@ -90,6 +90,7 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
     from app.models.transit import BusRoute, Stop, SyncMetadata
+    from app.models.walking import Walking
 
     try:
         database.execute_sql('DROP TABLE IF EXISTS "bus_stops"')
@@ -107,6 +108,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         PlatformTransfer,
         Location,
         Journey,
+        Walking,
     ]
 
     with database.bind_ctx(all_models):
@@ -292,6 +294,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.timetable import Timetable
     from app.models.transfer import LocationTransfer, PlatformTransfer
     from app.models.transit import BusRoute, Stop, SyncMetadata
+    from app.models.walking import Walking
 
     db_path = get_db_path(app)
 
@@ -359,6 +362,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "platform_transfers": PlatformTransfer,
             "locations": Location,
             "journeys": Journey,
+            "walking": Walking,
         }
 
         tables: List[Dict[str, Any]] = []

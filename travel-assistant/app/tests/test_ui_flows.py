@@ -11,6 +11,7 @@ from app.models import (
     LocationTransfer,
     PlatformTransfer,
     Timetable,
+    Walking,
 )
 
 
@@ -79,6 +80,17 @@ def _seed_sample_data() -> None:
     j.set_time_settings([{"target_arrival": "09:00"}])
     j.save()
 
+    Walking.create(
+        start_type="ha",
+        start_id="zone.home",
+        start_name="Home Zone",
+        finish_type="bus",
+        finish_id="490000077E",
+        finish_name="King's Cross Stop E",
+        time_needed_minutes=5,
+        bidirectional=True,
+    )
+
 
 def test_dashboard_and_navigation(client: FlaskClient) -> None:
     """Test dashboard root view and navigation header links."""
@@ -138,14 +150,18 @@ def test_credentials_page_and_validation(client: FlaskClient) -> None:
     assert "API credentials saved successfully." in post_resp.get_data(as_text=True)
 
     # Test async validator endpoint
-    val_resp = client.post(
-        "/config/credentials/validate",
-        json={"service": "bus", "bus_api_key": "invalid-test-key"},
-    )
-    assert val_resp.status_code == 200
-    val_data = json.loads(val_resp.get_data(as_text=True))
-    assert val_data.get("valid") is False
-    assert "Invalid Bus API key" in val_data.get("message", "")
+    from unittest.mock import MagicMock, patch
+
+    mock_resp = MagicMock(status_code=401)
+    with patch("app.datasources.bods.requests.get", return_value=mock_resp):
+        val_resp = client.post(
+            "/config/credentials/validate",
+            json={"service": "bus", "bus_api_key": "invalid-test-key"},
+        )
+        assert val_resp.status_code == 200
+        val_data = json.loads(val_resp.get_data(as_text=True))
+        assert val_data.get("valid") is False
+        assert "Invalid Bus API key" in val_data.get("message", "")
 
 
 def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
@@ -320,6 +336,38 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     assert any(j.get("name") == "Library Study Session" for j in updated_j)
 
 
+def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
+    """Test walking Grid.js JSON script embedding and form submission."""
+    _seed_sample_data()
+    get_resp = client.get("/config/walking")
+    assert get_resp.status_code == 200
+    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
+    w_script = soup.find("script", id="initial-walking-data")
+    assert w_script is not None
+
+    walking_payload = [
+        {
+            "start_type": "ha",
+            "start_id": "zone.home",
+            "start_name": "Home Zone",
+            "finish_type": "custom",
+            "finish_id": "custom:office",
+            "finish_name": "City Office",
+            "time_needed_minutes": 18,
+            "bidirectional": True,
+        }
+    ]
+    post_resp = client.post(
+        "/config/walking",
+        data={"walking_json": json.dumps(walking_payload)},
+        follow_redirects=True,
+    )
+    assert post_resp.status_code == 200
+    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
+    updated_w = json.loads(soup_post.find("script", id="initial-walking-data").string)
+    assert any(w.get("time_needed_minutes") == 18 for w in updated_w)
+
+
 def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> None:
     """Simulate full UI flow: create journey, save changes, navigate to overview and back."""
     _seed_sample_data()
@@ -486,7 +534,27 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     )
     assert resp.status_code == 200
 
-    # 6. Now verify ALL pages retained their persisted state when revisited
+    # 6. Add Walking Route
+    walking_payload = [
+        {
+            "start_type": "ha",
+            "start_id": "zone.home",
+            "start_name": "Home Zone",
+            "finish_type": "bus",
+            "finish_id": "490000077E",
+            "finish_name": "King's Cross Stop E",
+            "time_needed_minutes": 7,
+            "bidirectional": True,
+        }
+    ]
+    resp = client.post(
+        "/config/walking",
+        data={"walking_json": json.dumps(walking_payload)},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    # 7. Now verify ALL pages retained their persisted state when revisited
     # A. Verify Credentials
     cred_get = client.get("/config/credentials")
     assert cred_get.status_code == 200
@@ -532,7 +600,17 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     )
     assert any(j["name"] == "Market Visit Route" for j in j_data)
 
-    # F. Verify Database and Sync views
+    # F. Verify Walking
+    w_get = client.get("/config/walking")
+    assert w_get.status_code == 200
+    w_data = json.loads(
+        BeautifulSoup(w_get.get_data(as_text=True), "html.parser")
+        .find("script", id="initial-walking-data")
+        .string
+    )
+    assert any(w["start_name"] == "Home Zone" for w in w_data)
+
+    # G. Verify Database and Sync views
     assert client.get("/config/db").status_code == 200
     assert client.get("/config/sync").status_code == 200
     assert client.get("/").status_code == 200
@@ -547,6 +625,7 @@ def test_british_english_compliance_across_views(client: FlaskClient) -> None:
         "/config/timetables",
         "/config/transfers",
         "/config/journeys",
+        "/config/walking",
         "/config/db",
         "/config/sync",
     ]

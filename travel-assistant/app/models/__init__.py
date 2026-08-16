@@ -15,6 +15,7 @@ from app.models.transit import (
     Stop,
     SyncMetadata,
 )
+from app.models.walking import Walking
 
 ALL_MODELS = [
     Setting,
@@ -26,6 +27,7 @@ ALL_MODELS = [
     PlatformTransfer,
     Location,
     Journey,
+    Walking,
 ]
 
 __all__ = [
@@ -34,6 +36,7 @@ __all__ = [
     "Timetable",
     "Location",
     "Journey",
+    "Walking",
     "BusRoute",
     "Stop",
     "SyncMetadata",

@@ -701,6 +701,7 @@ def test_config_routes_disable_browser_caching(client: FlaskClient) -> None:
         "/config/transfers",
         "/config/locations",
         "/config/journeys",
+        "/config/walking",
         "/config/sync",
         "/config/db",
         "/config/search/places?q=test",
@@ -728,6 +729,7 @@ def test_config_pages_include_no_cache_meta_tags(client: FlaskClient) -> None:
         "/config/transfers",
         "/config/locations",
         "/config/journeys",
+        "/config/walking",
         "/config/sync",
         "/config/db",
     ]

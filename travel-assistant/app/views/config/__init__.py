@@ -24,6 +24,7 @@ from app.views.config import (  # noqa: E402, F401
     sync,
     timetables,
     transfers,
+    walking,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "sync",
     "timetables",
     "transfers",
+    "walking",
 ]

@@ -27,6 +27,7 @@ from app.models import (  # noqa: E402
     Setting,
     Stop,
     Timetable,
+    Walking,
 )
 
 
@@ -475,6 +476,43 @@ def seed_database(db_path: str) -> None:
                 ]
             )
             j.save()
+
+        # 8. Seed Walking Routes
+        print("  -> Seeding walking routes...")
+        walking_routes = [
+            Walking(
+                start_type="ha",
+                start_id="zone.home",
+                start_name="Home",
+                finish_type="bus",
+                finish_id="490000077E",
+                finish_name="King's Cross Station (Stop E)",
+                time_needed_minutes=8,
+                bidirectional=True,
+            ),
+            Walking(
+                start_type="rail",
+                start_id="9100KNGX",
+                start_name="London King's Cross",
+                finish_type="custom",
+                finish_id="custom:central_library",
+                finish_name="Central Public Library",
+                time_needed_minutes=12,
+                bidirectional=True,
+            ),
+            Walking(
+                start_type="ha",
+                start_id="zone.home",
+                start_name="Home",
+                finish_type="custom",
+                finish_id="custom:parents_house",
+                finish_name="Parents' Residence",
+                time_needed_minutes=15,
+                bidirectional=True,
+            ),
+        ]
+        for w in walking_routes:
+            w.save()
 
     print("=== Sample Database Seeding Completed Successfully! ===")
     print(f"File size: {os.path.getsize(db_path)} bytes")
