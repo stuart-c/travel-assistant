@@ -18,7 +18,7 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLE_NAMES = ("bus_routes", "stops", "ha_locations")
+SYNCABLE_TABLES = ("bus_routes", "stops", "ha_locations")
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -295,9 +295,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             columns = [col[1] for col in col_cursor.fetchall()]
 
             # Determine sync status and last updated
-            is_syncable = (
-                table_name in SYNCABLE_TABLE_NAMES or table_name == "locations"
-            )
+            is_syncable = table_name in SYNCABLE_TABLES or table_name == "locations"
             last_updated_at = None
             sync_status = "idle" if is_syncable else "managed"
             error_message = None

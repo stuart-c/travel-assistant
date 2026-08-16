@@ -241,7 +241,7 @@ def test_stop_model(app: Flask) -> None:
 
         # Non-existent
         assert Stop.get_by_atco("999999999") is None
-        assert Stop.get_by_crs("XYZ") is None
+        assert Stop.get_by_code("XYZ") is None
 
         # Upsert with updated name on conflict
         updated_stops = [

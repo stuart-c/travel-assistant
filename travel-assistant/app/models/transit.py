@@ -177,11 +177,6 @@ class Stop(BaseModel):
             return None
 
     @classmethod
-    def get_by_crs(cls, crs_code: str) -> Optional["Stop"]:
-        """Retrieve a rail station stop by CRS / NaPTAN code."""
-        return cls.get_by_code(crs_code)
-
-    @classmethod
     def search(
         cls,
         query: str,

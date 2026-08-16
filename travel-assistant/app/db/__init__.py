@@ -4,7 +4,7 @@ Provides Peewee SQLite database lifecycle management, FlaskDB integration, and s
 """
 
 from app.db.core import (
-    SYNCABLE_TABLE_NAMES,
+    SYNCABLE_TABLES,
     create_sqlite_database,
     db,
     flask_db,
@@ -28,8 +28,6 @@ from app.models import (
     Timetable,
 )
 
-SYNCABLE_TABLES = SYNCABLE_TABLE_NAMES
-
 __all__ = [
     "db",
     "flask_db",
@@ -40,7 +38,6 @@ __all__ = [
     "format_file_size",
     "create_sqlite_database",
     "run_migrations",
-    "SYNCABLE_TABLE_NAMES",
     "SYNCABLE_TABLES",
     "ALL_MODELS",
     "BaseModel",
