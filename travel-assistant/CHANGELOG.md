@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
 
 ### Added
+- Architectural and technical design specification for the **Route Planning Engine** (`docs/architecture/01_route_planning_engine.md`), defining two-tier route/trip separation, multi-modal graph search across up to 6 modal stages with up to 3 intra-modal transfers each, two-phase intermediate timetable ingestion (BODS / Darwin S3), last-possible interchange pruning, and Pareto dominance filtering.
 - Daily background synchronisation of bus timetables from the UK Bus Open Data Service (BODS) REST API and TransXChange timetable datasets (`sync_bus_timetables`).
 - Automated TransXChange XML and zip archive timetable ingestion, parsing route services, lines, operating periods, operating profiles (days of week, bank holidays), and vehicle journey calling sequences into structured stop-to-stop trip matrices stored in the `timetables` database table with `transport_type='bus'` and `auto_added=True`.
 - Automated discovery and extraction of target bus stops referenced in the `walking` and `journeys` tables, with geographic area and bounding box query scoping against BODS datasets.
