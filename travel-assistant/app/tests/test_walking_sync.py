@@ -174,14 +174,44 @@ def test_walking_route_exists(app: Flask) -> None:
 
 
 def test_extract_walking_minutes() -> None:
-    """Test extracting walking duration in minutes from Google Directions responses."""
-    # Valid 350 seconds -> 6 minutes
+    """Test extracting walking duration in minutes from Google Directions responses, rounding up."""
+    # Valid 350 seconds (5.83 mins) -> 6 minutes
     valid_resp = [{"legs": [{"duration": {"value": 350, "text": "6 mins"}}]}]
     assert extract_walking_minutes(valid_resp) == 6
 
     # Minimum 1 minute for short durations
     short_resp = [{"legs": [{"duration": {"value": 20, "text": "1 min"}}]}]
     assert extract_walking_minutes(short_resp) == 1
+
+    # Exact boundary 60s -> 1 minute
+    assert (
+        extract_walking_minutes(
+            [{"legs": [{"duration": {"value": 60, "text": "1 min"}}]}]
+        )
+        == 1
+    )
+
+    # Rounding up: 61s (1.01 mins) -> 2 minutes
+    assert (
+        extract_walking_minutes(
+            [{"legs": [{"duration": {"value": 61, "text": "2 mins"}}]}]
+        )
+        == 2
+    )
+
+    # Rounding up: 185s (3.08 mins) and 205s (3.41 mins) both round up to 4 minutes
+    assert (
+        extract_walking_minutes(
+            [{"legs": [{"duration": {"value": 185, "text": "4 mins"}}]}]
+        )
+        == 4
+    )
+    assert (
+        extract_walking_minutes(
+            [{"legs": [{"duration": {"value": 205, "text": "4 mins"}}]}]
+        )
+        == 4
+    )
 
     # Empty or malformed responses
     assert extract_walking_minutes([]) is None
@@ -497,3 +527,118 @@ def test_sync_walking_routes_connection_error(app: Flask) -> None:
             res = sync_walking_routes()
             assert res["status"] == "error"
             assert "Google Maps API error" in res["message"]
+
+
+def test_sync_walking_routes_rounds_up_producing_bidirectional(
+    app: Flask,
+) -> None:
+    """Test when Google API returns differing raw seconds that round up to the same whole
+    minutes, a single bidirectional entry is created.
+    """
+    with app.app_context():
+        Setting.set_val("google_maps_api_key", "test-api-key")
+
+        Location.create(
+            id="ha:home",
+            name="Home",
+            latitude=51.9144,
+            longitude=-0.1621,
+            ha=True,
+        )
+        Stop.create(
+            atco_code="210021202510",
+            naptan_code="hrtdwpja",
+            stop_type="bus",
+            name="Emperors Gate",
+            latitude=51.9161,
+            longitude=-0.1625,
+        )
+        Journey.create(
+            name="Daily Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="rail",
+            to_id="9100CBG",
+            to_name="Cambridge",
+        )
+
+        # Forward: 185s (3.08m -> rounds up to 4 mins)
+        # Reverse: 205s (3.41m -> rounds up to 4 mins)
+        fwd_resp = [{"legs": [{"duration": {"value": 185, "text": "4 mins"}}]}]
+        rev_resp = [{"legs": [{"duration": {"value": 205, "text": "4 mins"}}]}]
+
+        with patch("app.sync.walking_sync.GoogleMapsClient.directions") as mock_dir:
+            mock_dir.side_effect = [fwd_resp, rev_resp]
+
+            res = sync_walking_routes()
+            assert res["status"] == "success"
+            assert res["records"] == 1
+
+            routes = list(Walking.select())
+            assert len(routes) == 1
+            r = routes[0]
+            assert r.start_id == "ha:home"
+            assert r.finish_id == "naptan:hrtdwpja"
+            assert r.time_needed_minutes == 4
+            assert r.bidirectional is True
+            assert r.auto_generated is True
+
+
+def test_sync_walking_routes_concurrency_lock(app: Flask) -> None:
+    """Test that concurrent sync triggers do not create duplicate walking records."""
+    import concurrent.futures
+
+    with app.app_context():
+        Setting.set_val("google_maps_api_key", "test-api-key")
+
+        Location.create(
+            id="ha:home",
+            name="Home",
+            latitude=51.9144,
+            longitude=-0.1621,
+            ha=True,
+        )
+        Stop.create(
+            atco_code="210021202510",
+            naptan_code="hrtdwpgp",
+            stop_type="bus",
+            name="Emperors Gate",
+            latitude=51.9164,
+            longitude=-0.1625,
+        )
+        Journey.create(
+            name="Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="rail",
+            to_id="9100CBG",
+            to_name="Cambridge",
+        )
+
+        fwd_resp = [{"legs": [{"duration": {"value": 210, "text": "4 mins"}}]}]
+        rev_resp = [{"legs": [{"duration": {"value": 210, "text": "4 mins"}}]}]
+
+        with patch("app.sync.walking_sync.GoogleMapsClient.directions") as mock_dir:
+            mock_dir.side_effect = [
+                fwd_resp,
+                rev_resp,
+                fwd_resp,
+                rev_resp,
+            ]
+
+            def _run_sync():
+                with app.app_context():
+                    return sync_walking_routes(app=app)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                f1 = executor.submit(_run_sync)
+                f2 = executor.submit(_run_sync)
+                res1 = f1.result()
+                res2 = f2.result()
+
+            assert (res1["records"] == 1 and res2["records"] == 0) or (
+                res2["records"] == 1 and res1["records"] == 0
+            )
+            assert Walking.select().count() == 1
