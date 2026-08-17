@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favor of pure OpenAPI/Swagger client integration.
+- Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
 
 ### Added
-- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), dynamically applying host and base path overrides from configured endpoints.
+- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.
 - Added typed OpenAPI client methods on `TrainLiveClient` (`get_departure_board`, `get_dep_board_with_details`, `get_arrival_board`, `get_service_details`, `get_fastest_departures`) and structured JSON departure fetching.
-- Added live base URL and token configuration fields in the Train Live Credentials web UI (`/config/credentials`).
+- Added optional Live Train Base URL override field in the Train Live Credentials web UI (`/config/credentials`).
 - Automated walking route discovery and background synchronisation (`walking_sync.py`), identifying public transit stops (NaPTAN stops and custom timetable stops) within 500 metres of custom and Home Assistant journey endpoints using the Haversine formula.
 - Google Maps Directions Walking API integration calculating forward and reverse walking durations in minutes, inserting a single `bidirectional=True` record when walking times match or two distinct directional records when they differ.
 - `auto_generated` boolean indicator on `Walking` model (`walking` table) and automatic SQLite schema migration, distinguishing auto-discovered walking connections from manual configurations.

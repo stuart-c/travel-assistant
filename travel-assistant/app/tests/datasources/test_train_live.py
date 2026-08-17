@@ -6,7 +6,6 @@ import requests
 from flask import Flask
 
 from app.datasources.train_live import (
-    DEFAULT_DARWIN_OPENAPI_ENDPOINT,
     TrainLiveClient,
     sync_swagger_schema,
 )
@@ -32,7 +31,15 @@ def test_train_live_from_settings(app: Flask) -> None:
 
 
 def test_train_live_parse_endpoint() -> None:
-    """Test endpoint URL parsing for OpenAPI endpoints."""
+    """Test endpoint URL parsing for OpenAPI endpoints and empty/default endpoints."""
+    # Empty endpoint
+    client_empty = TrainLiveClient()
+    scheme, host, base_path = client_empty._parse_endpoint(client_empty.endpoint)
+    assert scheme == ""
+    assert host == ""
+    assert base_path == ""
+
+    # Custom endpoint
     client = TrainLiveClient(endpoint="https://example.com/custom-live-board/LDBWS")
     scheme, host, base_path = client._parse_endpoint(client.endpoint)
     assert scheme == "https"
@@ -63,6 +70,7 @@ def test_train_live_swagger_client_initialisation(
         '{"swagger": "2.0", "paths": {}}'
     )
 
+    # Test with custom endpoint override
     client = TrainLiveClient(
         api_key="test-api-key",
         endpoint="https://example.com/custom-live-board/LDBWS",
@@ -70,8 +78,14 @@ def test_train_live_swagger_client_initialisation(
     swagger = client.get_swagger_client()
     assert swagger is mock_swagger_inst
     mock_from_spec.assert_called_once()
-    # Cached instance
     assert client.get_swagger_client() is swagger
+
+    # Test with default schema endpoint (no override)
+    mock_from_spec.reset_mock()
+    client_default = TrainLiveClient(api_key="test-api-key")
+    swagger_def = client_default.get_swagger_client()
+    assert swagger_def is mock_swagger_inst
+    mock_from_spec.assert_called_once()
 
 
 @patch("app.datasources.train_live.os.path.exists", return_value=False)
@@ -80,7 +94,7 @@ def test_train_live_swagger_client_missing_schema_raises_config_error(
     mock_sync: MagicMock, mock_exists: MagicMock
 ) -> None:
     """Test get_swagger_client raises error if schema cannot be found or downloaded."""
-    client = TrainLiveClient(endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
+    client = TrainLiveClient()
     with pytest.raises(DataSourceConfigError):
         client.get_swagger_client()
 
@@ -103,10 +117,7 @@ def test_train_live_validate_openapi_success(
         "crs": "CBG",
         "trainServices": [{"std": "10:00"}],
     }
-    client = TrainLiveClient(
-        api_key="valid-key",
-        endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT,
-    )
+    client = TrainLiveClient(api_key="valid-key")
     res = client.validate_credentials()
     assert res["valid"] is True
     assert "valid and active (OpenAPI)" in res["message"]
@@ -120,10 +131,7 @@ def test_train_live_validate_openapi_auth_fail(
     mock_get_board.side_effect = DataSourceAuthError(
         "Unauthorised", provider="train_live"
     )
-    client = TrainLiveClient(
-        api_key="bad-key",
-        endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT,
-    )
+    client = TrainLiveClient(api_key="bad-key")
     res = client.validate_credentials()
     assert res["valid"] is False
     assert "unauthorised access" in res["message"]
@@ -132,9 +140,7 @@ def test_train_live_validate_openapi_auth_fail(
 @patch.object(TrainLiveClient, "get_departure_board")
 def test_train_live_validate_openapi_errors(mock_get_board: MagicMock) -> None:
     """Test validate_credentials handles timeout, connection errors, 404, and exceptions."""
-    client = TrainLiveClient(
-        api_key="test-key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT
-    )
+    client = TrainLiveClient(api_key="test-key")
 
     # Timeout
     mock_get_board.side_effect = DataSourceConnectionError(
@@ -188,9 +194,7 @@ def test_train_live_fetch_departures_openapi_success(
             }
         ],
     }
-    client = TrainLiveClient(
-        api_key="valid-key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT
-    )
+    client = TrainLiveClient(api_key="valid-key")
     res = client.fetch_departures("pad", num_rows=5)
     assert res["crs"] == "PAD"
     assert res["location_name"] == "London Paddington"
@@ -201,9 +205,7 @@ def test_train_live_fetch_departures_openapi_success(
 @patch.object(TrainLiveClient, "get_dep_board_with_details")
 def test_train_live_fetch_departures_errors(mock_get_board: MagicMock) -> None:
     """Test fetch_departures propagates errors correctly."""
-    client = TrainLiveClient(
-        api_key="test-key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT
-    )
+    client = TrainLiveClient(api_key="test-key")
 
     # Auth error
     mock_get_board.side_effect = DataSourceAuthError(
@@ -240,7 +242,7 @@ def test_train_live_operations_execution(mock_get_swagger: MagicMock) -> None:
 
     mock_get_swagger.return_value = FakeClient(mock_op)
 
-    client = TrainLiveClient(api_key="key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
+    client = TrainLiveClient(api_key="key")
 
     # get_departure_board
     client.get_departure_board(crs="CBG", num_rows=5, filter_crs="KGX")
@@ -272,7 +274,7 @@ def test_train_live_call_operation_errors(mock_get_swagger: MagicMock) -> None:
 
     fake_client = FakeClient()
     mock_get_swagger.return_value = fake_client
-    client = TrainLiveClient(api_key="key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
+    client = TrainLiveClient(api_key="key")
 
     # Missing operation
     with pytest.raises(DataSourceConfigError):

@@ -18,8 +18,6 @@ from app.datasources.exceptions import (
 )
 from app.models.setting import Setting
 
-DEFAULT_DARWIN_OPENAPI_ENDPOINT = "https://realtime.nationalrail.co.uk/LDBWS"
-DEFAULT_DARWIN_ENDPOINT = DEFAULT_DARWIN_OPENAPI_ENDPOINT
 DEFAULT_USER_AGENT = "TravelAssistant/1.0 (HomeAssistant; Linux)"
 DEFAULT_SWAGGER_SCHEMA_URL = (
     "https://realtime.nationalrail.co.uk/LDBWS/static/ldbws.json"
@@ -67,7 +65,7 @@ class TrainLiveClient(BaseDataSource):
         timeout: float = 5.0,
     ) -> None:
         self.api_key = (api_key or "").strip()
-        self.endpoint = (endpoint or DEFAULT_DARWIN_ENDPOINT).strip()
+        self.endpoint = (endpoint or "").strip()
         self.timeout = float(timeout)
         self._swagger_client: Optional[SwaggerClient] = None
 
@@ -81,12 +79,17 @@ class TrainLiveClient(BaseDataSource):
         )
         return cls(
             api_key=getter("train_live_api_key", ""),
-            endpoint=getter("train_live_endpoint", DEFAULT_DARWIN_ENDPOINT),
+            endpoint=getter("train_live_endpoint", ""),
         )
 
-    def _parse_endpoint(self, endpoint_url: str) -> Tuple[str, str, str]:
+    def _parse_endpoint(
+        self, endpoint_url: Optional[str] = None
+    ) -> Tuple[str, str, str]:
         """Parse configured endpoint URL into (scheme, host, base_path)."""
         ep = (endpoint_url or "").strip()
+        if not ep:
+            return "", "", ""
+
         parsed = urlparse(ep)
         scheme = parsed.scheme or "https"
         host = parsed.netloc
