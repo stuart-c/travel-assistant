@@ -162,7 +162,6 @@ activemq-data/
 test_data/
 test_media/
 data/
-schemas/
 
 # Environments
 .env
