@@ -92,6 +92,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (times.length === 0 && trip.time) {
         times.push(trip.time);
       }
+      times = times.map((tm) => {
+        if (typeof tm === 'object' && tm !== null) {
+          const arr =
+            tm.arr !== undefined
+              ? tm.arr
+              : tm.arrival !== undefined
+              ? tm.arrival
+              : '';
+          const dep =
+            tm.dep !== undefined
+              ? tm.dep
+              : tm.departure !== undefined
+              ? tm.departure
+              : '';
+          if (arr || dep) {
+            return {
+              arr: String(arr || '').trim(),
+              dep: String(dep || '').trim(),
+            };
+          }
+          return '';
+        }
+        if (typeof tm === 'string') {
+          return tm.trim();
+        }
+        return '';
+      });
       while (times.length < stops.length) {
         times.push('');
       }
@@ -262,11 +289,53 @@ document.addEventListener('DOMContentLoaded', () => {
     return minutesToTime(mins + deltaMinutes);
   }
 
+  // Check if a time entry is a dual arrival/departure object
+  function isDualTiming(timeEntry) {
+    return (
+      typeof timeEntry === 'object' &&
+      timeEntry !== null &&
+      ('arr' in timeEntry || 'dep' in timeEntry)
+    );
+  }
+
+  // Get arrival time in minutes from a time entry (single string or dual object)
+  function getTimeArrivalMinutes(timeEntry) {
+    if (!timeEntry) return null;
+    if (isDualTiming(timeEntry)) {
+      if (timeEntry.arr) return timeToMinutes(timeEntry.arr);
+      if (timeEntry.dep) return timeToMinutes(timeEntry.dep);
+      return null;
+    }
+    return timeToMinutes(timeEntry);
+  }
+
+  // Get departure time in minutes from a time entry (single string or dual object)
+  function getTimeDepartureMinutes(timeEntry) {
+    if (!timeEntry) return null;
+    if (isDualTiming(timeEntry)) {
+      if (timeEntry.dep) return timeToMinutes(timeEntry.dep);
+      if (timeEntry.arr) return timeToMinutes(timeEntry.arr);
+      return null;
+    }
+    return timeToMinutes(timeEntry);
+  }
+
+  // Shift single or dual time entry by deltaMinutes
+  function shiftTimeEntry(timeEntry, deltaMinutes) {
+    if (!timeEntry) return '';
+    if (isDualTiming(timeEntry)) {
+      const arr = timeEntry.arr ? shiftTime(timeEntry.arr, deltaMinutes) : '';
+      const dep = timeEntry.dep ? shiftTime(timeEntry.dep, deltaMinutes) : '';
+      return { arr, dep };
+    }
+    return shiftTime(timeEntry, deltaMinutes);
+  }
+
   // Get initial departure time in minutes for a trip column
   function getTripFirstDepartureMinutes(trip) {
     if (!trip || !Array.isArray(trip.times)) return null;
     for (let i = 0; i < trip.times.length; i++) {
-      const mins = timeToMinutes(trip.times[i]);
+      const mins = getTimeDepartureMinutes(trip.times[i]);
       if (mins !== null) return mins;
     }
     return null;
@@ -849,23 +918,55 @@ document.addEventListener('DOMContentLoaded', () => {
   function validateTripColumn(trip, stopsCount) {
     const times = trip.times || [];
     const errors = new Set();
-    let prevMinutes = null;
+    let prevDepMinutes = null;
 
     for (let sIdx = 0; sIdx < stopsCount; sIdx++) {
-      const val = times[sIdx] || '';
-      if (!val) continue;
+      const entry = times[sIdx];
+      if (!entry) continue;
 
-      const currentMinutes = timeToMinutes(val);
-      if (currentMinutes === null) {
-        errors.add(sIdx);
-        continue;
+      if (isDualTiming(entry)) {
+        const arrM = entry.arr ? timeToMinutes(entry.arr) : null;
+        const depM = entry.dep ? timeToMinutes(entry.dep) : null;
+
+        // Check if format is invalid
+        if ((entry.arr && arrM === null) || (entry.dep && depM === null)) {
+          errors.add(sIdx);
+          continue;
+        }
+
+        // Intra-stop dwell check: arrival must be <= departure
+        if (arrM !== null && depM !== null && depM < arrM) {
+          errors.add(sIdx);
+        }
+
+        // Inter-stop sequence check: prev stop departure <= current stop arrival
+        const stopArrivalM = arrM !== null ? arrM : depM;
+        if (
+          prevDepMinutes !== null &&
+          stopArrivalM !== null &&
+          stopArrivalM < prevDepMinutes
+        ) {
+          errors.add(sIdx);
+        }
+
+        if (depM !== null) {
+          prevDepMinutes = depM;
+        } else if (arrM !== null) {
+          prevDepMinutes = arrM;
+        }
+      } else {
+        const currentMinutes = timeToMinutes(entry);
+        if (currentMinutes === null) {
+          errors.add(sIdx);
+          continue;
+        }
+
+        if (prevDepMinutes !== null && currentMinutes < prevDepMinutes) {
+          errors.add(sIdx);
+        }
+
+        prevDepMinutes = currentMinutes;
       }
-
-      if (prevMinutes !== null && currentMinutes < prevMinutes) {
-        errors.add(sIdx);
-      }
-
-      prevMinutes = currentMinutes;
     }
 
     return errors;
@@ -1070,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render Trip Cells for this Stop
         trips.forEach((trip, tIdx) => {
           const val = trip.times[sIdx] || '';
+          const isDual = isDualTiming(val);
           const isErr = tripErrors[tIdx].has(sIdx);
           const isSelected = selectedTripIndices.has(tIdx);
 
@@ -1077,24 +1179,85 @@ document.addEventListener('DOMContentLoaded', () => {
             <td class="p-1.5 text-center border-r border-slate-200 dark:border-slate-800 ${
               isSelected ? 'bg-sky-50/40 dark:bg-sky-950/20' : ''
             }">
+          `;
+
+          if (isDual) {
+            const arrVal =
+              typeof val === 'object' && val ? val.arr || '' : '';
+            const depVal =
+              typeof val === 'object' && val ? val.dep || '' : '';
+            tableHtml += `
+              <div class="inline-flex flex-col gap-1 items-center">
+                <!-- Arrival Row -->
+                <div class="flex items-center gap-1">
+                  <span class="text-[9px] font-bold tracking-wider px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono select-none" title="Arrival Time">ARR</span>
+                  <input 
+                    type="time" 
+                    class="matrix-time-input matrix-time-arr w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors cursor-pointer ${
+                      isErr
+                        ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
+                    }"
+                    data-stop-index="${sIdx}"
+                    data-trip-index="${tIdx}"
+                    data-mode="dual"
+                    data-field="arr"
+                    value="${escapeHtml(arrVal)}"
+                    title="${
+                      isErr
+                        ? 'Invalid timing sequence or dwell time. Double-click to collapse into single time box.'
+                        : 'Arrival time. Double-click to collapse into single time box.'
+                    }"
+                  >
+                </div>
+                <!-- Departure Row -->
+                <div class="flex items-center gap-1">
+                  <span class="text-[9px] font-bold tracking-wider px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono select-none" title="Departure Time">DEP</span>
+                  <input 
+                    type="time" 
+                    class="matrix-time-input matrix-time-dep w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors cursor-pointer ${
+                      isErr
+                        ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
+                    }"
+                    data-stop-index="${sIdx}"
+                    data-trip-index="${tIdx}"
+                    data-mode="dual"
+                    data-field="dep"
+                    value="${escapeHtml(depVal)}"
+                    title="${
+                      isErr
+                        ? 'Invalid timing sequence or dwell time. Double-click to collapse into single time box.'
+                        : 'Departure time. Double-click to collapse into single time box.'
+                    }"
+                  >
+                </div>
+              </div>
+            `;
+          } else {
+            const singleVal = typeof val === 'string' ? val : '';
+            tableHtml += `
               <input 
                 type="time" 
-                class="matrix-time-input w-24 px-2 py-1 text-xs font-mono rounded-lg border text-center transition-colors ${
+                class="matrix-time-input w-24 px-2 py-1 text-xs font-mono rounded-lg border text-center transition-colors cursor-pointer ${
                   isErr
                     ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/30'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
                 }"
                 data-stop-index="${sIdx}"
                 data-trip-index="${tIdx}"
-                value="${escapeHtml(val)}"
+                data-mode="single"
+                value="${escapeHtml(singleVal)}"
                 title="${
                   isErr
-                    ? 'Invalid sequence: Time cannot be earlier than a preceding stop in this trip.'
-                    : 'Scheduled departure time (optional)'
+                    ? 'Invalid sequence: Time cannot be earlier than a preceding stop in this trip. Double-click to split into Arrival & Departure.'
+                    : 'Scheduled departure time (optional). Double-click to split into Arrival & Departure.'
                 }"
               >
-            </td>
-          `;
+            `;
+          }
+
+          tableHtml += `</td>`;
         });
 
         tableHtml += `</tr>`;
@@ -1115,19 +1278,85 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeEditorIndex < 0) return;
     const timetable = stagedTimetables[activeEditorIndex];
 
-    // Time cell input listener
+    // Time cell input listeners (change and dblclick)
     const timeInputs = matrixMount.querySelectorAll('.matrix-time-input');
     timeInputs.forEach((input) => {
-      input.addEventListener('change', (e) => {
+      // Double click to split single input into 2 boxes or collapse dual inputs back to 1 box
+      input.addEventListener('dblclick', (e) => {
         const sIdx = parseInt(e.target.getAttribute('data-stop-index'), 10);
         const tIdx = parseInt(e.target.getAttribute('data-trip-index'), 10);
+        const mode = e.target.getAttribute('data-mode');
+
         if (
           !isNaN(sIdx) &&
           !isNaN(tIdx) &&
           timetable.content.trips[tIdx] &&
-          timetable.content.trips[tIdx].times
+          Array.isArray(timetable.content.trips[tIdx].times)
         ) {
-          timetable.content.trips[tIdx].times[sIdx] = e.target.value.trim();
+          if (mode === 'single') {
+            const currentVal = e.target.value.trim();
+            timetable.content.trips[tIdx].times[sIdx] = {
+              arr: currentVal,
+              dep: currentVal,
+            };
+          } else if (mode === 'dual') {
+            const currentEntry = timetable.content.trips[tIdx].times[sIdx];
+            let collapsedTime = '';
+            if (isDualTiming(currentEntry)) {
+              collapsedTime = currentEntry.dep || currentEntry.arr || '';
+            } else if (typeof currentEntry === 'string') {
+              collapsedTime = currentEntry;
+            }
+            timetable.content.trips[tIdx].times[sIdx] = collapsedTime;
+          }
+
+          renderMatrix();
+          syncState();
+
+          // Auto-focus target input
+          setTimeout(() => {
+            const targetInput = matrixMount.querySelector(
+              `.matrix-time-input[data-stop-index="${sIdx}"][data-trip-index="${tIdx}"]`
+            );
+            if (targetInput) {
+              targetInput.focus();
+            }
+          }, 0);
+        }
+      });
+
+      // Change event listener
+      input.addEventListener('change', (e) => {
+        const sIdx = parseInt(e.target.getAttribute('data-stop-index'), 10);
+        const tIdx = parseInt(e.target.getAttribute('data-trip-index'), 10);
+        const mode = e.target.getAttribute('data-mode');
+
+        if (
+          !isNaN(sIdx) &&
+          !isNaN(tIdx) &&
+          timetable.content.trips[tIdx] &&
+          Array.isArray(timetable.content.trips[tIdx].times)
+        ) {
+          const newVal = e.target.value.trim();
+          if (mode === 'single') {
+            timetable.content.trips[tIdx].times[sIdx] = newVal;
+          } else if (mode === 'dual') {
+            const field = e.target.getAttribute('data-field'); // 'arr' or 'dep'
+            let entry = timetable.content.trips[tIdx].times[sIdx];
+            if (!isDualTiming(entry)) {
+              entry = { arr: '', dep: '' };
+            } else {
+              entry = { ...entry };
+            }
+            entry[field] = newVal;
+
+            // If both arr and dep are empty on edit, convert to empty string
+            if (!entry.arr && !entry.dep) {
+              timetable.content.trips[tIdx].times[sIdx] = '';
+            } else {
+              timetable.content.trips[tIdx].times[sIdx] = entry;
+            }
+          }
 
           // Re-sort trips chronologically and re-render
           timetable.content.trips = sortTripsChronologically(
@@ -1564,7 +1793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let c = 0; c < copies; c++) {
           const shiftDelta = baseShift + c * offsetMinutes;
           const clonedTimes = (sourceTrip.times || []).map((t) =>
-            t ? shiftTime(t, shiftDelta) : ''
+            t ? shiftTimeEntry(t, shiftDelta) : ''
           );
           newTrips.push({
             id: `trip_${Date.now()}_${c}_${Math.random()
@@ -1581,7 +1810,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!sourceTrip) return;
             const shiftDelta = c * offsetMinutes;
             const clonedTimes = (sourceTrip.times || []).map((t) =>
-              t ? shiftTime(t, shiftDelta) : ''
+              t ? shiftTimeEntry(t, shiftDelta) : ''
             );
             newTrips.push({
               id: `trip_${Date.now()}_${c}_${tripIdx}_${Math.random()

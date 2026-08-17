@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Added
+- Polymorphic timetable schema supporting dual arrival and departure timings per stop (`{"arr": "HH:MM", "dep": "HH:MM"}`) alongside standard single times (`"HH:MM"`).
+- Interactive stacked dual-input visual design in the Timetable Grid Editor with compact uppercase `ARR` and `DEP` labels and dedicated `<input type="time">` elements.
+- Seamless double-click cell interaction allowing users to double-click a single time box to split into Arrival & Departure, and double-click to collapse back to a single box.
+- Chronological sequence and dwell time validation checking both intra-stop dwell duration (`Arrival ≤ Departure`) and inter-stop progression (`Departure[i] ≤ Arrival[i+1]`).
+- Dwell time preservation during single and batch trip duplication and retiming across intervals.
 - Reusable `PlaceAutocomplete` JavaScript component (`place-autocomplete.js`) encapsulating place search querying, debounce management, filter chip bar interaction, and suggestions rendering across Journeys, Transfers, and Timetable views.
 - Interactive **Place Type Filter Chips** (`[All] [Train] [Bus] [Metro] [Tram] [Ferry] [Air] [HA] [Custom]`) pinned to the top of all place search autocomplete dropdowns across Journeys (`/config/journeys`), Transfers (`/config/transfers`), and the Timetable Grid Editor (`/config/timetables`).
 - Instant re-filtering on chip click with focus retention, active filter styling, and context-aware default transport modes.
