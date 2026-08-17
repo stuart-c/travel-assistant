@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Added
+- Automated walking route discovery and background synchronisation (`walking_sync.py`), identifying public transit stops (NaPTAN stops and custom timetable stops) within 500 metres of custom and Home Assistant journey endpoints using the Haversine formula.
+- Google Maps Directions Walking API integration calculating forward and reverse walking durations in minutes, inserting a single `bidirectional=True` record when walking times match or two distinct directional records when they differ.
+- `auto_generated` boolean indicator on `Walking` model (`walking` table) and automatic SQLite schema migration, distinguishing auto-discovered walking connections from manual configurations.
+- Idempotent route creation preserving existing manual and auto-generated walking routes without overwriting.
+- Visual `Auto` badge and edit restrictions for auto-generated walking routes in the Walking configuration table (`/config/walking`), allowing deletion while preventing accidental manual alteration.
+- Asynchronous walking route synchronisation triggered automatically upon creating or modifying journeys on `/config/journeys`.
+- `walking` dataset entry in Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness checks in `TransitBackgroundWorker`.
 - Darwin AWS S3 train timetable background synchronisation ingesting National Rail Darwin XML timetable snapshots (`PPTimetable` v8), extracting passenger journey services, and grouping them by route corridor into timetable matrices with calling points and scheduled arrival/departure timings.
 - Train Operating Company (`toc`) code and operator name extraction on each timetable journey trip object in the content schema (e.g. `{"toc": "TL", "operator": "Thameslink"}`).
 - Auto-added indicator (`auto_added = BooleanField(default=False)`) on `Timetable` model and database schema migration, distinguishing Darwin-synced timetables from custom user timetables.

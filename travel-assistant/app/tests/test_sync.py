@@ -367,17 +367,18 @@ def test_sync_all(app: Flask) -> None:
             mock_sync.return_value = {"status": "success", "records": 2}
             res = sync_all(app=app)
             assert res["success"] is True
-            assert res["total_records"] == 8
-            assert len(res["tables"]) == 4
+            assert res["total_records"] == 10
+            assert len(res["tables"]) == 5
 
 
 def test_check_and_run_background_sync(app: Flask) -> None:
     """Test check_and_run_background_sync only triggers overdue tables."""
     with app.app_context():
-        # bus_routes, ha_locations, and train_timetables are up to date
+        # bus_routes, ha_locations, train_timetables, and walking are up to date
         SyncMetadata.record_success("bus_routes", 10, 1.0)
         SyncMetadata.record_success("ha_locations", 5, 0.5)
         SyncMetadata.record_success("train_timetables", 2, 0.8)
+        SyncMetadata.record_success("walking", 3, 0.4)
         # stops is not synced
 
         with patch("app.sync.transit_sync.sync_table") as mock_sync:
@@ -388,6 +389,7 @@ def test_check_and_run_background_sync(app: Flask) -> None:
             assert "bus_routes" not in res["results"]
             assert "ha_locations" not in res["results"]
             assert "train_timetables" not in res["results"]
+            assert "walking" not in res["results"]
 
 
 def test_background_worker_lifecycle(app: Flask) -> None:
@@ -452,10 +454,11 @@ def test_sync_all_with_table_error(app: Flask) -> None:
                 {"status": "error", "records": 0, "message": "Failed"},
                 {"status": "success", "records": 3},
                 {"status": "success", "records": 2},
+                {"status": "success", "records": 1},
             ]
             res = sync_all(app=app)
             assert res["success"] is False
-            assert res["total_records"] == 10
+            assert res["total_records"] == 11
 
 
 def test_background_worker_handles_exception_in_loop(app: Flask) -> None:

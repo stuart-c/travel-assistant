@@ -303,7 +303,7 @@ def test_db_stats_includes_walking(app: Flask) -> None:
         )
         assert walking_table is not None
         assert walking_table["row_count"] == 1
-        assert walking_table["syncable"] is False
+        assert walking_table["syncable"] is True
 
 
 def test_clean_walking_item() -> None:
@@ -337,8 +337,9 @@ def test_clean_walking_item() -> None:
     assert res["finish_type"] == "custom"
     assert res["time_needed_minutes"] == 5
     assert res["bidirectional"] is False
+    assert res["auto_generated"] is False
 
-    # Valid item
+    # Valid item with auto_generated=True
     valid = clean_walking_item(
         {
             "start_type": "rail",
@@ -349,6 +350,7 @@ def test_clean_walking_item() -> None:
             "finish_name": "Stop E",
             "time_needed_minutes": "12",
             "bidirectional": "true",
+            "auto_generated": True,
         }
     )
     assert valid is not None
@@ -358,3 +360,4 @@ def test_clean_walking_item() -> None:
     assert valid["finish_id"] == "490000077E"
     assert valid["time_needed_minutes"] == 12
     assert valid["bidirectional"] is True
+    assert valid["auto_generated"] is True

@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncAllIcon = document.getElementById('sync-all-icon');
   const syncAllText = document.getElementById('sync-all-text');
 
-  const SYNCABLE_NAMES = ['bus_routes', 'stops', 'ha_locations', 'locations', 'train_timetables'];
+  const SYNCABLE_NAMES = ['bus_routes', 'stops', 'ha_locations', 'locations', 'train_timetables', 'walking'];
 
   function extractSyncableTables(stats) {
     const allTables = (stats && Array.isArray(stats.tables)) ? stats.tables : [];
@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'ha_locations': return 'pin_drop';
       case 'locations': return 'pin_drop';
       case 'train_timetables': return 'train';
+      case 'walking': return 'directions_walk';
       default: return 'sync';
     }
   }
@@ -108,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'ha_locations': return 'Home Assistant Locations';
       case 'locations': return 'Home Assistant Locations';
       case 'train_timetables': return 'Train Timetables (Darwin S3)';
+      case 'walking': return 'Walking Connections';
       default: return name;
     }
   }

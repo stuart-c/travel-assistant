@@ -45,6 +45,7 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "finish_name": finish_name,
         "time_needed_minutes": time_needed,
         "bidirectional": bool(entry.get("bidirectional", True)),
+        "auto_generated": bool(entry.get("auto_generated", False)),
     }
 
 

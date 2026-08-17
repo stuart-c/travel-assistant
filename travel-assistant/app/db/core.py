@@ -17,7 +17,13 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLES = ("bus_routes", "stops", "ha_locations", "train_timetables")
+SYNCABLE_TABLES = (
+    "bus_routes",
+    "stops",
+    "ha_locations",
+    "train_timetables",
+    "walking",
+)
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -249,6 +255,20 @@ def run_migrations(database: SqliteDatabase) -> None:
                         FROM "_timetables_old"
                         """)
                     database.execute_sql('DROP TABLE "_timetables_old"')
+    except Exception:
+        pass
+
+    try:
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='walking'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("walking")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "auto_generated" not in cols:
+                database.execute_sql(
+                    'ALTER TABLE "walking" ADD COLUMN "auto_generated" INTEGER NOT NULL DEFAULT 0'
+                )
     except Exception:
         pass
 

@@ -18,6 +18,7 @@ class Walking(BaseModel):
     finish_name = CharField()
     time_needed_minutes = IntegerField(default=5)
     bidirectional = BooleanField(default=True)
+    auto_generated = BooleanField(default=False)
 
     class Meta:
         table_name = "walking"
@@ -91,6 +92,11 @@ class Walking(BaseModel):
     def get_stats(cls) -> Dict[str, Any]:
         """Aggregate summary counts of configured walking connections."""
         total = cls.select().count()
+        auto_count = (
+            cls.select().where(cls.auto_generated == True).count()  # noqa: E712
+        )
         return {
             "total": total,
+            "auto_count": auto_count,
+            "manual_count": total - auto_count,
         }
