@@ -230,9 +230,22 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
 
       const isBidi = item.bidirectional !== false;
-      const directionHtml = isBidi
+      const isAuto = item.auto_generated === true;
+
+      const directionBadge = isBidi
         ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60" title="Walking duration applies in both directions"><span class="material-symbols-outlined text-sm">sync_alt</span> Two-way</span>`
         : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" title="Walking duration applies only from start to finish"><span class="material-symbols-outlined text-sm">arrow_forward</span> One-way</span>`;
+
+      const autoBadge = isAuto
+        ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60" title="Automatically generated route via Google Maps walking directions"><span class="material-symbols-outlined text-xs leading-none">auto_awesome</span> Auto</span>`
+        : '';
+
+      const directionHtml = `
+        <div class="flex items-center gap-1.5 flex-wrap">
+          ${directionBadge}
+          ${autoBadge}
+        </div>
+      `;
 
       const durationHtml = `
         <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold font-mono bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60">
@@ -245,13 +258,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ? window.TransitUI.renderActionButtons({
             index,
             isReadOnly: false,
+            showEdit: !isAuto,
+            showDelete: true,
             editClass: 'edit-walking-btn',
             deleteClass: 'delete-walking-btn',
             editTitle: 'Edit walking route',
             deleteTitle: 'Delete walking route',
           })
         : `<div class="flex items-center gap-1.5">
-             <button 
+             ${!isAuto ? `<button 
                type="button" 
                class="edit-walking-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
                data-index="${index}"
@@ -259,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
                aria-label="Edit walking route"
              >
                <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-             </button>
+             </button>` : ''}
              <button 
                type="button" 
                class="delete-walking-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
@@ -452,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         finish_name: finishName,
         time_needed_minutes: timeVal,
         bidirectional: isBidi,
+        auto_generated: false,
       };
 
       if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {

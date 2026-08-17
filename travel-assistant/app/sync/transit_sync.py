@@ -26,6 +26,7 @@ from app.models import (
     Timetable,
 )
 from app.sync.ha_sync import sync_ha_locations
+from app.sync.walking_sync import sync_walking_routes
 
 
 def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
@@ -288,6 +289,8 @@ def sync_table(
         return sync_ha_locations(app=app)
     elif norm_name == "train_timetables":
         return sync_train_timetables(app=app)
+    elif norm_name in ("walking", "walking_routes"):
+        return sync_walking_routes(app=app, force=force)
     else:
         return {
             "table": norm_name,

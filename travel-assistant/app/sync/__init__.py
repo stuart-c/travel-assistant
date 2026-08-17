@@ -9,6 +9,10 @@ from app.sync.transit_sync import (
     sync_table,
     sync_train_timetables,
 )
+from app.sync.walking_sync import (
+    sync_walking_routes,
+    trigger_journey_walking_sync_async,
+)
 from app.sync.worker import (
     TransitBackgroundWorker,
     get_background_worker,
@@ -21,6 +25,8 @@ __all__ = [
     "sync_stops",
     "sync_ha_locations",
     "sync_train_timetables",
+    "sync_walking_routes",
+    "trigger_journey_walking_sync_async",
     "sync_table",
     "sync_all",
     "check_and_run_background_sync",

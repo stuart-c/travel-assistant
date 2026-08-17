@@ -1,14 +1,28 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, List, Optional
-from flask import render_template, request
-
 from app.models import Journey
 from app.models.base import LOCATION_TYPES
+from app.sync.walking_sync import trigger_journey_walking_sync_async
 from app.views.config import config_bp
 from app.views.config.common import save_bulk_config
+from flask import current_app, render_template, request
 
 VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun", "bank_holiday")
+
+
+def _save_journeys_and_trigger_sync(cleaned_items: List[Dict[str, Any]]) -> None:
+    """Save journeys atomically and trigger background walking route synchronisation."""
+    with Journey._meta.database.atomic():
+        Journey.delete().execute()
+        if cleaned_items:
+            Journey.insert_many(cleaned_items).execute()
+
+    try:
+        app_obj = current_app._get_current_object() if current_app else None
+        trigger_journey_walking_sync_async(app_obj)
+    except Exception:
+        pass
 
 
 def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -85,6 +99,7 @@ def journeys() -> Any:
             clean_item_func=clean_journey_item,
             entity_label="Journeys",
             redirect_endpoint="config.journeys",
+            custom_save_fn=_save_journeys_and_trigger_sync,
         )
 
     current_journeys = [j.to_dict() for j in Journey.select()]
