@@ -232,6 +232,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
-# Cached OpenAPI / Swagger schemas
-travel-assistant/app/datasources/schemas/ldbws_swagger.json
