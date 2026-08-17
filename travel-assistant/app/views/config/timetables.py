@@ -5,7 +5,13 @@ import json
 from typing import Any, Dict, Optional
 from flask import render_template, request
 
-from app.models import Timetable
+from app.models import (
+    Timetable,
+    TimetableContent,
+    TimetableStop,
+    TimetableTrip,
+    TripTiming,
+)
 from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
 from app.views.config.common import save_changeset_config
@@ -78,16 +84,19 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(raw_stops, list):
         for s in raw_stops:
             if isinstance(s, dict):
-                clean_stops.append(s)
+                try:
+                    clean_stops.append(TimetableStop.model_validate(s))
+                except Exception:
+                    continue
             elif isinstance(s, str) and s.strip():
                 clean_stops.append(
-                    {
-                        "id": s.strip(),
-                        "name": s.strip(),
-                        "type": transport_type,
-                        "indicator": "Stop",
-                        "icon": "place",
-                    }
+                    TimetableStop(
+                        id=s.strip(),
+                        name=s.strip(),
+                        type=transport_type,
+                        indicator="Stop",
+                        icon="place",
+                    )
                 )
 
     def _clean_time_str(val: Any) -> str:
@@ -126,7 +135,7 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                         tm.get("dep") if "dep" in tm else tm.get("departure")
                     )
                     if arr_val or dep_val:
-                        cleaned_times.append({"arr": arr_val, "dep": dep_val})
+                        cleaned_times.append(TripTiming(arr=arr_val, dep=dep_val))
                     else:
                         cleaned_times.append("")
                 elif isinstance(tm, str):
@@ -144,12 +153,13 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if t.get("operator"):
                 trip_dict["operator"] = str(t.get("operator")).strip()
 
-            clean_trips.append(trip_dict)
+            try:
+                clean_trips.append(TimetableTrip(**trip_dict))
+            except Exception:
+                continue
 
-    content_clean = {
-        "stops": clean_stops,
-        "trips": clean_trips,
-    }
+    content_obj = TimetableContent(stops=clean_stops, trips=clean_trips)
+    content_clean = content_obj.model_dump()
 
     result: Dict[str, Any] = {
         "name": name,

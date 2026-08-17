@@ -4,11 +4,17 @@ Provides declarative Peewee models for application settings, transit entities,
 timetables, interchange transfers, and synchronization metadata.
 """
 
-from app.models.base import BaseModel
-from app.models.journey import Journey
+from app.models.base import BaseModel, PydanticField
+from app.models.journey import Journey, JourneyTimeSetting
 from app.models.location import Location
 from app.models.setting import Setting
-from app.models.timetable import Timetable
+from app.models.timetable import (
+    Timetable,
+    TimetableContent,
+    TimetableStop,
+    TimetableTrip,
+    TripTiming,
+)
 from app.models.transfer import PlatformTransfer
 from app.models.transit import (
     BusRoute,
@@ -31,10 +37,16 @@ ALL_MODELS = [
 
 __all__ = [
     "BaseModel",
+    "PydanticField",
     "Setting",
     "Timetable",
+    "TripTiming",
+    "TimetableStop",
+    "TimetableTrip",
+    "TimetableContent",
     "Location",
     "Journey",
+    "JourneyTimeSetting",
     "Walking",
     "BusRoute",
     "Stop",

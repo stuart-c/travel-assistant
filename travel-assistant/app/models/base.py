@@ -1,12 +1,16 @@
-"""Base Peewee model class with timestamp tracking and JSON serialisation helpers."""
+"""Base Peewee model class with timestamp tracking and Pydantic serialisation helpers."""
 
 import datetime
 import json
+import logging
 from typing import Any, Dict, Optional, Tuple
-from peewee import DateTimeField, Model, TextField
+from peewee import DateTimeField, Field, Model
 from playhouse.shortcuts import model_to_dict
+from pydantic import BaseModel as PydanticBaseModel, TypeAdapter
 
 from app.db.core import db
+
+logger = logging.getLogger(__name__)
 
 # Canonical transport modes registry
 TRANSPORT_MODES: Dict[str, Dict[str, str]] = {
@@ -67,47 +71,76 @@ LOCATION_TYPES: Tuple[str, ...] = (
 )
 
 
-class JSONField(TextField):
-    """Peewee TextField subclass with automatic JSON serialisation and deserialisation."""
+def _dump_pydantic_structure(val: Any) -> Any:
+    """Recursively convert Pydantic models and datetimes to serialisable python primitives."""
+    if isinstance(val, PydanticBaseModel):
+        return val.model_dump()
+    if isinstance(val, list):
+        return [_dump_pydantic_structure(x) for x in val]
+    if isinstance(val, dict):
+        return {k: _dump_pydantic_structure(v) for k, v in val.items()}
+    if isinstance(val, (datetime.datetime, datetime.date)):
+        return val.isoformat()
+    return val
 
-    def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
-        self._json_default = default if default is not None else dict
-        db_default = (
-            json.dumps(
-                self._json_default()
-                if callable(self._json_default)
-                else self._json_default
-            )
-            if default is not None
-            else None
-        )
-        super().__init__(default=db_default, *args, **kwargs)
+
+class PydanticField(Field):
+    """Peewee Field subclass with automatic Pydantic model validation and JSON serialisation."""
+
+    field_type = "TEXT"
+
+    def __init__(
+        self, model_type: Any, default: Any = None, *args: Any, **kwargs: Any
+    ) -> None:
+        self.model_type = model_type
+        self._type_adapter = TypeAdapter(model_type)
+        self._pydantic_default = default
+        super().__init__(default=default, *args, **kwargs)
 
     def db_value(self, value: Any) -> Optional[str]:
-        """Convert python dictionary or list to JSON string for database storage."""
+        """Convert Pydantic model, dictionary, or list to JSON string for database storage."""
         if value is None:
             return None
         if isinstance(value, str):
             return value
-        return json.dumps(value)
+        try:
+            if isinstance(value, (dict, list)) and not isinstance(
+                value, PydanticBaseModel
+            ):
+                value = self._type_adapter.validate_python(value)
+            dumped = self._type_adapter.dump_json(value)
+            return dumped.decode("utf-8") if isinstance(dumped, bytes) else dumped
+        except Exception:
+            if hasattr(value, "model_dump"):
+                return json.dumps(value.model_dump())
+            return json.dumps(value)
 
     def python_value(self, value: Any) -> Any:
-        """Convert database JSON string to Python dictionary or list."""
+        """Convert database JSON string or python object to Pydantic model instance."""
         if value is None or value == "":
             return (
-                self._json_default()
-                if callable(self._json_default)
-                else self._json_default
+                self._pydantic_default()
+                if callable(self._pydantic_default)
+                else self._pydantic_default
             )
-        if isinstance(value, (dict, list)):
-            return value
+        if isinstance(value, str):
+            try:
+                return self._type_adapter.validate_json(value)
+            except Exception as err:
+                logger.warning("Failed to deserialise JSON in PydanticField: %s", err)
+                return (
+                    self._pydantic_default()
+                    if callable(self._pydantic_default)
+                    else self._pydantic_default
+                )
         try:
-            return json.loads(value)
-        except (json.JSONDecodeError, TypeError):
+            return self._type_adapter.validate_python(value)
+        except Exception as err:
+            logger.warning("Failed to validate object in PydanticField: %s", err)
             return (
-                self._json_default()
-                if callable(self._json_default)
-                else self._json_default
+                self._pydantic_default()
+                if callable(self._pydantic_default)
+                else self._pydantic_default
             )
 
 
@@ -126,17 +159,16 @@ class BaseModel(Model):
         return super().save(*args, **kwargs)
 
     def to_dict(self, recurse: bool = False, **kwargs: Any) -> Dict[str, Any]:
-        """Convert model instance to a dictionary, formatting datetimes to ISO strings."""
+        """Convert model instance to a dictionary, formatting datetimes and Pydantic models."""
         data = model_to_dict(self, recurse=recurse, **kwargs)
         for k, v in data.items():
-            if isinstance(v, (datetime.datetime, datetime.date)):
-                data[k] = v.isoformat()
+            data[k] = _dump_pydantic_structure(v)
         return data
 
 
 __all__ = [
     "BaseModel",
-    "JSONField",
+    "PydanticField",
     "TRANSPORT_MODES",
     "LOCATION_TYPES",
 ]

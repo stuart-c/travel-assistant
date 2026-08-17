@@ -183,7 +183,7 @@ Any candidate route whose estimated total travel duration exceeds **1.5$\times$ 
 from typing import Any, Dict, List, Optional
 from peewee import AutoField, BooleanField, CharField, IntegerField, TextField
 
-from app.models.base import BaseModel, JSONField
+from app.models.base import BaseModel, PydanticField
 
 
 class JourneyRoute(BaseModel):
@@ -199,8 +199,8 @@ class JourneyRoute(BaseModel):
     transfer_count = IntegerField(default=0)
     stages_count = IntegerField(default=1)
     primary_mode = CharField(default="bus")
-    legs = JSONField(default=list)
-    active_days = JSONField(default=list)
+    legs = PydanticField(model_type=List[Dict[str, Any]], default=list)
+    active_days = PydanticField(model_type=List[str], default=list)
     summary_text = TextField(null=True)
 
     class Meta:

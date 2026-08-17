@@ -413,6 +413,60 @@ def test_timetable_model(app: Flask) -> None:
         t_bad = Timetable(content="invalid-json")
         assert t_bad.get_content() == {"stops": [], "trips": []}
 
+        # Test set_content with Pydantic model and Dict
+        from app.models.timetable import TimetableContent, TimetableStop
+
+        tt_model = TimetableContent(
+            stops=[TimetableStop(id="s9", name="Stop 9")], trips=[]
+        )
+        t_bad.set_content(tt_model)
+        assert len(t_bad.get_content()["stops"]) == 1
+
+        t_bad.set_content({"stops": [{"id": "s10", "name": "Stop 10"}], "trips": []})
+        assert len(t_bad.get_content()["stops"]) == 1
+        assert t_bad.get_content()["stops"][0]["id"] == "s10"
+
+        t_bad.set_content(None)
+        assert t_bad.get_content() == {"stops": [], "trips": []}
+
+        # Test Journey set_time_settings with Pydantic models, dicts, and invalid entries
+        from app.models.journey import Journey, JourneyTimeSetting
+
+        j_test = Journey(
+            name="Test Journey",
+            from_type="rail",
+            from_id="A",
+            from_name="A",
+            to_type="rail",
+            to_id="B",
+            to_name="B",
+        )
+        j_test.set_time_settings(
+            [
+                JourneyTimeSetting(
+                    days=["mon"], mode="depart", start_time="08:00", end_time="09:00"
+                )
+            ]
+        )
+        assert len(j_test.get_time_settings()) == 1
+
+        j_test.set_time_settings(
+            [
+                {
+                    "days": ["tue"],
+                    "mode": "arrive",
+                    "start_time": "17:00",
+                    "end_time": "18:00",
+                },
+                "invalid-item",
+            ]
+        )
+        assert len(j_test.get_time_settings()) == 1
+        assert j_test.get_time_settings()[0]["mode"] == "arrive"
+
+        j_test.set_time_settings([])
+        assert j_test.get_time_settings() == []
+
 
 def test_transfer_models(app: Flask) -> None:
     """Test PlatformTransfer model and lookup."""
@@ -584,17 +638,20 @@ def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
     test_db.close()
 
 
-def test_json_field_serialization() -> None:
-    """Test Peewee JSONField automated serialization and deserialization."""
-    from app.models.base import JSONField, LOCATION_TYPES, TRANSPORT_MODES
+def test_pydantic_field_serialization() -> None:
+    """Test Peewee PydanticField automated serialisation and deserialisation."""
+    from typing import Any, Dict, List
+    from app.models.base import LOCATION_TYPES, TRANSPORT_MODES, PydanticField
+    from app.models.journey import JourneyTimeSetting
+    from app.models.timetable import TimetableContent
 
     assert "rail" in LOCATION_TYPES
     assert "bus" in TRANSPORT_MODES
 
-    field = JSONField(default=list)
+    field = PydanticField(model_type=List[str], default=list)
     assert field.db_value(None) is None
     assert field.db_value('["a"]') == '["a"]'
-    assert field.db_value(["a", "b"]) == '["a", "b"]'
+    assert field.db_value(["a", "b"]) in ('["a","b"]', '["a", "b"]')
 
     assert field.python_value(None) == []
     assert field.python_value("") == []
@@ -602,7 +659,43 @@ def test_json_field_serialization() -> None:
     assert field.python_value('["decoded"]') == ["decoded"]
     assert field.python_value("invalid-json{") == []
 
-    dict_field = JSONField(default=dict)
+    dict_field = PydanticField(model_type=Dict[str, Any], default=dict)
     assert dict_field.python_value(None) == {}
     assert dict_field.python_value('{"key": "val"}') == {"key": "val"}
     assert dict_field.python_value("bad-json") == {}
+
+    tt_field = PydanticField(model_type=TimetableContent, default=TimetableContent)
+    assert tt_field.db_value(None) is None
+    parsed = tt_field.python_value(
+        '{"stops": [{"id": "s1", "name": "Stop 1"}], "trips": []}'
+    )
+    assert isinstance(parsed, TimetableContent)
+    assert len(parsed.stops) == 1
+    assert parsed.stops[0].id == "s1"
+    assert parsed.stops[0].name == "Stop 1"
+
+    # Fallback on invalid JSON or python object
+    fallback = tt_field.python_value("not-valid-json")
+    assert isinstance(fallback, TimetableContent)
+    assert fallback.stops == []
+    assert fallback.trips == []
+
+    fallback_obj = tt_field.python_value(12345)
+    assert isinstance(fallback_obj, TimetableContent)
+    assert fallback_obj.stops == []
+
+    # JourneyTimeSetting list validation and deserialisation
+    j_field = PydanticField(model_type=List[JourneyTimeSetting], default=list)
+    j_parsed = j_field.python_value(
+        '[{"days": ["MON", "TUE", "INVALID"], "mode": "arrive", '
+        '"start_time": "08:00", "end_time": "09:00"}]'
+    )
+    assert len(j_parsed) == 1
+    assert isinstance(j_parsed[0], JourneyTimeSetting)
+    assert j_parsed[0].days == ["mon", "tue"]
+    assert j_parsed[0].mode == "arrive"
+    assert j_parsed[0].start_time == "08:00"
+    assert j_parsed[0].end_time == "09:00"
+
+    j_fallback = j_field.python_value("bad-json-string")
+    assert j_fallback == []
