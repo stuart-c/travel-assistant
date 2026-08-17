@@ -196,8 +196,6 @@ def test_sync_table_dispatch(app: Flask) -> None:
         ):
             res = sync_table("train_timetables")
             assert res["status"] == "success"
-            res2 = sync_table("timetables")
-            assert res2["status"] == "success"
 
 
 def test_sync_train_timetables_missing_credentials(app: Flask) -> None:

@@ -286,7 +286,7 @@ def sync_table(
         return sync_stops(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
         return sync_ha_locations(app=app)
-    elif norm_name in ("train_timetables", "timetables", "train_s3", "trains"):
+    elif norm_name == "train_timetables":
         return sync_train_timetables(app=app)
     else:
         return {
