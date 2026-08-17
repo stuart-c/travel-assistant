@@ -265,6 +265,7 @@ def seed_database(db_path: str) -> None:
             saturday=False,
             sunday=False,
             bank_holiday=False,
+            auto_added=False,
         )
         timetable_weekday.set_content(
             {
@@ -289,11 +290,41 @@ def seed_database(db_path: str) -> None:
                     },
                 ],
                 "trips": [
-                    {"id": "trip-1", "headsign": "City Centre Express", "times": ["07:30", "07:35"]},
-                    {"id": "trip-2", "headsign": "City Centre Express", "times": ["07:45", "07:50"]},
-                    {"id": "trip-3", "headsign": "City Centre Express", "times": ["08:00", "08:05"]},
-                    {"id": "trip-4", "headsign": "City Centre Express", "times": ["08:15", "08:20"]},
-                    {"id": "trip-5", "headsign": "City Centre Express", "times": ["08:30", "08:35"]},
+                    {
+                        "id": "trip-1",
+                        "headsign": "City Centre Express",
+                        "toc": "GN",
+                        "operator": "Great Northern",
+                        "times": ["07:30", "07:35"],
+                    },
+                    {
+                        "id": "trip-2",
+                        "headsign": "City Centre Express",
+                        "toc": "GN",
+                        "operator": "Great Northern",
+                        "times": ["07:45", "07:50"],
+                    },
+                    {
+                        "id": "trip-3",
+                        "headsign": "City Centre Express",
+                        "toc": "TL",
+                        "operator": "Thameslink",
+                        "times": ["08:00", "08:05"],
+                    },
+                    {
+                        "id": "trip-4",
+                        "headsign": "City Centre Express",
+                        "toc": "TL",
+                        "operator": "Thameslink",
+                        "times": ["08:15", "08:20"],
+                    },
+                    {
+                        "id": "trip-5",
+                        "headsign": "City Centre Express",
+                        "toc": "TL",
+                        "operator": "Thameslink",
+                        "times": ["08:30", "08:35"],
+                    },
                 ],
             }
         )
@@ -312,6 +343,7 @@ def seed_database(db_path: str) -> None:
             saturday=True,
             sunday=True,
             bank_holiday=True,
+            auto_added=False,
         )
         timetable_weekend.set_content(
             {
@@ -336,13 +368,99 @@ def seed_database(db_path: str) -> None:
                     },
                 ],
                 "trips": [
-                    {"id": "trip-1", "headsign": "Route 73 Weekend", "times": ["10:00", "10:15"]},
-                    {"id": "trip-2", "headsign": "Route 73 Weekend", "times": ["10:30", "10:45"]},
-                    {"id": "trip-3", "headsign": "Route 73 Weekend", "times": ["11:00", "11:15"]},
+                    {
+                        "id": "trip-1",
+                        "headsign": "Route 73 Weekend",
+                        "times": ["10:00", "10:15"],
+                    },
+                    {
+                        "id": "trip-2",
+                        "headsign": "Route 73 Weekend",
+                        "times": ["10:30", "10:45"],
+                    },
+                    {
+                        "id": "trip-3",
+                        "headsign": "Route 73 Weekend",
+                        "times": ["11:00", "11:15"],
+                    },
                 ],
             }
         )
         timetable_weekend.save()
+
+        timetable_darwin_auto = Timetable(
+            name="Stevenage to Cambridge",
+            transport_type="rail",
+            start_date=datetime.date(2026, 8, 14),
+            end_date=datetime.date(2026, 8, 14),
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            saturday=True,
+            sunday=True,
+            bank_holiday=True,
+            auto_added=True,
+        )
+        timetable_darwin_auto.set_content(
+            {
+                "stops": [
+                    {
+                        "id": "SVG",
+                        "name": "Stevenage",
+                        "type": "rail",
+                        "indicator": "Station",
+                        "icon": "train",
+                        "latitude": 51.9018,
+                        "longitude": -0.2065,
+                    },
+                    {
+                        "id": "HIT",
+                        "name": "Hitchin",
+                        "type": "rail",
+                        "indicator": "Station",
+                        "icon": "train",
+                        "latitude": 51.9540,
+                        "longitude": -0.2640,
+                    },
+                    {
+                        "id": "CBG",
+                        "name": "Cambridge",
+                        "type": "rail",
+                        "indicator": "Station",
+                        "icon": "train",
+                        "latitude": 52.1944,
+                        "longitude": 0.1372,
+                    },
+                ],
+                "trips": [
+                    {
+                        "id": "trip-1",
+                        "headsign": "TL 1T44",
+                        "toc": "TL",
+                        "operator": "Thameslink",
+                        "times": [
+                            {"arr": "", "dep": "06:48"},
+                            {"arr": "06:54", "dep": "06:55"},
+                            {"arr": "07:49", "dep": ""},
+                        ],
+                    },
+                    {
+                        "id": "trip-2",
+                        "headsign": "GN 2P22",
+                        "toc": "GN",
+                        "operator": "Great Northern",
+                        "times": [
+                            {"arr": "", "dep": "07:20"},
+                            {"arr": "07:26", "dep": "07:27"},
+                            {"arr": "08:19", "dep": ""},
+                        ],
+                    },
+                ],
+            }
+        )
+        timetable_darwin_auto.save()
 
         # 6. Seed Location Transfers & Platform Transfers
         print("  -> Seeding walking links and station platform transfers...")

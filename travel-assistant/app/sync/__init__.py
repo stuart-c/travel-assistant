@@ -7,6 +7,7 @@ from app.sync.transit_sync import (
     sync_bus_routes,
     sync_stops,
     sync_table,
+    sync_train_timetables,
 )
 from app.sync.worker import (
     TransitBackgroundWorker,
@@ -19,6 +20,7 @@ __all__ = [
     "sync_bus_routes",
     "sync_stops",
     "sync_ha_locations",
+    "sync_train_timetables",
     "sync_table",
     "sync_all",
     "check_and_run_background_sync",

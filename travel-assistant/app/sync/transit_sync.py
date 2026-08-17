@@ -16,12 +16,14 @@ from app.datasources import (
     DataSourceConnectionError,
     DataSourceError,
     NaptanClient,
+    TrainS3Client,
 )
 from app.db import SYNCABLE_TABLES, db, init_db
 from app.models import (
     BusRoute,
     Stop,
     SyncMetadata,
+    Timetable,
 )
 from app.sync.ha_sync import sync_ha_locations
 
@@ -161,6 +163,116 @@ def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
 
 
+def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
+    """Synchronise train timetables from AWS S3 Darwin XML snapshots."""
+    _ensure_db_initialized(app)
+    start_time = time.time()
+
+    with db.connection_context():
+        client = TrainS3Client.from_settings()
+        if not client.bucket_name:
+            msg = "Train S3 Bucket not configured in Settings > API Credentials"
+            SyncMetadata.record_skipped("train_timetables", msg)
+            return {
+                "table": "train_timetables",
+                "status": "skipped_no_credentials",
+                "records": 0,
+                "message": msg,
+                "duration_seconds": 0.0,
+            }
+
+        SyncMetadata.record_start("train_timetables")
+
+        try:
+            # Build stop lookup dictionary from cached rail stops
+            stop_lookup: Dict[str, Dict[str, Any]] = {}
+            for stp in Stop.select().where(Stop.stop_type == "rail"):
+                meta = {
+                    "id": stp.naptan_code or stp.atco_code,
+                    "name": stp.name,
+                    "type": "rail",
+                    "indicator": stp.indicator or "Station",
+                    "icon": "train",
+                    "latitude": stp.latitude,
+                    "longitude": stp.longitude,
+                }
+                if stp.naptan_code:
+                    stop_lookup[stp.naptan_code.upper().strip()] = meta
+                if stp.atco_code:
+                    stop_lookup[stp.atco_code.upper().strip()] = meta
+                if stp.name:
+                    stop_lookup[stp.name.upper().strip()] = meta
+
+            parsed_timetables = client.fetch_timetables(stop_lookup=stop_lookup)
+            count = len(parsed_timetables)
+
+            with db.atomic():
+                # Reconcile auto_added train timetables while preserving custom timetables
+                Timetable.delete().where(
+                    Timetable.auto_added == True  # noqa: E712
+                ).execute()
+                if parsed_timetables:
+                    Timetable.insert_many(parsed_timetables).execute()
+
+            duration = round(time.time() - start_time, 2)
+            SyncMetadata.record_success("train_timetables", count, duration)
+            return {
+                "table": "train_timetables",
+                "status": "success",
+                "records": count,
+                "message": (
+                    f"Successfully synchronised {count} train route timetable(s) from Darwin S3."
+                ),
+                "duration_seconds": duration,
+            }
+        except (DataSourceAuthError, DataSourceConfigError) as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = str(exc)
+            SyncMetadata.record_error("train_timetables", err_msg, duration)
+            return {
+                "table": "train_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except DataSourceConnectionError as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = f"Network or API error while contacting AWS S3: {str(exc)}"
+            SyncMetadata.record_error("train_timetables", err_msg, duration)
+            return {
+                "table": "train_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except DataSourceError as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = str(exc)
+            SyncMetadata.record_error("train_timetables", err_msg, duration)
+            return {
+                "table": "train_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except Exception as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = (
+                f"Unexpected error during train timetable synchronisation: {str(exc)}"
+            )
+            SyncMetadata.record_error("train_timetables", err_msg, duration)
+            return {
+                "table": "train_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+
+
 def sync_table(
     table_name: str,
     force: bool = False,
@@ -174,6 +286,8 @@ def sync_table(
         return sync_stops(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
         return sync_ha_locations(app=app)
+    elif norm_name == "train_timetables":
+        return sync_train_timetables(app=app)
     else:
         return {
             "table": norm_name,

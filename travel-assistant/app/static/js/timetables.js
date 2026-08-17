@@ -127,6 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
           trip.id ||
           `trip-${tIdx + 1}-${Date.now().toString(16).slice(2, 6)}`,
         headsign: trip.headsign || '',
+        toc: trip.toc || '',
+        operator: trip.operator || '',
         times,
       };
     });
@@ -146,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
       sunday: item.sunday !== undefined ? Boolean(item.sunday) : true,
       bank_holiday:
         item.bank_holiday !== undefined ? Boolean(item.bank_holiday) : true,
+      auto_added: item.auto_added !== undefined ? Boolean(item.auto_added) : false,
       content: {
         stops,
         trips,
@@ -528,29 +531,26 @@ document.addEventListener('DOMContentLoaded', () => {
         stopsCount === 1 ? 'stop' : 'stops'
       }, ${tripsCount} ${tripsCount === 1 ? 'trip' : 'trips'}`;
 
-      return [
-        gridjs.html(
-          `<div class="flex items-center gap-2.5">
-            <span class="material-symbols-outlined text-slate-500 dark:text-slate-400 text-xl">${mode.icon}</span>
-            <div>
-              <div class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(
-                item.name
-              )}</div>
-              <div class="text-xs text-slate-500 dark:text-slate-400">${summaryText}</div>
-            </div>
+      const autoBadgeHtml = item.auto_added
+        ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 ml-1.5" title="Auto-synced from Darwin S3 dataset"><span class="material-symbols-outlined text-[12px] leading-none">cloud_sync</span>Auto</span>`
+        : '';
+
+      const actionsHtml = item.auto_added
+        ? `<div class="flex items-center gap-1.5 justify-end">
+            <button 
+              type="button" 
+              class="edit-matrix-btn open-editor-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
+              data-index="${index}" 
+              title="View timetable grid and timings"
+              aria-label="View timetable grid and timings"
+            >
+              <span class="material-symbols-outlined text-[17px] leading-none">grid_on</span>
+            </button>
+            <span class="inline-flex items-center justify-center w-7 h-7 text-slate-300 dark:text-slate-600" title="Auto-synced timetable (protected from manual modification)">
+              <span class="material-symbols-outlined text-[17px] leading-none">lock</span>
+            </span>
           </div>`
-        ),
-        gridjs.html(
-          `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}">
-            <span class="material-symbols-outlined text-xs leading-none">${mode.icon}</span>
-            ${mode.label}
-          </span>`
-        ),
-        gridjs.html(startDateHtml),
-        gridjs.html(endDateHtml),
-        gridjs.html(renderDaysHtml(item)),
-        gridjs.html(
-          window.TransitUI && window.TransitUI.renderActionButtons
+        : (window.TransitUI && window.TransitUI.renderActionButtons
             ? window.TransitUI.renderActionButtons({
                 index,
                 showGrid: true,
@@ -589,8 +589,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 >
                   <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
                 </button>
-              </div>`
+              </div>`);
+
+      return [
+        gridjs.html(
+          `<div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-slate-500 dark:text-slate-400 text-xl">${mode.icon}</span>
+            <div>
+              <div class="flex items-center gap-1 font-semibold text-slate-900 dark:text-slate-100">
+                <span>${escapeHtml(item.name)}</span>
+                ${autoBadgeHtml}
+              </div>
+              <div class="text-xs text-slate-500 dark:text-slate-400">${summaryText}</div>
+            </div>
+          </div>`
         ),
+        gridjs.html(
+          `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}">
+            <span class="material-symbols-outlined text-xs leading-none">${mode.icon}</span>
+            ${mode.label}
+          </span>`
+        ),
+        gridjs.html(startDateHtml),
+        gridjs.html(endDateHtml),
+        gridjs.html(renderDaysHtml(item)),
+        gridjs.html(actionsHtml),
       ];
     });
   }
@@ -885,11 +908,29 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = TRANSPORT_MODES[item.transport_type] || TRANSPORT_MODES.bus;
 
       if (editorBreadcrumbName) editorBreadcrumbName.textContent = item.name;
-      if (editorTitle) editorTitle.textContent = `${item.name}`;
+      if (editorTitle) {
+        if (item.auto_added) {
+          editorTitle.innerHTML = `${escapeHtml(item.name)} <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 ml-2"><span class="material-symbols-outlined text-sm leading-none">cloud_sync</span>Auto-Synced (Read-Only)</span>`;
+        } else {
+          editorTitle.textContent = `${item.name}`;
+        }
+      }
       if (editorModeIcon) editorModeIcon.textContent = mode.icon;
       if (editorModeText) editorModeText.textContent = mode.label;
       if (editorModeBadge) {
         editorModeBadge.className = `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}`;
+      }
+
+      // Hide or show editing toolbars based on auto_added
+      const stopSearchContainer = document.getElementById('matrix-stop-search-input')?.closest('.relative');
+      if (item.auto_added) {
+        if (addTripBtn) addTripBtn.classList.add('hidden');
+        if (clearTripsBtn) clearTripsBtn.classList.add('hidden');
+        if (stopSearchContainer) stopSearchContainer.classList.add('hidden');
+      } else {
+        if (addTripBtn) addTripBtn.classList.remove('hidden');
+        if (clearTripsBtn) clearTripsBtn.classList.remove('hidden');
+        if (stopSearchContainer) stopSearchContainer.classList.remove('hidden');
       }
 
       if (listView) listView.classList.add('hidden');
@@ -1020,6 +1061,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateSelectionBar();
 
+    const isAuto = Boolean(stagedTimetables[activeEditorIndex]?.auto_added);
+
     // Generate Matrix Table HTML
     let tableHtml = `
       <table class="w-full text-left border-collapse border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
@@ -1048,6 +1091,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const firstDepStr =
           firstDep !== null ? minutesToTime(firstDep) : `Trip ${tIdx + 1}`;
         const hasErr = tripErrors[tIdx].size > 0;
+        const tocBadge = trip.toc
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300" title="Operator: ${escapeHtml(trip.operator || trip.toc)}">${escapeHtml(trip.toc)}</span>`
+          : '';
+
+        const tripActionBtns = isAuto
+          ? ''
+          : `<div class="flex items-center gap-0.5">
+              <button 
+                type="button" 
+                class="trip-retime-btn p-1 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 cursor-pointer rounded"
+                data-trip-index="${tIdx}"
+                title="Duplicate &amp; retime this trip"
+              >
+                <span class="material-symbols-outlined text-sm leading-none">content_copy</span>
+              </button>
+              <button 
+                type="button" 
+                class="trip-delete-btn p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer rounded"
+                data-trip-index="${tIdx}"
+                title="Delete this trip column"
+              >
+                <span class="material-symbols-outlined text-sm leading-none">delete</span>
+              </button>
+            </div>`;
 
         tableHtml += `
             <th class="min-w-[120px] p-2.5 text-center border-r border-slate-200 dark:border-slate-800 ${
@@ -1055,38 +1122,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }">
               <div class="flex flex-col items-center gap-1.5">
                 <div class="flex items-center justify-between w-full px-1">
-                  <input 
-                    type="checkbox" 
-                    class="trip-select-cb rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                    data-trip-index="${tIdx}"
-                    ${isSelected ? 'checked' : ''}
-                    title="Select trip for duplicate/delete"
-                  >
-                  <div class="flex items-center gap-0.5">
-                    <button 
-                      type="button" 
-                      class="trip-retime-btn p-1 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 cursor-pointer rounded"
-                      data-trip-index="${tIdx}"
-                      title="Duplicate &amp; retime this trip"
-                    >
-                      <span class="material-symbols-outlined text-sm leading-none">content_copy</span>
-                    </button>
-                    <button 
-                      type="button" 
-                      class="trip-delete-btn p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer rounded"
-                      data-trip-index="${tIdx}"
-                      title="Delete this trip column"
-                    >
-                      <span class="material-symbols-outlined text-sm leading-none">delete</span>
-                    </button>
-                  </div>
+                  ${
+                    isAuto
+                      ? '<span class="w-4"></span>'
+                      : `<input 
+                          type="checkbox" 
+                          class="trip-select-cb rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                          data-trip-index="${tIdx}"
+                          ${isSelected ? 'checked' : ''}
+                          title="Select trip for duplicate/delete"
+                        >`
+                  }
+                  ${tripActionBtns}
                 </div>
-                <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono font-bold ${
-                  hasErr
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 ring-1 ring-rose-500/50'
-                    : 'bg-slate-200/80 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
-                }">
-                  ${firstDepStr}
+                <div class="flex items-center gap-1">
+                  <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono font-bold ${
+                    hasErr
+                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 ring-1 ring-rose-500/50'
+                      : 'bg-slate-200/80 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
+                  }">
+                    ${firstDepStr}
+                  </div>
+                  ${tocBadge}
                 </div>
               </div>
             </th>
@@ -1118,6 +1175,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const icon = stop.icon || 'place';
         const indicator = stop.indicator || stop.type || 'Stop';
 
+        const stopActionBtns = isAuto
+          ? ''
+          : `<div class="flex items-center gap-0.5 flex-shrink-0">
+              <button 
+                type="button" 
+                class="stop-move-up-btn p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                data-stop-index="${sIdx}"
+                ${sIdx === 0 ? 'disabled' : ''}
+                title="Move stop up"
+              >
+                <span class="material-symbols-outlined text-sm leading-none">arrow_upward</span>
+              </button>
+              <button 
+                type="button" 
+                class="stop-move-down-btn p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                data-stop-index="${sIdx}"
+                ${sIdx === stops.length - 1 ? 'disabled' : ''}
+                title="Move stop down"
+              >
+                <span class="material-symbols-outlined text-sm leading-none">arrow_downward</span>
+              </button>
+              <button 
+                type="button" 
+                class="stop-delete-btn p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer rounded"
+                data-stop-index="${sIdx}"
+                title="Remove stop"
+              >
+                <span class="material-symbols-outlined text-sm leading-none">close</span>
+              </button>
+            </div>`;
+
         tableHtml += `
           <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
             <!-- Left Sticky Cell: Stop Info & Controls -->
@@ -1136,34 +1224,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                   </div>
                 </div>
-                <div class="flex items-center gap-0.5 flex-shrink-0">
-                  <button 
-                    type="button" 
-                    class="stop-move-up-btn p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    data-stop-index="${sIdx}"
-                    ${sIdx === 0 ? 'disabled' : ''}
-                    title="Move stop up"
-                  >
-                    <span class="material-symbols-outlined text-sm leading-none">arrow_upward</span>
-                  </button>
-                  <button 
-                    type="button" 
-                    class="stop-move-down-btn p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    data-stop-index="${sIdx}"
-                    ${sIdx === stops.length - 1 ? 'disabled' : ''}
-                    title="Move stop down"
-                  >
-                    <span class="material-symbols-outlined text-sm leading-none">arrow_downward</span>
-                  </button>
-                  <button 
-                    type="button" 
-                    class="stop-delete-btn p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer rounded"
-                    data-stop-index="${sIdx}"
-                    title="Remove stop"
-                  >
-                    <span class="material-symbols-outlined text-sm leading-none">close</span>
-                  </button>
-                </div>
+                ${stopActionBtns}
               </div>
             </td>
         `;
@@ -1193,7 +1254,10 @@ document.addEventListener('DOMContentLoaded', () => {
                   <span class="text-[9px] font-bold tracking-wider px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono select-none" title="Arrival Time">ARR</span>
                   <input 
                     type="time" 
-                    class="matrix-time-input matrix-time-arr w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors cursor-pointer ${
+                    ${isAuto ? 'readonly' : ''}
+                    class="matrix-time-input matrix-time-arr w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors ${
+                      isAuto ? 'cursor-default opacity-85' : 'cursor-pointer'
+                    } ${
                       isErr
                         ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
@@ -1204,7 +1268,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     data-field="arr"
                     value="${escapeHtml(arrVal)}"
                     title="${
-                      isErr
+                      isAuto
+                        ? 'Arrival time (Auto-synced)'
+                        : isErr
                         ? 'Invalid timing sequence or dwell time. Double-click to collapse into single time box.'
                         : 'Arrival time. Double-click to collapse into single time box.'
                     }"
@@ -1215,7 +1281,10 @@ document.addEventListener('DOMContentLoaded', () => {
                   <span class="text-[9px] font-bold tracking-wider px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono select-none" title="Departure Time">DEP</span>
                   <input 
                     type="time" 
-                    class="matrix-time-input matrix-time-dep w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors cursor-pointer ${
+                    ${isAuto ? 'readonly' : ''}
+                    class="matrix-time-input matrix-time-dep w-20 px-1.5 py-0.5 text-xs font-mono rounded border text-center transition-colors ${
+                      isAuto ? 'cursor-default opacity-85' : 'cursor-pointer'
+                    } ${
                       isErr
                         ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
@@ -1226,7 +1295,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     data-field="dep"
                     value="${escapeHtml(depVal)}"
                     title="${
-                      isErr
+                      isAuto
+                        ? 'Departure time (Auto-synced)'
+                        : isErr
                         ? 'Invalid timing sequence or dwell time. Double-click to collapse into single time box.'
                         : 'Departure time. Double-click to collapse into single time box.'
                     }"
@@ -1239,7 +1310,10 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHtml += `
               <input 
                 type="time" 
-                class="matrix-time-input w-24 px-2 py-1 text-xs font-mono rounded-lg border text-center transition-colors cursor-pointer ${
+                ${isAuto ? 'readonly' : ''}
+                class="matrix-time-input w-24 px-2 py-1 text-xs font-mono rounded-lg border text-center transition-colors ${
+                  isAuto ? 'cursor-default opacity-85' : 'cursor-pointer'
+                } ${
                   isErr
                     ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/30'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20'
@@ -1249,7 +1323,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 data-mode="single"
                 value="${escapeHtml(singleVal)}"
                 title="${
-                  isErr
+                  isAuto
+                    ? 'Scheduled time (Auto-synced)'
+                    : isErr
                     ? 'Invalid sequence: Time cannot be earlier than a preceding stop in this trip. Double-click to split into Arrival & Departure.'
                     : 'Scheduled departure time (optional). Double-click to split into Arrival & Departure.'
                 }"
@@ -1277,6 +1353,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function attachMatrixEventListeners() {
     if (activeEditorIndex < 0) return;
     const timetable = stagedTimetables[activeEditorIndex];
+    if (timetable.auto_added) return;
 
     // Time cell input listeners (change and dblclick)
     const timeInputs = matrixMount.querySelectorAll('.matrix-time-input');

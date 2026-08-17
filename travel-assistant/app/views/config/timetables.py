@@ -2,7 +2,7 @@
 
 import datetime
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from flask import render_template, request
 
 from app.models import Timetable
@@ -127,13 +127,17 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 else:
                     cleaned_times.append("")
 
-            clean_trips.append(
-                {
-                    "id": trip_id,
-                    "headsign": headsign,
-                    "times": cleaned_times,
-                }
-            )
+            trip_dict: Dict[str, Any] = {
+                "id": trip_id,
+                "headsign": headsign,
+                "times": cleaned_times,
+            }
+            if t.get("toc"):
+                trip_dict["toc"] = str(t.get("toc")).strip().upper()
+            if t.get("operator"):
+                trip_dict["operator"] = str(t.get("operator")).strip()
+
+            clean_trips.append(trip_dict)
 
     content_clean = {
         "stops": clean_stops,
@@ -153,8 +157,65 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "saturday": bool(entry.get("saturday", True)),
         "sunday": bool(entry.get("sunday", True)),
         "bank_holiday": bool(entry.get("bank_holiday", True)),
+        "auto_added": bool(entry.get("auto_added", False)),
         "content": content_clean,
     }
+
+
+def save_timetables_with_auto_preservation(
+    cleaned_items: List[Dict[str, Any]],
+) -> None:
+    """Atomically save custom timetables while preserving auto-synced records."""
+    with Timetable._meta.database.atomic():
+        existing_auto_records = [
+            {
+                "name": t.name,
+                "transport_type": t.transport_type,
+                "start_date": t.start_date,
+                "end_date": t.end_date,
+                "monday": t.monday,
+                "tuesday": t.tuesday,
+                "wednesday": t.wednesday,
+                "thursday": t.thursday,
+                "friday": t.friday,
+                "saturday": t.saturday,
+                "sunday": t.sunday,
+                "bank_holiday": t.bank_holiday,
+                "auto_added": True,
+                "content": t.get_content(),
+            }
+            for t in Timetable.select().where(
+                Timetable.auto_added == True  # noqa: E712
+            )
+        ]
+
+        manual_items = []
+        for item in cleaned_items:
+            if item.get("auto_added", False):
+                continue
+            manual_items.append(
+                {
+                    "name": item["name"],
+                    "transport_type": item.get("transport_type", "bus"),
+                    "start_date": item.get("start_date"),
+                    "end_date": item.get("end_date"),
+                    "monday": item.get("monday", True),
+                    "tuesday": item.get("tuesday", True),
+                    "wednesday": item.get("wednesday", True),
+                    "thursday": item.get("thursday", True),
+                    "friday": item.get("friday", True),
+                    "saturday": item.get("saturday", True),
+                    "sunday": item.get("sunday", True),
+                    "bank_holiday": item.get("bank_holiday", True),
+                    "auto_added": False,
+                    "content": item.get("content", {"stops": [], "trips": []}),
+                }
+            )
+
+        Timetable.delete().execute()
+        all_records = existing_auto_records + manual_items
+        if all_records:
+            Timetable.insert_many(all_records).execute()
 
 
 @config_bp.route("/timetables", methods=["GET", "POST"])
@@ -167,6 +228,7 @@ def timetables() -> Any:
             clean_item_func=clean_timetable_item,
             entity_label="Timetables",
             redirect_endpoint="config.timetables",
+            custom_save_fn=save_timetables_with_auto_preservation,
         )
 
     current_timetables = [t.to_dict() for t in Timetable.select()]

@@ -22,6 +22,7 @@ class Timetable(BaseModel):
     saturday = BooleanField(default=True)
     sunday = BooleanField(default=True)
     bank_holiday = BooleanField(default=True)
+    auto_added = BooleanField(default=False)
     content = JSONField(default=lambda: {"stops": [], "trips": []})
 
     class Meta:
@@ -52,6 +53,7 @@ class Timetable(BaseModel):
         """Convert timetable model to dictionary with parsed grid contents."""
         data = super().to_dict(recurse=recurse, **kwargs)
         data["transport_type"] = self.transport_type or "bus"
+        data["auto_added"] = bool(self.auto_added)
         data["content"] = self.get_content()
         return data
 
@@ -75,7 +77,10 @@ class Timetable(BaseModel):
     def get_stats(cls) -> Dict[str, Any]:
         """Aggregate summary counts of configured timetables."""
         total = cls.select().count()
+        auto_count = cls.select().where(cls.auto_added == True).count()  # noqa: E712
 
         return {
             "total": total,
+            "auto_count": auto_count,
+            "custom_count": total - auto_count,
         }
