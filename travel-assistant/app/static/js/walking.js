@@ -24,9 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial walking data:', e);
   }
 
-  // In-memory staged state
-  let stagedWalking = JSON.parse(JSON.stringify(initialWalkingData || []));
-  const initialSnapshot = JSON.stringify(stagedWalking);
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(initialWalkingData || []);
+  let stagedWalking = tracker.getItems();
 
   // DOM Elements
   const hiddenInput = document.getElementById('walking_json');
@@ -345,8 +345,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function syncState() {
+    const changeset = tracker.getChangeset();
+    stagedWalking = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedWalking);
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     if (stagedWalking.length === 0) {
@@ -372,8 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedWalking);
-      if (currentJson !== initialSnapshot) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -387,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedWalking = JSON.parse(initialSnapshot);
+      tracker.discard();
       syncState();
     });
   }
@@ -470,11 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
         auto_generated: false,
       };
 
-      if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
-        stagedWalking[idx] = entry;
-      } else {
-        stagedWalking.push(entry);
-      }
+      tracker.saveModalItem(idx, entry);
 
       syncState();
       closeModal();
@@ -494,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
-        stagedWalking.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
       return;

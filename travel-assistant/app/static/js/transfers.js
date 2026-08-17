@@ -23,9 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial platform transfers data:', e);
   }
 
-  // In-memory staged state
-  let stagedPlatformTransfers = JSON.parse(JSON.stringify(initialPlatformData || []));
-  const initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(initialPlatformData || []);
+  let stagedPlatformTransfers = tracker.getItems();
 
   // Hidden form input
   const platHiddenInput = document.getElementById('platform_transfers_json');
@@ -197,9 +197,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Sync State with Dirty Manager & Hidden Inputs ---
   function syncState() {
-    const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
+    const platChangeset = tracker.getChangeset();
+    stagedPlatformTransfers = tracker.getItems();
 
-    if (platHiddenInput) platHiddenInput.value = currentPlatJson;
+    if (platHiddenInput) platHiddenInput.value = JSON.stringify(platChangeset);
 
     // Toggle Empty State vs Grid
     if (stagedPlatformTransfers.length === 0) {
@@ -226,8 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check Dirty Status
     if (window.ConfigDirtyManager) {
-      const isDirty = (currentPlatJson !== initialPlatformSnapshot);
-      if (isDirty) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -241,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register Discard Handler with ConfigDirtyManager
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
+      tracker.discard();
       syncState();
     });
   }
@@ -337,7 +337,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const editIdx = parseInt(editPlatIndexInput.value, 10);
+      const existingId =
+        editIdx >= 0 && editIdx < stagedPlatformTransfers.length
+          ? stagedPlatformTransfers[editIdx].id
+          : undefined;
+
       const itemPayload = {
+        ...(existingId !== undefined ? { id: existingId } : {}),
         location_type,
         location_name,
         location_id,
@@ -349,12 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         notes
       };
 
-      const editIdx = parseInt(editPlatIndexInput.value, 10);
-      if (editIdx >= 0 && editIdx < stagedPlatformTransfers.length) {
-        stagedPlatformTransfers[editIdx] = itemPayload;
-      } else {
-        stagedPlatformTransfers.push(itemPayload);
-      }
+      tracker.saveModalItem(editIdx, itemPayload);
 
       syncState();
       closePlatformModal();
@@ -375,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removePlatBtn) {
       const idx = parseInt(removePlatBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedPlatformTransfers.length) {
-        stagedPlatformTransfers.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
       return;

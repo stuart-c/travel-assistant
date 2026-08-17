@@ -1,15 +1,15 @@
 """Locations configuration and Home Assistant synchronisation endpoints."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from flask import render_template, request
 
 from app.models import Location
 from app.views.config import config_bp
-from app.views.config.common import save_bulk_config
+from app.views.config.common import save_changeset_config
 
 
 def clean_location_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Validate and sanitize a single location input item."""
+    """Validate and sanitise a single location input item."""
     if not isinstance(entry, dict):
         return None
 
@@ -44,60 +44,17 @@ def clean_location_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def save_locations_with_ha_preservation(cleaned_items: List[Dict[str, Any]]) -> None:
-    """Atomically save locations while preserving existing Home Assistant synchronised records."""
-    with Location._meta.database.atomic():
-        existing_ha_records = [
-            {
-                "id": (
-                    str(loc.id)
-                    if loc.id
-                    else f"ha:{loc.name.lower().replace(' ', '_')}"
-                ),
-                "name": loc.name,
-                "latitude": loc.latitude,
-                "longitude": loc.longitude,
-                "ha": True,
-            }
-            for loc in Location.select().where(Location.ha == True)  # noqa: E712
-        ]
-
-        used_ids = {r["id"] for r in existing_ha_records}
-        manual_items = []
-        for item in cleaned_items:
-            if item.get("ha", False):
-                continue
-            m_id = item.get("id")
-            if not m_id or m_id in used_ids:
-                m_id = Location.generate_custom_id()
-            used_ids.add(m_id)
-            manual_items.append(
-                {
-                    "id": m_id,
-                    "name": item["name"],
-                    "latitude": item["latitude"],
-                    "longitude": item["longitude"],
-                    "ha": False,
-                }
-            )
-
-        Location.delete().execute()
-        all_records = existing_ha_records + manual_items
-        if all_records:
-            Location.insert_many(all_records).execute()
-
-
 @config_bp.route("/locations", methods=["GET", "POST"])
 def locations() -> Any:
     """Manage configured geographic locations."""
     if request.method == "POST":
-        return save_bulk_config(
+        return save_changeset_config(
             form_key="locations_json",
             model_class=Location,
             clean_item_func=clean_location_item,
             entity_label="Locations",
             redirect_endpoint="config.locations",
-            custom_save_fn=save_locations_with_ha_preservation,
+            scope_filter=(Location.ha == False),  # noqa: E712
         )
 
     current_locations = [loc.to_dict() for loc in Location.select()]

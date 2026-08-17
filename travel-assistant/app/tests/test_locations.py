@@ -112,13 +112,17 @@ def test_get_locations_page(client: FlaskClient, app: Flask) -> None:
 def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/locations saves locations atomically and performs PRG redirect."""
     with app.app_context():
-        Location.create(name="Old Location", latitude=50.0, longitude=0.0)
+        Location.create(name="Existing Location", latitude=50.0, longitude=0.0)
         assert Location.select().count() == 1
 
-    payload = [
-        {"name": "London Eye", "latitude": 51.5033, "longitude": -0.1195},
-        {"name": "Big Ben", "latitude": "51.5007", "longitude": "-0.1246"},
-    ]
+    payload = {
+        "added": [
+            {"name": "London Eye", "latitude": 51.5033, "longitude": -0.1195},
+            {"name": "Big Ben", "latitude": "51.5007", "longitude": "-0.1246"},
+        ],
+        "updated": [],
+        "deleted": [],
+    }
 
     response = client.post(
         "/config/locations",
@@ -131,23 +135,26 @@ def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
 
     with app.app_context():
         saved = list(Location.select())
-        assert len(saved) == 2
+        assert len(saved) == 3
         names = [s.name for s in saved]
         assert "London Eye" in names
         assert "Big Ben" in names
+        assert "Existing Location" in names
 
 
-def test_post_locations_empty_list_clears_records(
+def test_post_locations_empty_changeset_leaves_records(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/locations with empty list clears existing manual records."""
+    """Test POST /config/locations with empty changeset preserves existing records."""
     with app.app_context():
         Location.create(name="Temporary Place", latitude=51.5, longitude=-0.1, ha=False)
         assert Location.select().count() == 1
 
     response = client.post(
         "/config/locations",
-        data={"locations_json": "[]"},
+        data={
+            "locations_json": json.dumps({"added": [], "updated": [], "deleted": []})
+        },
         follow_redirects=True,
     )
 
@@ -155,20 +162,68 @@ def test_post_locations_empty_list_clears_records(
     assert b"Locations saved successfully." in response.data
 
     with app.app_context():
-        assert Location.select().count() == 0
+        assert Location.select().count() == 1
+
+
+def test_post_locations_differential_updates(client: FlaskClient, app: Flask) -> None:
+    """Test POST /config/locations updates only changed rows and preserves timestamps."""
+    with app.app_context():
+        loc1 = Location.create(
+            name="Unchanged Loc", latitude=51.1, longitude=0.1, ha=False
+        )
+        loc2 = Location.create(name="To Update", latitude=51.2, longitude=0.2, ha=False)
+        loc3 = Location.create(name="To Delete", latitude=51.3, longitude=0.3, ha=False)
+
+    payload = {
+        "added": [{"name": "Brand New", "latitude": 51.4, "longitude": 0.4}],
+        "updated": [
+            {"id": loc2.id, "name": "Updated Name", "latitude": 51.25, "longitude": 0.2}
+        ],
+        "deleted": [loc3.id],
+    }
+
+    response = client.post(
+        "/config/locations",
+        data={"locations_json": json.dumps(payload)},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        saved = {loc_item.id: loc_item for loc_item in Location.select()}
+        assert loc3.id not in saved
+        assert loc1.id in saved
+        assert saved[loc1.id].name == "Unchanged Loc"
+        assert saved[loc1.id].updated_at == loc1.updated_at
+        assert loc2.id in saved
+        assert saved[loc2.id].name == "Updated Name"
+        assert saved[loc2.id].latitude == 51.25
 
 
 def test_post_locations_preserves_ha_records(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/locations preserves existing HA records even if omitted."""
     with app.app_context():
-        Location.create(name="HA Home", latitude=51.7520, longitude=-1.2577, ha=True)
-        Location.create(name="Manual Place", latitude=51.5, longitude=-0.1, ha=False)
+        ha_loc = Location.create(
+            name="HA Home", latitude=51.7520, longitude=-1.2577, ha=True
+        )
+        man_loc = Location.create(
+            name="Manual Place", latitude=51.5, longitude=-0.1, ha=False
+        )
         assert Location.select().count() == 2
 
-    # Post an empty list or only a new manual location
-    payload = [
-        {"name": "New Manual Place", "latitude": 52.0, "longitude": 0.0, "ha": False}
-    ]
+    # Attempt to delete HA record and manual record via changeset
+    payload = {
+        "added": [
+            {
+                "name": "New Manual Place",
+                "latitude": 52.0,
+                "longitude": 0.0,
+                "ha": False,
+            }
+        ],
+        "updated": [],
+        "deleted": [ha_loc.id, man_loc.id],
+    }
 
     response = client.post(
         "/config/locations",
@@ -202,8 +257,8 @@ def test_post_locations_invalid_json(client: FlaskClient) -> None:
     assert b"Failed to save locations:" in response.data
 
 
-def test_post_locations_non_list_payload(client: FlaskClient) -> None:
-    """Test POST /config/locations with a non-list JSON payload."""
+def test_post_locations_invalid_payload_shape(client: FlaskClient) -> None:
+    """Test POST /config/locations with a non-changeset JSON payload."""
     response = client.post(
         "/config/locations",
         data={"locations_json": json.dumps({"name": "Solo Object"})},
@@ -211,24 +266,52 @@ def test_post_locations_non_list_payload(client: FlaskClient) -> None:
     )
     assert response.status_code == 200
     assert b"Failed to save locations:" in response.data
-    assert b"must contain a JSON list" in response.data
+    assert b"must contain" in response.data
 
 
 def test_post_locations_skips_invalid_entries(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/locations skips entries with missing name or invalid coordinates."""
-    payload = [
-        "not-a-dict",
-        {"name": "", "latitude": 51.5, "longitude": -0.1},  # missing name
-        {"name": "Missing Lat", "longitude": -0.1},  # missing lat
-        {"name": "Missing Lon", "latitude": 51.5},  # missing lon
-        {"name": "Bad Lat Str", "latitude": "invalid", "longitude": -0.1},  # bad lat
-        {"name": "Bad Lon Str", "latitude": 51.5, "longitude": "invalid"},  # bad lon
-        {"name": "Lat Out of Range", "latitude": 95.0, "longitude": -0.1},  # lat > 90
-        {"name": "Lat Neg Range", "latitude": -95.0, "longitude": -0.1},  # lat < -90
-        {"name": "Lon Out of Range", "latitude": 51.5, "longitude": 185.0},  # lon > 180
-        {"name": "Lon Neg Range", "latitude": 51.5, "longitude": -185.0},  # lon < -180
-        {"name": "Valid Place", "latitude": 51.7520, "longitude": -1.2577},  # valid
-    ]
+    payload = {
+        "added": [
+            "not-a-dict",
+            {"name": "", "latitude": 51.5, "longitude": -0.1},  # missing name
+            {"name": "Missing Lat", "longitude": -0.1},  # missing lat
+            {"name": "Missing Lon", "latitude": 51.5},  # missing lon
+            {
+                "name": "Bad Lat Str",
+                "latitude": "invalid",
+                "longitude": -0.1,
+            },  # bad lat
+            {
+                "name": "Bad Lon Str",
+                "latitude": 51.5,
+                "longitude": "invalid",
+            },  # bad lon
+            {
+                "name": "Lat Out of Range",
+                "latitude": 95.0,
+                "longitude": -0.1,
+            },  # lat > 90
+            {
+                "name": "Lat Neg Range",
+                "latitude": -95.0,
+                "longitude": -0.1,
+            },  # lat < -90
+            {
+                "name": "Lon Out of Range",
+                "latitude": 51.5,
+                "longitude": 185.0,
+            },  # lon > 180
+            {
+                "name": "Lon Neg Range",
+                "latitude": 51.5,
+                "longitude": -185.0,
+            },  # lon < -180
+            {"name": "Valid Place", "latitude": 51.7520, "longitude": -1.2577},  # valid
+        ],
+        "updated": [],
+        "deleted": [],
+    }
 
     response = client.post(
         "/config/locations",
@@ -278,14 +361,18 @@ def test_location_save_leave_and_return_persistence(
         )
 
     # 1. Save new custom location
-    new_locations = [
-        {
-            "name": "St Pancras International Library",
-            "latitude": 51.5310,
-            "longitude": -0.1260,
-            "ha": False,
-        }
-    ]
+    new_locations = {
+        "added": [
+            {
+                "name": "St Pancras International Library",
+                "latitude": 51.5310,
+                "longitude": -0.1260,
+                "ha": False,
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     post_resp = client.post(
         "/config/locations",
         data={"locations_json": json.dumps(new_locations)},

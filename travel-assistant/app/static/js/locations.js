@@ -18,9 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial locations data:', e);
   }
 
-  // In-memory staged state
-  let stagedLocations = JSON.parse(JSON.stringify(initialRaw || []));
-  const initialSnapshot = JSON.stringify(stagedLocations);
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(initialRaw || [], {
+    compareFunc: (a, b) =>
+      a.name !== b.name ||
+      parseFloat(a.latitude) !== parseFloat(b.latitude) ||
+      parseFloat(a.longitude) !== parseFloat(b.longitude),
+  });
+  let stagedLocations = tracker.getItems();
 
   const hiddenInput = document.getElementById('locations_json');
   const emptyState = document.getElementById('locations-grid-empty-state');
@@ -257,8 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function syncState() {
+    const changeset = tracker.getChangeset();
+    stagedLocations = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedLocations);
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     if (stagedLocations.length === 0) {
@@ -284,8 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedLocations);
-      if (currentJson !== initialSnapshot) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -299,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedLocations = JSON.parse(initialSnapshot);
+      tracker.discard();
       syncState();
     });
   }
@@ -481,11 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ha: isHa,
       };
 
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        stagedLocations[idx] = entry;
-      } else {
-        stagedLocations.push(entry);
-      }
+      tracker.saveModalItem(idx, entry);
 
       syncState();
       closeModal();
@@ -512,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        stagedLocations.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
       return;

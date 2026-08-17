@@ -235,7 +235,11 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
 
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response.status_code == 303
     assert response.headers["Location"].endswith("/config/timetables")
@@ -315,7 +319,11 @@ def test_post_timetables_with_dual_arrival_departure_timings(
 
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response.status_code == 303
     assert response.headers["Location"].endswith("/config/timetables")
@@ -458,7 +466,15 @@ def test_post_timetables_preserves_auto_added_records(client: FlaskClient) -> No
 
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(new_custom_items)},
+        data={
+            "timetables_json": json.dumps(
+                {
+                    "added": new_custom_items,
+                    "updated": [],
+                    "deleted": [old_custom_tt.id, auto_tt.id],
+                }
+            )
+        },
     )
     assert response.status_code == 303
 
@@ -486,7 +502,11 @@ def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
     ]
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response.status_code == 303
     follow = client.get("/config/timetables")
@@ -506,7 +526,11 @@ def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
     ]
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response.status_code == 303
     follow = client.get("/config/timetables")
@@ -522,7 +546,11 @@ def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
     ]
     response_end = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items_end)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items_end, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response_end.status_code == 303
     follow_end = client.get("/config/timetables")
@@ -543,10 +571,10 @@ def test_post_timetables_malformed_json(client: FlaskClient) -> None:
 
 
 def test_post_timetables_non_list_json(client: FlaskClient) -> None:
-    """Test POST /config/timetables handles JSON that is not a list."""
+    """Test POST /config/timetables handles JSON that is not a valid changeset."""
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": '{"key": "not-a-list"}'},
+        data={"timetables_json": '{"key": "not-a-changeset"}'},
     )
     assert response.status_code == 303
     follow = client.get("/config/timetables")
@@ -570,7 +598,11 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
 
     response = client.post(
         "/config/timetables",
-        data={"timetables_json": json.dumps(items)},
+        data={
+            "timetables_json": json.dumps(
+                {"added": items, "updated": [], "deleted": []}
+            )
+        },
     )
     assert response.status_code == 303
     saved = [t.to_dict() for t in Timetable.select()]
@@ -1042,41 +1074,49 @@ def test_config_pages_include_no_cache_meta_tags(client: FlaskClient) -> None:
         ), f"Missing Expires meta tag in {page}"
 
 
-def test_parse_json_form_list_invalid(app: FlaskClient) -> None:
-    """Test parse_json_form_list error on invalid JSON and non-list payloads."""
+def test_parse_json_form_changeset_invalid(app: FlaskClient) -> None:
+    """Test parse_json_form_changeset error on invalid JSON and invalid changeset shapes."""
     import pytest
     from flask import Flask
-    from app.views.config.common import parse_json_form_list
+    from app.views.config.common import parse_json_form_changeset
 
     test_app = Flask(__name__)
     with test_app.test_request_context("/", data={"test_key": "not-valid-json{"}):
         with pytest.raises(Exception):
-            parse_json_form_list("test_key")
+            parse_json_form_changeset("test_key")
 
-    with test_app.test_request_context("/", data={"test_key": '{"is": "dict"}'}):
-        with pytest.raises(ValueError, match="must contain a JSON list"):
-            parse_json_form_list("test_key")
+    with test_app.test_request_context(
+        "/", data={"test_key": '{"is": "not-changeset"}'}
+    ):
+        with pytest.raises(
+            ValueError, match="must contain 'added', 'updated', or 'deleted' lists"
+        ):
+            parse_json_form_changeset("test_key")
 
 
 def test_timetables_save_leave_and_return_persistence(client: FlaskClient) -> None:
     """Verify creating/updating a timetable persists when leaving the page and returning."""
-    payload = [
-        {
-            "name": "Night Bus Service",
-            "transport_type": "bus",
-            "start_date": "2026-09-01",
-            "end_date": "2026-12-31",
-            "monday": False,
-            "tuesday": False,
-            "wednesday": False,
-            "thursday": False,
-            "friday": True,
-            "saturday": True,
-            "sunday": True,
-            "bank_holiday": True,
-            "content": {"stops": ["490000077E"], "trips": [{"time": "23:45"}]},
-        }
-    ]
+    payload = {
+        "added": [
+            {
+                "name": "Night Bus Service",
+                "transport_type": "bus",
+                "start_date": "2026-09-01",
+                "end_date": "2026-12-31",
+                "monday": False,
+                "tuesday": False,
+                "wednesday": False,
+                "thursday": False,
+                "friday": True,
+                "saturday": True,
+                "sunday": True,
+                "bank_holiday": True,
+                "content": {"stops": ["490000077E"], "trips": [{"time": "23:45"}]},
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
 
     post_resp = client.post(
         "/config/timetables",

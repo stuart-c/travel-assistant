@@ -24,9 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial journeys data:', e);
   }
 
-  // In-memory staged state
-  let stagedJourneys = JSON.parse(JSON.stringify(initialJourneysData || []));
-  const initialSnapshot = JSON.stringify(stagedJourneys);
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(initialJourneysData || []);
+  let stagedJourneys = tracker.getItems();
 
   // DOM Elements
   const hiddenInput = document.getElementById('journeys_json');
@@ -311,13 +311,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateHiddenInput() {
-    const currentSnapshot = JSON.stringify(stagedJourneys);
+    const changeset = tracker.getChangeset();
+    stagedJourneys = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = currentSnapshot;
+      hiddenInput.value = JSON.stringify(changeset);
     }
     // Check dirty state with ConfigDirtyManager
     if (window.ConfigDirtyManager) {
-      if (currentSnapshot !== initialSnapshot) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -715,7 +716,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
+      const editIndex = parseInt(editIndexInput.value, 10);
+      const existingId =
+        editIndex >= 0 && editIndex < stagedJourneys.length
+          ? stagedJourneys[editIndex].id
+          : undefined;
+
       const journeyItem = {
+        ...(existingId !== undefined ? { id: existingId } : {}),
         name,
         from_type: fromType,
         from_id: fromId,
@@ -726,12 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
         time_settings: timeSettings,
       };
 
-      const editIndex = parseInt(editIndexInput.value, 10);
-      if (editIndex >= 0 && editIndex < stagedJourneys.length) {
-        stagedJourneys[editIndex] = journeyItem;
-      } else {
-        stagedJourneys.push(journeyItem);
-      }
+      tracker.saveModalItem(editIndex, journeyItem);
 
       renderGrid();
       closeModal();
@@ -751,7 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (delBtn) {
       const idx = parseInt(delBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedJourneys.length) {
-        stagedJourneys.splice(idx, 1);
+        tracker.deleteItem(idx);
         renderGrid();
       }
     }
@@ -760,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedJourneys = JSON.parse(initialSnapshot);
+      tracker.discard();
       renderGrid();
     });
   }

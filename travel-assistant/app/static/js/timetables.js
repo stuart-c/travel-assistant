@@ -156,9 +156,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // In-memory staged state
-  let stagedTimetables = (initialRaw || []).map(normaliseItem);
-  const initialSnapshot = JSON.stringify(stagedTimetables);
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(
+    (initialRaw || []).map(normaliseItem)
+  );
+  let stagedTimetables = tracker.getItems();
   let currentEditIndex = -1;
   let activeEditorIndex = -1;
   let matrixStopAutocomplete = null;
@@ -654,9 +656,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sync in-memory changes with hidden form input and dirty manager
   function syncState() {
-    const currentJson = JSON.stringify(stagedTimetables);
+    if (activeEditorIndex >= 0) {
+      tracker.markUpdated(activeEditorIndex);
+    }
+    const changeset = tracker.getChangeset();
+    stagedTimetables = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = currentJson;
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     // Update empty state vs grid visibility in list view
@@ -690,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check dirty state
     if (window.ConfigDirtyManager) {
-      if (currentJson !== initialSnapshot) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -705,7 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedTimetables = JSON.parse(initialSnapshot);
+      tracker.discard();
       selectedTripIndices.clear();
       if (activeEditorIndex >= 0) {
         if (activeEditorIndex >= stagedTimetables.length) {
@@ -812,7 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
-        stagedTimetables.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
     }
@@ -879,10 +885,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentEditIndex >= 0 && currentEditIndex < stagedTimetables.length) {
         payloadItem.id = stagedTimetables[currentEditIndex].id;
         payloadItem.content = stagedTimetables[currentEditIndex].content;
-        stagedTimetables[currentEditIndex] = normaliseItem(payloadItem);
+        tracker.saveModalItem(currentEditIndex, normaliseItem(payloadItem));
       } else {
         payloadItem.content = { stops: [], trips: [] };
-        stagedTimetables.push(normaliseItem(payloadItem));
+        tracker.saveModalItem(-1, normaliseItem(payloadItem));
       }
 
       syncState();

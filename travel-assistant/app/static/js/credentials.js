@@ -100,30 +100,82 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const allFieldNames = Object.values(serviceSections).flatMap((s) => s.fields);
+  const initialFormValues = {};
+  allFieldNames.forEach((name) => {
+    const el = document.getElementById(name);
+    if (el) {
+      initialFormValues[name] = el.value;
+    }
+  });
+
+  function checkDirty() {
+    let hasChanges = false;
+    allFieldNames.forEach((name) => {
+      const el = document.getElementById(name);
+      if (el && el.value !== initialFormValues[name]) {
+        hasChanges = true;
+      }
+    });
+    if (window.ConfigDirtyManager) {
+      if (hasChanges) {
+        window.ConfigDirtyManager.markDirty();
+      } else {
+        window.ConfigDirtyManager.clearDirty();
+      }
+    }
+  }
+
   // Bind input change listeners: editing switches badge to Check button
   Object.entries(serviceSections).forEach(([serviceKey, config]) => {
     config.fields.forEach((fieldId) => {
       const el = document.getElementById(fieldId);
       if (el) {
-        el.addEventListener('input', () => onSectionInput(serviceKey));
-        el.addEventListener('change', () => onSectionInput(serviceKey));
+        el.addEventListener('input', () => {
+          onSectionInput(serviceKey);
+          checkDirty();
+        });
+        el.addEventListener('change', () => {
+          onSectionInput(serviceKey);
+          checkDirty();
+        });
       }
     });
   });
 
   // Track input modifications for dirty manager
   if (window.ConfigDirtyManager) {
-    form.addEventListener('input', () => {
-      window.ConfigDirtyManager.markDirty();
-    });
-
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      form.reset();
+      allFieldNames.forEach((name) => {
+        const el = document.getElementById(name);
+        if (el && initialFormValues[name] !== undefined) {
+          el.value = initialFormValues[name];
+        }
+      });
+      checkDirty();
       Object.keys(serviceSections).forEach((serviceKey) => {
         validateService(serviceKey, false);
       });
     });
   }
+
+  // On form submit, disable unchanged fields so only delta fields are transmitted
+  form.addEventListener('submit', () => {
+    allFieldNames.forEach((name) => {
+      const el = document.getElementById(name);
+      if (el) {
+        if (el.value === initialFormValues[name]) {
+          el.disabled = true;
+        }
+      }
+    });
+    setTimeout(() => {
+      allFieldNames.forEach((name) => {
+        const el = document.getElementById(name);
+        if (el) el.disabled = false;
+      });
+    }, 100);
+  });
 
   async function validateService(serviceKey, isInitialLoad = false) {
     const config = serviceSections[serviceKey];

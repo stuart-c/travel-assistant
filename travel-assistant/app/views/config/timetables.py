@@ -2,23 +2,30 @@
 
 import datetime
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from flask import render_template, request
 
 from app.models import Timetable
 from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
-from app.views.config.common import save_bulk_config
+from app.views.config.common import save_changeset_config
 
 
 def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Validate and sanitize a single timetable input item."""
+    """Validate and sanitise a single timetable input item."""
     if not isinstance(entry, dict):
         return None
 
     name = str(entry.get("name", "")).strip()
     if not name:
         return None
+
+    item_id: Optional[int] = None
+    if entry.get("id") is not None and str(entry.get("id")).strip():
+        try:
+            item_id = int(entry.get("id"))
+        except (ValueError, TypeError):
+            item_id = None
 
     start_date_val: Optional[datetime.date] = None
     start_date_raw = entry.get("start_date")
@@ -144,7 +151,7 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "trips": clean_trips,
     }
 
-    return {
+    result: Dict[str, Any] = {
         "name": name,
         "transport_type": transport_type,
         "start_date": start_date_val,
@@ -160,75 +167,23 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "auto_added": bool(entry.get("auto_added", False)),
         "content": content_clean,
     }
+    if item_id is not None:
+        result["id"] = item_id
 
-
-def save_timetables_with_auto_preservation(
-    cleaned_items: List[Dict[str, Any]],
-) -> None:
-    """Atomically save custom timetables while preserving auto-synced records."""
-    with Timetable._meta.database.atomic():
-        existing_auto_records = [
-            {
-                "name": t.name,
-                "transport_type": t.transport_type,
-                "start_date": t.start_date,
-                "end_date": t.end_date,
-                "monday": t.monday,
-                "tuesday": t.tuesday,
-                "wednesday": t.wednesday,
-                "thursday": t.thursday,
-                "friday": t.friday,
-                "saturday": t.saturday,
-                "sunday": t.sunday,
-                "bank_holiday": t.bank_holiday,
-                "auto_added": True,
-                "content": t.get_content(),
-            }
-            for t in Timetable.select().where(
-                Timetable.auto_added == True  # noqa: E712
-            )
-        ]
-
-        manual_items = []
-        for item in cleaned_items:
-            if item.get("auto_added", False):
-                continue
-            manual_items.append(
-                {
-                    "name": item["name"],
-                    "transport_type": item.get("transport_type", "bus"),
-                    "start_date": item.get("start_date"),
-                    "end_date": item.get("end_date"),
-                    "monday": item.get("monday", True),
-                    "tuesday": item.get("tuesday", True),
-                    "wednesday": item.get("wednesday", True),
-                    "thursday": item.get("thursday", True),
-                    "friday": item.get("friday", True),
-                    "saturday": item.get("saturday", True),
-                    "sunday": item.get("sunday", True),
-                    "bank_holiday": item.get("bank_holiday", True),
-                    "auto_added": False,
-                    "content": item.get("content", {"stops": [], "trips": []}),
-                }
-            )
-
-        Timetable.delete().execute()
-        all_records = existing_auto_records + manual_items
-        if all_records:
-            Timetable.insert_many(all_records).execute()
+    return result
 
 
 @config_bp.route("/timetables", methods=["GET", "POST"])
 def timetables() -> Any:
     """Manage configured timetable schedules and operating days."""
     if request.method == "POST":
-        return save_bulk_config(
+        return save_changeset_config(
             form_key="timetables_json",
             model_class=Timetable,
             clean_item_func=clean_timetable_item,
             entity_label="Timetables",
             redirect_endpoint="config.timetables",
-            custom_save_fn=save_timetables_with_auto_preservation,
+            scope_filter=(Timetable.auto_added == False),  # noqa: E712
         )
 
     current_timetables = [t.to_dict() for t in Timetable.select()]

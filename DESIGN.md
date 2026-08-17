@@ -40,7 +40,7 @@ Pages containing multiple logical sections (e.g. **API Credentials**) organise c
 
 ## 4. Action Bar & Dirty State Management
 
-Configuration forms that require persistent saving follow a centralised dirty-tracking architecture:
+Configuration forms that require persistent saving follow a centralised dirty-tracking and differential persistence architecture:
 - **Sticky Action Bar**: Positioned at the top right of configuration pages (`#config-action-bar`), containing **Save Changes** and **Discard** buttons.
 - **Visual Icons**: Buttons feature standard Material Symbols icons:
   - Save Changes: `save` icon
@@ -49,6 +49,17 @@ Configuration forms that require persistent saving follow a centralised dirty-tr
   - **Clean state (Default)**: Both Save Changes and Discard buttons are **disabled** (`opacity-50`, `cursor-not-allowed`) when there are no unsaved changes. There is no redundant "No unsaved changes" badge.
   - **Dirty state**: Both buttons become **active and vibrant** (`bg-sky-600` for Save, `bg-slate-100`/`dark:bg-slate-800` for Discard) as soon as any input or staged table item changes.
   - **Submitting state**: Save Changes displays an animated spinner (`sync`) and disables buttons during network persistence.
+- **Componentised Client-Side `ChangesetTracker` (`transit-ui.js`)**:
+  - The shared `window.TransitUI.createChangesetTracker(initialData, options)` component manages staged collections across configuration pages (`locations`, `timetables`, `journeys`, `transfers`, `walking`).
+  - **Modal Adjustment Lifecycle**: When saving from an edit modal via `tracker.saveModalItem(index, item)`, the tracker compares the staged record against its initial snapshot; if adjustments were made, the item's key is flagged in `updatedKeys` (and removed if reverted to match initial state). New records are staged in `added`.
+  - **Deletion Tracking**: Calling `tracker.deleteItem(index)` removes the item from staged state and adds its key to `deletedKeys` if it was an existing record.
+  - **Changeset Generation**: `tracker.getChangeset()` outputs a standardised `{ added: [...], updated: [...], deleted: [...] }` payload and `tracker.isDirty()` provides instant boolean dirty status.
+  - **Discard Handler**: `tracker.discard()` cleanly resets all staged records back to initial snapshots.
+- **Differential Server Persistence**:
+  - The backend parses the delta changeset and executes targeted database operations within an atomic transaction.
+  - Existing records are updated in place with updated `updated_at` timestamps only when values have actually changed.
+  - Unchanged records are untouched in the database, preserving original `created_at` and `updated_at` metadata.
+  - Scoped filters (such as `ha == False` or `auto_added == False`) ensure protected or external records cannot be deleted or overwritten.
 - **Read-Only Exception**: Read-only views (e.g. **Database**, **Background Sync**) omit Save/Discard buttons. The **Database** page repurposes this action bar space to display a compact, styled **Database Size** badge.
 
 ---

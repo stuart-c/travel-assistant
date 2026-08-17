@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
+- Componentised staged collection and changeset management across all configuration controllers (`locations`, `timetables`, `journeys`, `transfers`, `walking`) with `TransitUI.createChangesetTracker` in `transit-ui.js`, unifying modal adjustment detection, item staging, deletion tracking, and delta payload generation.
 
 ### Added
 - Architectural and technical design specification for the **Route Planning Engine** (`docs/architecture/01_route_planning_engine.md`) and companion **Phased Implementation Roadmap** (`docs/architecture/02_route_planning_implementation_plan.md`), defining two-tier route/trip separation, multi-modal graph search across up to 6 modal stages with up to 3 intra-modal transfers each, two-phase intermediate timetable ingestion (BODS / Darwin S3), last-possible interchange pruning, Pareto dominance filtering, and a 6-chunk progressive implementation schedule.
@@ -31,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automated discovery and extraction of target bus stops referenced in the `walking` and `journeys` tables, with geographic area and bounding box query scoping against BODS datasets.
 - Non-interfering timetable reconciliation ensuring train timetable synchronisation and bus timetable synchronisation preserve each other's auto-added entries and custom user timetables.
 - `bus_timetables` dataset entry in the Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness updates via `TransitBackgroundWorker`.
+- Client-side delta changeset calculation and submission across all configuration managers (`locations`, `timetables`, `journeys`, `transfers`, `walking`, `credentials`), computing `{ "added": [...], "updated": [...], "deleted": [...] }` payloads so only modified or newly created entries are sent over the network when clicking **Save Changes**.
+- Common differential model persistence architecture (`parse_json_form_changeset`, `apply_model_changeset`, and `save_changeset_config` in `common.py`) applying atomic insertions, updates, and scoped deletions without modifying or touching unchanged database rows.
+- Field-level change detection in `Setting.set_val` and API credentials form submissions to selectively update only altered setting keys.
 - On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.
 - Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.

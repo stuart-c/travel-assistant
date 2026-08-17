@@ -6,7 +6,7 @@ from flask import render_template, request
 from app.models import Walking
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import save_bulk_config
+from app.views.config.common import save_changeset_config
 
 
 def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -36,7 +36,14 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except (ValueError, TypeError):
         time_needed = 5
 
-    return {
+    item_id: Optional[int] = None
+    if entry.get("id") is not None and str(entry.get("id")).strip():
+        try:
+            item_id = int(entry.get("id"))
+        except (ValueError, TypeError):
+            item_id = None
+
+    result: Dict[str, Any] = {
         "start_type": start_type,
         "start_id": start_id,
         "start_name": start_name,
@@ -47,18 +54,23 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "bidirectional": bool(entry.get("bidirectional", True)),
         "auto_generated": bool(entry.get("auto_generated", False)),
     }
+    if item_id is not None:
+        result["id"] = item_id
+
+    return result
 
 
 @config_bp.route("/walking", methods=["GET", "POST"])
 def walking() -> Any:
     """Manage configured walking connections between locations."""
     if request.method == "POST":
-        return save_bulk_config(
+        return save_changeset_config(
             form_key="walking_json",
             model_class=Walking,
             clean_item_func=clean_walking_item,
             entity_label="Walking",
             redirect_endpoint="config.walking",
+            scope_filter=(Walking.auto_generated == False),  # noqa: E712
         )
 
     current_walking = [w.to_dict() for w in Walking.select()]
