@@ -265,6 +265,119 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     assert b"Timetables saved successfully." in follow.data
 
 
+def test_post_timetables_with_dual_arrival_departure_timings(
+    client: FlaskClient,
+) -> None:
+    """Test POST /config/timetables correctly preserves dual arrival and departure entries."""
+    items = [
+        {
+            "name": "Intercity Express Schedule",
+            "transport_type": "rail",
+            "start_date": "2026-09-01",
+            "end_date": "2026-12-31",
+            "monday": True,
+            "tuesday": True,
+            "wednesday": True,
+            "thursday": True,
+            "friday": True,
+            "saturday": False,
+            "sunday": False,
+            "bank_holiday": False,
+            "content": {
+                "stops": [
+                    {"id": "naptan:KGX", "name": "Kings Cross", "type": "rail"},
+                    {"id": "naptan:SVG", "name": "Stevenage", "type": "rail"},
+                    {"id": "naptan:PBO", "name": "Peterborough", "type": "rail"},
+                ],
+                "trips": [
+                    {
+                        "id": "trip_1",
+                        "headsign": "Edinburgh",
+                        "times": [
+                            "08:00",
+                            {"arr": "08:22", "dep": "08:25"},
+                            {"arr": "08:50", "dep": "08:52"},
+                        ],
+                    },
+                    {
+                        "id": "trip_2",
+                        "headsign": "Leeds",
+                        "times": [
+                            "09:00",
+                            {"arrival": "09:20", "departure": "09:24"},
+                            "",
+                        ],
+                    },
+                ],
+            },
+        }
+    ]
+
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(items)},
+    )
+    assert response.status_code == 303
+    assert response.headers["Location"].endswith("/config/timetables")
+
+    saved = [t.to_dict() for t in Timetable.select()]
+    assert len(saved) == 1
+    tt = saved[0]
+    assert tt["name"] == "Intercity Express Schedule"
+    assert tt["transport_type"] == "rail"
+    assert len(tt["content"]["stops"]) == 3
+    assert len(tt["content"]["trips"]) == 2
+
+    trip1 = tt["content"]["trips"][0]
+    assert trip1["times"][0] == "08:00"
+    assert trip1["times"][1] == {"arr": "08:22", "dep": "08:25"}
+    assert trip1["times"][2] == {"arr": "08:50", "dep": "08:52"}
+
+    trip2 = tt["content"]["trips"][1]
+    assert trip2["times"][0] == "09:00"
+    assert trip2["times"][1] == {"arr": "09:20", "dep": "09:24"}
+    assert trip2["times"][2] == ""
+
+
+def test_clean_timetable_item_polymorphic_times() -> None:
+    """Test clean_timetable_item helper directly with various timing formats."""
+    from app.views.config.timetables import clean_timetable_item
+
+    raw_item = {
+        "name": "Bus Route 100",
+        "transport_type": "bus",
+        "content": {
+            "stops": ["Stop A", {"id": "stop_b", "name": "Stop B"}],
+            "trips": [
+                {
+                    "id": "trip_1",
+                    "times": [
+                        "07:30",
+                        {"arr": "07:45", "dep": "07:48"},
+                        {"arr": "", "dep": ""},
+                        "invalid-time",
+                        None,
+                    ],
+                }
+            ],
+        },
+    }
+
+    cleaned = clean_timetable_item(raw_item)
+    assert cleaned is not None
+    assert cleaned["name"] == "Bus Route 100"
+    assert len(cleaned["content"]["stops"]) == 2
+    assert cleaned["content"]["stops"][0]["name"] == "Stop A"
+    assert cleaned["content"]["stops"][1]["name"] == "Stop B"
+
+    trip = cleaned["content"]["trips"][0]
+    assert trip["times"][0] == "07:30"
+    assert trip["times"][1] == {"arr": "07:45", "dep": "07:48"}
+    assert trip["times"][2] == ""
+    assert trip["times"][3] == "invalid-time"
+    assert trip["times"][4] == ""
+
+
 def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
     """Test POST /config/timetables validates end_date is after start_date."""
     items = [

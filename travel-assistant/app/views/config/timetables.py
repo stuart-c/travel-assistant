@@ -60,13 +60,84 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     else:
         parsed_content = {"stops": [], "trips": []}
 
+    raw_stops = (
+        parsed_content.get("stops", []) if isinstance(parsed_content, dict) else []
+    )
+    raw_trips = (
+        parsed_content.get("trips", []) if isinstance(parsed_content, dict) else []
+    )
+
+    clean_stops = []
+    if isinstance(raw_stops, list):
+        for s in raw_stops:
+            if isinstance(s, dict):
+                clean_stops.append(s)
+            elif isinstance(s, str) and s.strip():
+                clean_stops.append(
+                    {
+                        "id": s.strip(),
+                        "name": s.strip(),
+                        "type": transport_type,
+                        "indicator": "Stop",
+                        "icon": "place",
+                    }
+                )
+
+    def _clean_time_str(val: Any) -> str:
+        if val is None:
+            return ""
+        s = str(val).strip()
+        if not s:
+            return ""
+        parts = s.split(":")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            h, m = int(parts[0]), int(parts[1])
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                return f"{h:02d}:{m:02d}"
+        return s
+
+    clean_trips = []
+    if isinstance(raw_trips, list):
+        for idx, t in enumerate(raw_trips):
+            if not isinstance(t, dict):
+                continue
+            trip_id = str(t.get("id") or f"trip_{idx + 1}").strip()
+            headsign = str(t.get("headsign") or "").strip()
+            raw_times = t.get("times", [])
+            if not isinstance(raw_times, list) and t.get("time"):
+                raw_times = [t.get("time")]
+            elif not isinstance(raw_times, list):
+                raw_times = []
+
+            cleaned_times = []
+            for tm in raw_times:
+                if isinstance(tm, dict):
+                    arr_val = _clean_time_str(
+                        tm.get("arr") if "arr" in tm else tm.get("arrival")
+                    )
+                    dep_val = _clean_time_str(
+                        tm.get("dep") if "dep" in tm else tm.get("departure")
+                    )
+                    if arr_val or dep_val:
+                        cleaned_times.append({"arr": arr_val, "dep": dep_val})
+                    else:
+                        cleaned_times.append("")
+                elif isinstance(tm, str):
+                    cleaned_times.append(_clean_time_str(tm))
+                else:
+                    cleaned_times.append("")
+
+            clean_trips.append(
+                {
+                    "id": trip_id,
+                    "headsign": headsign,
+                    "times": cleaned_times,
+                }
+            )
+
     content_clean = {
-        "stops": (
-            parsed_content.get("stops", []) if isinstance(parsed_content, dict) else []
-        ),
-        "trips": (
-            parsed_content.get("trips", []) if isinstance(parsed_content, dict) else []
-        ),
+        "stops": clean_stops,
+        "trips": clean_trips,
     }
 
     return {
