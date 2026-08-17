@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
 
 ### Added
+- Daily background synchronisation of bus timetables from the UK Bus Open Data Service (BODS) REST API and TransXChange timetable datasets (`sync_bus_timetables`).
+- Automated TransXChange XML and zip archive timetable ingestion, parsing route services, lines, operating periods, operating profiles (days of week, bank holidays), and vehicle journey calling sequences into structured stop-to-stop trip matrices stored in the `timetables` database table with `transport_type='bus'` and `auto_added=True`.
+- Automated discovery and extraction of target bus stops referenced in the `walking` and `journeys` tables, with geographic area and bounding box query scoping against BODS datasets.
+- Non-interfering timetable reconciliation ensuring train timetable synchronisation and bus timetable synchronisation preserve each other's auto-added entries and custom user timetables.
+- `bus_timetables` dataset entry in the Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness updates via `TransitBackgroundWorker`.
 - On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.
 - Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.

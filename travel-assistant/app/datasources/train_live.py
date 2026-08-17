@@ -23,11 +23,28 @@ DEFAULT_SWAGGER_SCHEMA_URL = (
     "https://realtime.nationalrail.co.uk/LDBWS/static/ldbws.json"
 )
 
-SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schemas", "ldbws_swagger.json")
+
+def get_schema_path(filename: str = "ldbws_swagger.json") -> str:
+    """Determine the local path to store swagger schemas, colocated with the database."""
+    try:
+        from app.db.core import get_db_path
+
+        db_path = get_db_path()
+        if db_path and db_path != ":memory:":
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                return os.path.join(db_dir, filename)
+    except Exception:
+        pass
+
+    if os.path.exists("/data") and os.access("/data", os.W_OK):
+        return os.path.join("/data", filename)
+
+    return os.path.join(os.path.abspath("instance"), filename)
 
 
 def sync_swagger_schema(
-    schema_path: str = SCHEMA_PATH,
+    schema_path: Optional[str] = None,
     url: str = DEFAULT_SWAGGER_SCHEMA_URL,
     timeout: float = 5.0,
 ) -> bool:
@@ -35,6 +52,7 @@ def sync_swagger_schema(
 
     Returns True if a new schema was successfully downloaded and saved, False otherwise.
     """
+    target_path = schema_path or get_schema_path()
     try:
         response = requests.get(
             url,
@@ -44,8 +62,10 @@ def sync_swagger_schema(
         if response.status_code == 200:
             data = response.json()
             if isinstance(data, dict) and "paths" in data and "swagger" in data:
-                os.makedirs(os.path.dirname(schema_path), exist_ok=True)
-                with open(schema_path, "w", encoding="utf-8") as f:
+                parent_dir = os.path.dirname(target_path)
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
+                with open(target_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
                 return True
     except Exception:
@@ -121,17 +141,18 @@ class TrainLiveClient(BaseDataSource):
             return self._swagger_client
 
         scheme, host, base_path = self._parse_endpoint(self.endpoint)
+        schema_file = get_schema_path()
 
-        if not os.path.exists(SCHEMA_PATH):
-            sync_swagger_schema(SCHEMA_PATH)
+        if not os.path.exists(schema_file):
+            sync_swagger_schema(schema_file)
 
-        if not os.path.exists(SCHEMA_PATH):
+        if not os.path.exists(schema_file):
             raise DataSourceConfigError(
-                f"Swagger schema file not found at {SCHEMA_PATH}",
+                f"Swagger schema file not found at {schema_file}",
                 provider=self.provider_name,
             )
 
-        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        with open(schema_file, "r", encoding="utf-8") as f:
             spec_dict = json.load(f)
 
         if host:

@@ -22,6 +22,7 @@ SYNCABLE_TABLES = (
     "stops",
     "ha_locations",
     "train_timetables",
+    "bus_timetables",
     "walking",
 )
 
@@ -423,7 +424,12 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
                         "train_timetables"
                         if table_name == "timetables"
                         and "train_timetables" in sync_meta_map
-                        else None
+                        else (
+                            "bus_timetables"
+                            if table_name == "timetables"
+                            and "bus_timetables" in sync_meta_map
+                            else None
+                        )
                     )
                 )
             )

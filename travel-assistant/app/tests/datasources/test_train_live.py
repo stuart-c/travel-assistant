@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.datasources.train_live import (
     TrainLiveClient,
+    get_schema_path,
     sync_swagger_schema,
 )
 from app.datasources.exceptions import (
@@ -348,3 +349,27 @@ def test_sync_swagger_schema_failure(mock_get: MagicMock, tmp_path: Path) -> Non
     # Exception
     mock_get.side_effect = requests.exceptions.ConnectionError("Refused")
     assert sync_swagger_schema(schema_path=dest) is False
+
+
+def test_get_schema_path_db_dir() -> None:
+    """Test get_schema_path colocates schema in database directory."""
+    with patch("app.db.core.get_db_path", return_value="/var/data/custom/test.db"):
+        path = get_schema_path("ldbws_swagger.json")
+        assert path == "/var/data/custom/ldbws_swagger.json"
+
+
+def test_get_schema_path_ha_data_fallback() -> None:
+    """Test get_schema_path uses /data if available when db is in-memory."""
+    with patch("app.db.core.get_db_path", return_value=":memory:"):
+        with patch("os.path.exists", side_effect=lambda p: p == "/data"):
+            with patch("os.access", return_value=True):
+                path = get_schema_path()
+                assert path == "/data/ldbws_swagger.json"
+
+
+def test_get_schema_path_instance_fallback() -> None:
+    """Test get_schema_path falls back to instance directory."""
+    with patch("app.db.core.get_db_path", return_value=":memory:"):
+        with patch("os.path.exists", return_value=False):
+            path = get_schema_path()
+            assert path.endswith("instance/ldbws_swagger.json")
