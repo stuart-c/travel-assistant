@@ -159,6 +159,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // In-memory staged state
   let stagedTimetables = (initialRaw || []).map(normaliseItem);
   const initialSnapshot = JSON.stringify(stagedTimetables);
+  const initialItemsMap = new Map(
+    (initialRaw || [])
+      .map(normaliseItem)
+      .filter((t) => t.id !== null && t.id !== undefined)
+      .map((t) => [String(t.id), t])
+  );
+  const deletedIds = new Set();
   let currentEditIndex = -1;
   let activeEditorIndex = -1;
   let matrixStopAutocomplete = null;
@@ -652,11 +659,32 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   }).render(gridContainer);
 
+  function computeChangeset() {
+    const added = [];
+    const updated = [];
+    const deleted = Array.from(deletedIds);
+
+    for (const item of stagedTimetables) {
+      const idStr = item.id !== null && item.id !== undefined ? String(item.id) : null;
+      if (!idStr || !initialItemsMap.has(idStr)) {
+        added.push(item);
+      } else {
+        const initial = initialItemsMap.get(idStr);
+        const currentJson = JSON.stringify(item);
+        const initialJson = JSON.stringify(initial);
+        if (currentJson !== initialJson) {
+          updated.push(item);
+        }
+      }
+    }
+    return { added, updated, deleted };
+  }
+
   // Sync in-memory changes with hidden form input and dirty manager
   function syncState() {
-    const currentJson = JSON.stringify(stagedTimetables);
+    const changeset = computeChangeset();
     if (hiddenInput) {
-      hiddenInput.value = currentJson;
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     // Update empty state vs grid visibility in list view
@@ -690,7 +718,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check dirty state
     if (window.ConfigDirtyManager) {
-      if (currentJson !== initialSnapshot) {
+      const isDirty =
+        changeset.added.length > 0 ||
+        changeset.updated.length > 0 ||
+        changeset.deleted.length > 0;
+      if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -706,6 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       stagedTimetables = JSON.parse(initialSnapshot);
+      deletedIds.clear();
       selectedTripIndices.clear();
       if (activeEditorIndex >= 0) {
         if (activeEditorIndex >= stagedTimetables.length) {
@@ -812,6 +845,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
+        const itemToDelete = stagedTimetables[idx];
+        if (
+          itemToDelete &&
+          itemToDelete.id !== null &&
+          itemToDelete.id !== undefined &&
+          initialItemsMap.has(String(itemToDelete.id))
+        ) {
+          deletedIds.add(itemToDelete.id);
+        }
         stagedTimetables.splice(idx, 1);
         syncState();
       }

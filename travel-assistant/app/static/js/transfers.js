@@ -27,6 +27,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let stagedPlatformTransfers = JSON.parse(JSON.stringify(initialPlatformData || []));
   const initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
 
+  const initialPlatformMap = new Map(
+    (initialPlatformData || [])
+      .filter((t) => t.id !== null && t.id !== undefined)
+      .map((t) => [String(t.id), t])
+  );
+  const deletedPlatformIds = new Set();
+
   // Hidden form input
   const platHiddenInput = document.getElementById('platform_transfers_json');
 
@@ -195,11 +202,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }).render(platGridWrapper);
 
+  function computePlatformChangeset() {
+    const added = [];
+    const updated = [];
+    const deleted = Array.from(deletedPlatformIds);
+    for (const item of stagedPlatformTransfers) {
+      const idStr = item.id !== null && item.id !== undefined ? String(item.id) : null;
+      if (!idStr || !initialPlatformMap.has(idStr)) {
+        added.push(item);
+      } else {
+        const initial = initialPlatformMap.get(idStr);
+        if (JSON.stringify(item) !== JSON.stringify(initial)) {
+          updated.push(item);
+        }
+      }
+    }
+    return { added, updated, deleted };
+  }
+
   // --- Sync State with Dirty Manager & Hidden Inputs ---
   function syncState() {
-    const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
+    const platChangeset = computePlatformChangeset();
 
-    if (platHiddenInput) platHiddenInput.value = currentPlatJson;
+    if (platHiddenInput) platHiddenInput.value = JSON.stringify(platChangeset);
 
     // Toggle Empty State vs Grid
     if (stagedPlatformTransfers.length === 0) {
@@ -226,7 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check Dirty Status
     if (window.ConfigDirtyManager) {
-      const isDirty = (currentPlatJson !== initialPlatformSnapshot);
+      const isDirty =
+        platChangeset.added.length > 0 ||
+        platChangeset.updated.length > 0 ||
+        platChangeset.deleted.length > 0;
       if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
@@ -242,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
+      deletedPlatformIds.clear();
       syncState();
     });
   }
@@ -337,7 +366,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const editIdx = parseInt(editPlatIndexInput.value, 10);
+      const existingId =
+        editIdx >= 0 && editIdx < stagedPlatformTransfers.length
+          ? stagedPlatformTransfers[editIdx].id
+          : undefined;
+
       const itemPayload = {
+        ...(existingId !== undefined ? { id: existingId } : {}),
         location_type,
         location_name,
         location_id,
@@ -349,7 +385,6 @@ document.addEventListener('DOMContentLoaded', () => {
         notes
       };
 
-      const editIdx = parseInt(editPlatIndexInput.value, 10);
       if (editIdx >= 0 && editIdx < stagedPlatformTransfers.length) {
         stagedPlatformTransfers[editIdx] = itemPayload;
       } else {
@@ -375,6 +410,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removePlatBtn) {
       const idx = parseInt(removePlatBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedPlatformTransfers.length) {
+        const itemToDelete = stagedPlatformTransfers[idx];
+        if (
+          itemToDelete &&
+          itemToDelete.id !== null &&
+          itemToDelete.id !== undefined &&
+          initialPlatformMap.has(String(itemToDelete.id))
+        ) {
+          deletedPlatformIds.add(itemToDelete.id);
+        }
         stagedPlatformTransfers.splice(idx, 1);
         syncState();
       }

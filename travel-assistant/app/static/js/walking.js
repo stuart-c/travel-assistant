@@ -27,6 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // In-memory staged state
   let stagedWalking = JSON.parse(JSON.stringify(initialWalkingData || []));
   const initialSnapshot = JSON.stringify(stagedWalking);
+  const initialItemsMap = new Map(
+    (initialWalkingData || [])
+      .filter((w) => w.id !== null && w.id !== undefined)
+      .map((w) => [String(w.id), w])
+  );
+  const deletedIds = new Set();
 
   // DOM Elements
   const hiddenInput = document.getElementById('walking_json');
@@ -344,9 +350,29 @@ document.addEventListener('DOMContentLoaded', () => {
     grid.render(gridWrapper);
   }
 
+  function computeChangeset() {
+    const added = [];
+    const updated = [];
+    const deleted = Array.from(deletedIds);
+
+    for (const item of stagedWalking) {
+      const idStr = item.id !== null && item.id !== undefined ? String(item.id) : null;
+      if (!idStr || !initialItemsMap.has(idStr)) {
+        added.push(item);
+      } else {
+        const initial = initialItemsMap.get(idStr);
+        if (JSON.stringify(item) !== JSON.stringify(initial)) {
+          updated.push(item);
+        }
+      }
+    }
+    return { added, updated, deleted };
+  }
+
   function syncState() {
+    const changeset = computeChangeset();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedWalking);
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     if (stagedWalking.length === 0) {
@@ -372,8 +398,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedWalking);
-      if (currentJson !== initialSnapshot) {
+      const isDirty =
+        changeset.added.length > 0 ||
+        changeset.updated.length > 0 ||
+        changeset.deleted.length > 0;
+      if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -388,6 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       stagedWalking = JSON.parse(initialSnapshot);
+      deletedIds.clear();
       syncState();
     });
   }
@@ -494,6 +524,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
+        const itemToDelete = stagedWalking[idx];
+        if (
+          itemToDelete &&
+          itemToDelete.id !== null &&
+          itemToDelete.id !== undefined &&
+          initialItemsMap.has(String(itemToDelete.id))
+        ) {
+          deletedIds.add(itemToDelete.id);
+        }
         stagedWalking.splice(idx, 1);
         syncState();
       }

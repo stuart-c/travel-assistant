@@ -1,16 +1,16 @@
 """Transfers configuration endpoints."""
 
-from typing import Any, Dict, List, Optional
-from flask import flash, redirect, render_template, request, url_for
+from typing import Any, Dict, Optional
+from flask import render_template, request
 
 from app.models import PlatformTransfer
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import parse_json_form_list
+from app.views.config.common import save_changeset_config
 
 
 def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Validate and sanitize a single platform/stand transfer item."""
+    """Validate and sanitise a single platform/stand transfer item."""
     if not isinstance(entry, dict):
         return None
 
@@ -31,7 +31,14 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
     if not (location_id and location_name and from_platform and to_platform):
         return None
 
-    return {
+    item_id: Optional[int] = None
+    if entry.get("id") is not None and str(entry.get("id")).strip():
+        try:
+            item_id = int(entry.get("id"))
+        except (ValueError, TypeError):
+            item_id = None
+
+    result: Dict[str, Any] = {
         "location_type": loc_type,
         "location_id": location_id,
         "location_name": location_name,
@@ -42,31 +49,23 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
         "step_free": bool(entry.get("step_free", False)),
         "notes": str(entry.get("notes", "")).strip(),
     }
+    if item_id is not None:
+        result["id"] = item_id
+
+    return result
 
 
 @config_bp.route("/transfers", methods=["GET", "POST"])
 def transfers() -> Any:
     """Manage intra-station platform and stand interchange transfers."""
     if request.method == "POST":
-        try:
-            plat_items = parse_json_form_list("platform_transfers_json")
-
-            cleaned_platform_transfers: List[Dict[str, Any]] = [
-                c
-                for item in plat_items
-                if (c := clean_platform_transfer_item(item)) is not None
-            ]
-
-            with PlatformTransfer._meta.database.atomic():
-                PlatformTransfer.delete().execute()
-                if cleaned_platform_transfers:
-                    PlatformTransfer.insert_many(cleaned_platform_transfers).execute()
-
-            flash("Transfers saved successfully.", "success")
-        except Exception as e:
-            flash(f"Failed to save transfers: {str(e)}", "error")
-
-        return redirect(url_for("config.transfers"), code=303)
+        return save_changeset_config(
+            form_key="platform_transfers_json",
+            model_class=PlatformTransfer,
+            clean_item_func=clean_platform_transfer_item,
+            entity_label="Transfers",
+            redirect_endpoint="config.transfers",
+        )
 
     platform_transfers = [t.to_dict() for t in PlatformTransfer.select()]
 

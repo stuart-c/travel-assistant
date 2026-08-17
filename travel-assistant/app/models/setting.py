@@ -40,11 +40,16 @@ class Setting(BaseModel):
             },
         )
         if not created:
-            item.value = str_val
-            if category is not None:
+            has_changed = False
+            if item.value != str_val:
+                item.value = str_val
+                has_changed = True
+            if category is not None and item.category != category:
                 item.category = category
-            item.updated_at = datetime.datetime.utcnow()
-            item.save()
+                has_changed = True
+            if has_changed:
+                item.updated_at = datetime.datetime.utcnow()
+                item.save()
         return item
 
     @classmethod

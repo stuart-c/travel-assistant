@@ -179,7 +179,11 @@ def test_config_journeys_post_persistence(app: Flask, client: FlaskClient) -> No
 
     response = client.post(
         "/config/journeys",
-        data={"journeys_json": json.dumps(payload)},
+        data={
+            "journeys_json": json.dumps(
+                {"added": payload, "updated": [], "deleted": []}
+            )
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -300,7 +304,11 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
     # POST Save Changes
     save_resp = client.post(
         "/config/journeys",
-        data={"journeys_json": json.dumps(new_journey_payload)},
+        data={
+            "journeys_json": json.dumps(
+                {"added": new_journey_payload, "updated": [], "deleted": []}
+            )
+        },
         follow_redirects=True,
     )
     assert save_resp.status_code == 200
@@ -344,28 +352,32 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
 def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     """Verify editing and deleting existing journeys persists properly."""
     # Seed 2 journeys
-    initial_payload = [
-        {
-            "name": "Library Study Session",
-            "from_type": "ha",
-            "from_id": "zone.home",
-            "from_name": "Home",
-            "to_type": "custom",
-            "to_id": "custom:library",
-            "to_name": "Central Public Library",
-            "time_settings": [],
-        },
-        {
-            "name": "Weekend Family Visit",
-            "from_type": "ha",
-            "from_id": "zone.home",
-            "from_name": "Home",
-            "to_type": "custom",
-            "to_id": "custom:parents",
-            "to_name": "Parents House",
-            "time_settings": [],
-        },
-    ]
+    initial_payload = {
+        "added": [
+            {
+                "name": "Library Study Session",
+                "from_type": "ha",
+                "from_id": "zone.home",
+                "from_name": "Home",
+                "to_type": "custom",
+                "to_id": "custom:library",
+                "to_name": "Central Public Library",
+                "time_settings": [],
+            },
+            {
+                "name": "Weekend Family Visit",
+                "from_type": "ha",
+                "from_id": "zone.home",
+                "from_name": "Home",
+                "to_type": "custom",
+                "to_id": "custom:parents",
+                "to_name": "Parents House",
+                "time_settings": [],
+            },
+        ],
+        "updated": [],
+        "deleted": [],
+    }
 
     client.post(
         "/config/journeys",
@@ -373,26 +385,38 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
         follow_redirects=True,
     )
 
+    from app.models import Journey
+
+    journeys = list(Journey.select())
+    assert len(journeys) == 2
+    lib_journey = next(j for j in journeys if "Library" in j.name)
+    fam_journey = next(j for j in journeys if "Family" in j.name)
+
     # Edit Library Study Session -> Central Library Research Session and Delete Weekend Family Visit
-    updated_payload = [
-        {
-            "name": "Central Library Research Session",
-            "from_type": "ha",
-            "from_id": "zone.home",
-            "from_name": "Home",
-            "to_type": "custom",
-            "to_id": "custom:library",
-            "to_name": "Central Public Library",
-            "time_settings": [
-                {
-                    "days": ["sat"],
-                    "mode": "depart",
-                    "start_time": "10:00",
-                    "end_time": "11:00",
-                }
-            ],
-        }
-    ]
+    updated_payload = {
+        "added": [],
+        "updated": [
+            {
+                "id": lib_journey.id,
+                "name": "Central Library Research Session",
+                "from_type": "ha",
+                "from_id": "zone.home",
+                "from_name": "Home",
+                "to_type": "custom",
+                "to_id": "custom:library",
+                "to_name": "Central Public Library",
+                "time_settings": [
+                    {
+                        "days": ["sat"],
+                        "mode": "depart",
+                        "start_time": "10:00",
+                        "end_time": "11:00",
+                    }
+                ],
+            }
+        ],
+        "deleted": [fam_journey.id],
+    }
 
     save_resp = client.post(
         "/config/journeys",

@@ -138,7 +138,7 @@ def test_get_walking_page(client: FlaskClient, app: Flask) -> None:
 def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/walking saves walking routes atomically and performs PRG redirect."""
     with app.app_context():
-        Walking.create(
+        old_route = Walking.create(
             start_type="custom",
             start_id="loc1",
             start_name="Old Route",
@@ -149,28 +149,32 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
         )
         assert Walking.select().count() == 1
 
-    payload = [
-        {
-            "start_type": "ha",
-            "start_id": "zone.home",
-            "start_name": "Home",
-            "finish_type": "bus",
-            "finish_id": "490000077E",
-            "finish_name": "King's Cross Stop E",
-            "time_needed_minutes": 7,
-            "bidirectional": True,
-        },
-        {
-            "start_type": "rail",
-            "start_id": "9100KNGX",
-            "start_name": "King's Cross",
-            "finish_type": "custom",
-            "finish_id": "custom:cafe",
-            "finish_name": "Coffee Shop",
-            "time_needed_minutes": "4",
-            "bidirectional": False,
-        },
-    ]
+    payload = {
+        "added": [
+            {
+                "start_type": "ha",
+                "start_id": "zone.home",
+                "start_name": "Home",
+                "finish_type": "bus",
+                "finish_id": "490000077E",
+                "finish_name": "King's Cross Stop E",
+                "time_needed_minutes": 7,
+                "bidirectional": True,
+            },
+            {
+                "start_type": "rail",
+                "start_id": "9100KNGX",
+                "start_name": "King's Cross",
+                "finish_type": "custom",
+                "finish_id": "custom:cafe",
+                "finish_name": "Coffee Shop",
+                "time_needed_minutes": "4",
+                "bidirectional": False,
+            },
+        ],
+        "updated": [],
+        "deleted": [old_route.id],
+    }
 
     response = client.post(
         "/config/walking",
@@ -193,7 +197,7 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
 def test_post_walking_empty_list_clears_records(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/walking with empty list clears existing records."""
+    """Test POST /config/walking with empty changeset preserves existing records."""
     with app.app_context():
         Walking.create(
             start_type="custom",
@@ -208,7 +212,7 @@ def test_post_walking_empty_list_clears_records(
 
     response = client.post(
         "/config/walking",
-        data={"walking_json": "[]"},
+        data={"walking_json": json.dumps({"added": [], "updated": [], "deleted": []})},
         follow_redirects=True,
     )
 
@@ -216,7 +220,7 @@ def test_post_walking_empty_list_clears_records(
     assert b"Walking saved successfully." in response.data
 
     with app.app_context():
-        assert Walking.select().count() == 0
+        assert Walking.select().count() == 1
 
 
 def test_post_walking_invalid_json(client: FlaskClient) -> None:
@@ -231,7 +235,7 @@ def test_post_walking_invalid_json(client: FlaskClient) -> None:
 
 
 def test_post_walking_non_list_payload(client: FlaskClient) -> None:
-    """Test POST /config/walking with a non-list JSON payload."""
+    """Test POST /config/walking with a non-changeset JSON payload."""
     response = client.post(
         "/config/walking",
         data={"walking_json": json.dumps({"start_name": "Solo Object"})},
@@ -239,32 +243,36 @@ def test_post_walking_non_list_payload(client: FlaskClient) -> None:
     )
     assert response.status_code == 200
     assert b"Failed to save walking:" in response.data
-    assert b"must contain a JSON list" in response.data
+    assert b"must contain" in response.data
 
 
 def test_post_walking_skips_invalid_entries(client: FlaskClient, app: Flask) -> None:
     """Test POST /config/walking skips malformed entries."""
-    payload = [
-        "not-a-dict",
-        {"start_name": "", "finish_name": "Dest"},  # missing start_id & start_name
-        {
-            "start_type": "custom",
-            "start_id": "c1",
-            "start_name": "Start",
-            "finish_id": "",
-            "finish_name": "",
-        },  # missing finish
-        {
-            "start_type": "custom",
-            "start_id": "c1",
-            "start_name": "Start",
-            "finish_type": "unknown_type",
-            "finish_id": "c2",
-            "finish_name": "Finish",
-            "time_needed_minutes": -5,  # negative time defaults to min 1
-            "bidirectional": True,
-        },
-    ]
+    payload = {
+        "added": [
+            "not-a-dict",
+            {"start_name": "", "finish_name": "Dest"},  # missing start_id & start_name
+            {
+                "start_type": "custom",
+                "start_id": "c1",
+                "start_name": "Start",
+                "finish_id": "",
+                "finish_name": "",
+            },  # missing finish
+            {
+                "start_type": "custom",
+                "start_id": "c1",
+                "start_name": "Start",
+                "finish_type": "unknown_type",
+                "finish_id": "c2",
+                "finish_name": "Finish",
+                "time_needed_minutes": -5,  # negative time defaults to min 1
+                "bidirectional": True,
+            },
+        ],
+        "updated": [],
+        "deleted": [],
+    }
 
     response = client.post(
         "/config/walking",

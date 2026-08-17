@@ -164,22 +164,18 @@ def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
     assert len(locations) >= 2
 
     # Save new location list
-    new_locations = [
-        {
-            "id": "zone.home",
-            "name": "Home Zone Updated",
-            "latitude": 51.5310,
-            "longitude": -0.1210,
-            "ha": True,
-        },
-        {
-            "id": "custom:library",
-            "name": "Central Library",
-            "latitude": 51.5180,
-            "longitude": -0.1310,
-            "ha": False,
-        },
-    ]
+    new_locations = {
+        "added": [
+            {
+                "name": "Central Library",
+                "latitude": 51.5180,
+                "longitude": -0.1310,
+                "ha": False,
+            },
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     post_resp = client.post(
         "/config/locations",
         data={"locations_json": json.dumps(new_locations)},
@@ -203,23 +199,27 @@ def test_timetables_grid_data_binding_and_save(client: FlaskClient) -> None:
     timetables = json.loads(data_script.string)
     assert len(timetables) >= 1
 
-    new_timetables = [
-        {
-            "name": "Evening Commute",
-            "transport_type": "bus",
-            "start_date": "2026-09-01",
-            "end_date": "2026-12-31",
-            "monday": True,
-            "tuesday": True,
-            "wednesday": True,
-            "thursday": True,
-            "friday": True,
-            "saturday": False,
-            "sunday": False,
-            "bank_holiday": False,
-            "content": {"stops": ["490000077E"], "trips": [{"time": "17:30"}]},
-        }
-    ]
+    new_timetables = {
+        "added": [
+            {
+                "name": "Evening Commute",
+                "transport_type": "bus",
+                "start_date": "2026-09-01",
+                "end_date": "2026-12-31",
+                "monday": True,
+                "tuesday": True,
+                "wednesday": True,
+                "thursday": True,
+                "friday": True,
+                "saturday": False,
+                "sunday": False,
+                "bank_holiday": False,
+                "content": {"stops": ["490000077E"], "trips": [{"time": "17:30"}]},
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     post_resp = client.post(
         "/config/timetables",
         data={"timetables_json": json.dumps(new_timetables)},
@@ -257,7 +257,9 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
     post_resp = client.post(
         "/config/transfers",
         data={
-            "platform_transfers_json": json.dumps(plat_payload),
+            "platform_transfers_json": json.dumps(
+                {"added": plat_payload, "updated": [], "deleted": []}
+            ),
         },
         follow_redirects=True,
     )
@@ -299,7 +301,11 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     ]
     post_resp = client.post(
         "/config/journeys",
-        data={"journeys_json": json.dumps(journeys_payload)},
+        data={
+            "journeys_json": json.dumps(
+                {"added": journeys_payload, "updated": [], "deleted": []}
+            )
+        },
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
@@ -331,7 +337,11 @@ def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
     ]
     post_resp = client.post(
         "/config/walking",
-        data={"walking_json": json.dumps(walking_payload)},
+        data={
+            "walking_json": json.dumps(
+                {"added": walking_payload, "updated": [], "deleted": []}
+            )
+        },
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
@@ -369,7 +379,11 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
     }
     save_resp = client.post(
         "/config/journeys",
-        data={"journeys_json": json.dumps([new_journey])},
+        data={
+            "journeys_json": json.dumps(
+                {"added": [new_journey], "updated": [], "deleted": []}
+            )
+        },
         follow_redirects=True,
     )
     assert save_resp.status_code == 200
@@ -389,8 +403,8 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
     assert data_script is not None
     loaded_journeys = json.loads(data_script.string)
 
-    assert len(loaded_journeys) == 1
-    j = loaded_journeys[0]
+    assert len(loaded_journeys) == 2
+    j = next(item for item in loaded_journeys if item["name"] == "Gym Workout Route")
     assert j["name"] == "Gym Workout Route"
     assert j["from_name"] == "Home Zone"
     assert j["to_name"] == "City Health Club"
@@ -414,14 +428,18 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert resp.status_code == 200
 
     # 2. Add Location
-    loc_payload = [
-        {
-            "name": "Community Centre",
-            "latitude": 51.5200,
-            "longitude": -0.1100,
-            "ha": False,
-        }
-    ]
+    loc_payload = {
+        "added": [
+            {
+                "name": "Community Centre",
+                "latitude": 51.5200,
+                "longitude": -0.1100,
+                "ha": False,
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     resp = client.post(
         "/config/locations",
         data={"locations_json": json.dumps(loc_payload)},
@@ -430,23 +448,27 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert resp.status_code == 200
 
     # 3. Add Timetable
-    tt_payload = [
-        {
-            "name": "Saturday Market Shuttle",
-            "transport_type": "bus",
-            "start_date": "2026-06-01",
-            "end_date": "2026-08-31",
-            "monday": False,
-            "tuesday": False,
-            "wednesday": False,
-            "thursday": False,
-            "friday": False,
-            "saturday": True,
-            "sunday": False,
-            "bank_holiday": False,
-            "content": {"stops": ["490000077E"], "trips": [{"time": "10:00"}]},
-        }
-    ]
+    tt_payload = {
+        "added": [
+            {
+                "name": "Saturday Market Shuttle",
+                "transport_type": "bus",
+                "start_date": "2026-06-01",
+                "end_date": "2026-08-31",
+                "monday": False,
+                "tuesday": False,
+                "wednesday": False,
+                "thursday": False,
+                "friday": False,
+                "saturday": True,
+                "sunday": False,
+                "bank_holiday": False,
+                "content": {"stops": ["490000077E"], "trips": [{"time": "10:00"}]},
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     resp = client.post(
         "/config/timetables",
         data={"timetables_json": json.dumps(tt_payload)},
@@ -455,19 +477,23 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert resp.status_code == 200
 
     # 4. Add Transfer
-    transfer_payload = [
-        {
-            "location_type": "rail",
-            "location_id": "9100KNGX",
-            "location_name": "London King's Cross",
-            "from_platform": "1",
-            "to_platform": "8",
-            "transfer_time_minutes": 3,
-            "bidirectional": True,
-            "step_free": True,
-            "notes": "Footbridge",
-        }
-    ]
+    transfer_payload = {
+        "added": [
+            {
+                "location_type": "rail",
+                "location_id": "9100KNGX",
+                "location_name": "London King's Cross",
+                "from_platform": "1",
+                "to_platform": "8",
+                "transfer_time_minutes": 3,
+                "bidirectional": True,
+                "step_free": True,
+                "notes": "Footbridge",
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     resp = client.post(
         "/config/transfers",
         data={
@@ -478,25 +504,29 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert resp.status_code == 200
 
     # 5. Add Journey
-    journey_payload = [
-        {
-            "name": "Market Visit Route",
-            "from_type": "ha",
-            "from_id": "zone.home",
-            "from_name": "Home Zone",
-            "to_type": "custom",
-            "to_id": "custom:community_centre",
-            "to_name": "Community Centre",
-            "time_settings": [
-                {
-                    "days": ["sat"],
-                    "mode": "arrive",
-                    "start_time": "09:30",
-                    "end_time": "10:00",
-                }
-            ],
-        }
-    ]
+    journey_payload = {
+        "added": [
+            {
+                "name": "Market Visit Route",
+                "from_type": "ha",
+                "from_id": "zone.home",
+                "from_name": "Home Zone",
+                "to_type": "custom",
+                "to_id": "custom:community_centre",
+                "to_name": "Community Centre",
+                "time_settings": [
+                    {
+                        "days": ["sat"],
+                        "mode": "arrive",
+                        "start_time": "09:30",
+                        "end_time": "10:00",
+                    }
+                ],
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     resp = client.post(
         "/config/journeys",
         data={"journeys_json": json.dumps(journey_payload)},
@@ -505,18 +535,22 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert resp.status_code == 200
 
     # 6. Add Walking Route
-    walking_payload = [
-        {
-            "start_type": "ha",
-            "start_id": "zone.home",
-            "start_name": "Home Zone",
-            "finish_type": "bus",
-            "finish_id": "490000077E",
-            "finish_name": "King's Cross Stop E",
-            "time_needed_minutes": 7,
-            "bidirectional": True,
-        }
-    ]
+    walking_payload = {
+        "added": [
+            {
+                "start_type": "ha",
+                "start_id": "zone.home",
+                "start_name": "Home Zone",
+                "finish_type": "bus",
+                "finish_id": "490000077E",
+                "finish_name": "King's Cross Stop E",
+                "time_needed_minutes": 7,
+                "bidirectional": True,
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
     resp = client.post(
         "/config/walking",
         data={"walking_json": json.dumps(walking_payload)},

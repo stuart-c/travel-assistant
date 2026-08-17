@@ -43,10 +43,12 @@ def credentials() -> Any:
     if request.method == "POST":
         payload: Dict[str, str] = {}
         for field in CREDENTIAL_FIELDS:
-            value = request.form.get(field, "").strip()
-            payload[field] = value
+            if field in request.form:
+                value = request.form.get(field, "").strip()
+                payload[field] = value
 
-        Setting.bulk_set(payload, category="credentials")
+        if payload:
+            Setting.bulk_set(payload, category="credentials")
         flash("API credentials saved successfully.", "success")
         return redirect(url_for("config.credentials"), code=303)
 

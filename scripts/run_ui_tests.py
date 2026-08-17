@@ -173,22 +173,19 @@ class UITester:
         )
 
         # Locations Grid.js
-        locations_payload = [
-            {
-                "id": "zone.home",
-                "name": "Home Base",
-                "latitude": 51.5300,
-                "longitude": -0.1200,
-                "ha": True,
-            },
-            {
-                "id": "custom:lab",
-                "name": "Innovation Lab",
-                "latitude": 51.5150,
-                "longitude": -0.0900,
-                "ha": False,
-            },
-        ]
+        locations_payload = {
+            "added": [
+                {
+                    "id": "custom:lab",
+                    "name": "Innovation Lab",
+                    "latitude": 51.5150,
+                    "longitude": -0.0900,
+                    "ha": False,
+                },
+            ],
+            "updated": [],
+            "deleted": [],
+        }
         r_loc_post = self.client.post(
             "/config/locations",
             data={"locations_json": json.dumps(locations_payload)},
@@ -204,23 +201,27 @@ class UITester:
         )
 
         # Timetables Grid.js
-        tt_payload = [
-            {
-                "name": "Automated Express Schedule",
-                "transport_type": "rail",
-                "start_date": "2026-09-01",
-                "end_date": "2026-12-31",
-                "monday": True,
-                "tuesday": True,
-                "wednesday": True,
-                "thursday": True,
-                "friday": True,
-                "saturday": False,
-                "sunday": False,
-                "bank_holiday": False,
-                "content": {"stops": ["9100KNGX"], "trips": [{"time": "09:00"}]},
-            }
-        ]
+        tt_payload = {
+            "added": [
+                {
+                    "name": "Automated Express Schedule",
+                    "transport_type": "rail",
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-12-31",
+                    "monday": True,
+                    "tuesday": True,
+                    "wednesday": True,
+                    "thursday": True,
+                    "friday": True,
+                    "saturday": False,
+                    "sunday": False,
+                    "bank_holiday": False,
+                    "content": {"stops": ["9100KNGX"], "trips": [{"time": "09:00"}]},
+                }
+            ],
+            "updated": [],
+            "deleted": [],
+        }
         r_tt_post = self.client.post(
             "/config/timetables",
             data={"timetables_json": json.dumps(tt_payload)},
@@ -236,19 +237,23 @@ class UITester:
         )
 
         # Transfers Grid.js
-        plat_trans_payload = [
-            {
-                "location_type": "rail",
-                "location_id": "9100KNGX",
-                "location_name": "London King's Cross",
-                "from_platform": "1",
-                "to_platform": "8",
-                "transfer_time_minutes": 4,
-                "bidirectional": True,
-                "step_free": True,
-                "notes": "Footbridge",
-            }
-        ]
+        plat_trans_payload = {
+            "added": [
+                {
+                    "location_type": "rail",
+                    "location_id": "9100KNGX",
+                    "location_name": "London King's Cross",
+                    "from_platform": "1",
+                    "to_platform": "8",
+                    "transfer_time_minutes": 4,
+                    "bidirectional": True,
+                    "step_free": True,
+                    "notes": "Footbridge",
+                }
+            ],
+            "updated": [],
+            "deleted": [],
+        }
         r_tr_post = self.client.post(
             "/config/transfers",
             data={
@@ -266,18 +271,22 @@ class UITester:
         )
 
         # Journeys Grid.js
-        j_payload = [
-            {
-                "name": "Lab Commute",
-                "from_type": "ha",
-                "from_id": "zone.home",
-                "from_name": "Home Base",
-                "to_type": "custom",
-                "to_id": "custom:lab",
-                "to_name": "Innovation Lab",
-                "time_settings": [{"target_arrival": "09:30"}],
-            }
-        ]
+        j_payload = {
+            "added": [
+                {
+                    "name": "Lab Commute",
+                    "from_type": "ha",
+                    "from_id": "zone.home",
+                    "from_name": "Home Base",
+                    "to_type": "custom",
+                    "to_id": "custom:lab",
+                    "to_name": "Innovation Lab",
+                    "time_settings": [{"target_arrival": "09:30"}],
+                }
+            ],
+            "updated": [],
+            "deleted": [],
+        }
         r_j_post = self.client.post(
             "/config/journeys",
             data={"journeys_json": json.dumps(j_payload)},
@@ -293,18 +302,22 @@ class UITester:
         )
 
         # Walking Grid.js
-        w_payload = [
-            {
-                "start_type": "ha",
-                "start_id": "zone.home",
-                "start_name": "Home Base",
-                "finish_type": "custom",
-                "finish_id": "custom:lab",
-                "finish_name": "Innovation Lab",
-                "time_needed_minutes": 15,
-                "bidirectional": True,
-            }
-        ]
+        w_payload = {
+            "added": [
+                {
+                    "start_type": "ha",
+                    "start_id": "zone.home",
+                    "start_name": "Home Base",
+                    "finish_type": "custom",
+                    "finish_id": "custom:lab",
+                    "finish_name": "Innovation Lab",
+                    "time_needed_minutes": 15,
+                    "bidirectional": True,
+                }
+            ],
+            "updated": [],
+            "deleted": [],
+        }
         r_w_post = self.client.post(
             "/config/walking",
             data={"walking_json": json.dumps(w_payload)},

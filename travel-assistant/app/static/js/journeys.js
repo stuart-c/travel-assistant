@@ -27,6 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // In-memory staged state
   let stagedJourneys = JSON.parse(JSON.stringify(initialJourneysData || []));
   const initialSnapshot = JSON.stringify(stagedJourneys);
+  const initialItemsMap = new Map(
+    (initialJourneysData || [])
+      .filter((j) => j.id !== null && j.id !== undefined)
+      .map((j) => [String(j.id), j])
+  );
+  const deletedIds = new Set();
 
   // DOM Elements
   const hiddenInput = document.getElementById('journeys_json');
@@ -310,14 +316,39 @@ document.addEventListener('DOMContentLoaded', () => {
     updateHiddenInput();
   }
 
+  function computeChangeset() {
+    const added = [];
+    const updated = [];
+    const deleted = Array.from(deletedIds);
+
+    for (const item of stagedJourneys) {
+      const idStr = item.id !== null && item.id !== undefined ? String(item.id) : null;
+      if (!idStr || !initialItemsMap.has(idStr)) {
+        added.push(item);
+      } else {
+        const initial = initialItemsMap.get(idStr);
+        const currentJson = JSON.stringify(item);
+        const initialJson = JSON.stringify(initial);
+        if (currentJson !== initialJson) {
+          updated.push(item);
+        }
+      }
+    }
+    return { added, updated, deleted };
+  }
+
   function updateHiddenInput() {
-    const currentSnapshot = JSON.stringify(stagedJourneys);
+    const changeset = computeChangeset();
     if (hiddenInput) {
-      hiddenInput.value = currentSnapshot;
+      hiddenInput.value = JSON.stringify(changeset);
     }
     // Check dirty state with ConfigDirtyManager
     if (window.ConfigDirtyManager) {
-      if (currentSnapshot !== initialSnapshot) {
+      const isDirty =
+        changeset.added.length > 0 ||
+        changeset.updated.length > 0 ||
+        changeset.deleted.length > 0;
+      if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -715,7 +746,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
+      const editIndex = parseInt(editIndexInput.value, 10);
+      const existingId =
+        editIndex >= 0 && editIndex < stagedJourneys.length
+          ? stagedJourneys[editIndex].id
+          : undefined;
+
       const journeyItem = {
+        ...(existingId !== undefined ? { id: existingId } : {}),
         name,
         from_type: fromType,
         from_id: fromId,
@@ -726,7 +764,6 @@ document.addEventListener('DOMContentLoaded', () => {
         time_settings: timeSettings,
       };
 
-      const editIndex = parseInt(editIndexInput.value, 10);
       if (editIndex >= 0 && editIndex < stagedJourneys.length) {
         stagedJourneys[editIndex] = journeyItem;
       } else {
@@ -751,6 +788,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (delBtn) {
       const idx = parseInt(delBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedJourneys.length) {
+        const itemToDelete = stagedJourneys[idx];
+        if (
+          itemToDelete &&
+          itemToDelete.id !== null &&
+          itemToDelete.id !== undefined &&
+          initialItemsMap.has(String(itemToDelete.id))
+        ) {
+          deletedIds.add(itemToDelete.id);
+        }
         stagedJourneys.splice(idx, 1);
         renderGrid();
       }
@@ -761,6 +807,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       stagedJourneys = JSON.parse(initialSnapshot);
+      deletedIds.clear();
       renderGrid();
     });
   }

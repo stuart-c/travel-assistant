@@ -96,7 +96,9 @@ def test_transfers_post_save_valid(client: FlaskClient, app: Flask) -> None:
     response = client.post(
         "/config/transfers",
         data={
-            "platform_transfers_json": json.dumps(platform_payload),
+            "platform_transfers_json": json.dumps(
+                {"added": platform_payload, "updated": [], "deleted": []}
+            ),
         },
         follow_redirects=True,
     )
@@ -261,7 +263,9 @@ def test_transfers_save_leave_and_return_persistence(client: FlaskClient) -> Non
     post_resp = client.post(
         "/config/transfers",
         data={
-            "platform_transfers_json": json.dumps(plat_payload),
+            "platform_transfers_json": json.dumps(
+                {"added": plat_payload, "updated": [], "deleted": []}
+            ),
         },
         follow_redirects=True,
     )

@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automated discovery and extraction of target bus stops referenced in the `walking` and `journeys` tables, with geographic area and bounding box query scoping against BODS datasets.
 - Non-interfering timetable reconciliation ensuring train timetable synchronisation and bus timetable synchronisation preserve each other's auto-added entries and custom user timetables.
 - `bus_timetables` dataset entry in the Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness updates via `TransitBackgroundWorker`.
+- Client-side delta changeset calculation and submission across all configuration managers (`locations`, `timetables`, `journeys`, `transfers`, `walking`, `credentials`), computing `{ "added": [...], "updated": [...], "deleted": [...] }` payloads so only modified or newly created entries are sent over the network when clicking **Save Changes**.
+- Common differential model persistence architecture (`parse_json_form_changeset`, `apply_model_changeset`, and `save_changeset_config` in `common.py`) applying atomic insertions, updates, and scoped deletions without modifying or touching unchanged database rows.
+- Field-level change detection in `Setting.set_val` and API credentials form submissions to selectively update only altered setting keys.
 - On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.
 - Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.

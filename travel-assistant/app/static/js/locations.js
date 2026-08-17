@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // In-memory staged state
   let stagedLocations = JSON.parse(JSON.stringify(initialRaw || []));
   const initialSnapshot = JSON.stringify(stagedLocations);
+  const initialItemsMap = new Map((initialRaw || []).map((item) => [String(item.id), item]));
+  const deletedIds = new Set();
 
   const hiddenInput = document.getElementById('locations_json');
   const emptyState = document.getElementById('locations-grid-empty-state');
@@ -256,9 +258,33 @@ document.addEventListener('DOMContentLoaded', () => {
     grid.render(gridContainer);
   }
 
+  function computeChangeset() {
+    const added = [];
+    const updated = [];
+    const deleted = Array.from(deletedIds);
+
+    for (const item of stagedLocations) {
+      const idStr = item.id ? String(item.id) : null;
+      if (!idStr || !initialItemsMap.has(idStr)) {
+        added.push(item);
+      } else {
+        const initial = initialItemsMap.get(idStr);
+        const isModified =
+          item.name !== initial.name ||
+          parseFloat(item.latitude) !== parseFloat(initial.latitude) ||
+          parseFloat(item.longitude) !== parseFloat(initial.longitude);
+        if (isModified) {
+          updated.push(item);
+        }
+      }
+    }
+    return { added, updated, deleted };
+  }
+
   function syncState() {
+    const changeset = computeChangeset();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedLocations);
+      hiddenInput.value = JSON.stringify(changeset);
     }
 
     if (stagedLocations.length === 0) {
@@ -284,8 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedLocations);
-      if (currentJson !== initialSnapshot) {
+      const isDirty =
+        changeset.added.length > 0 ||
+        changeset.updated.length > 0 ||
+        changeset.deleted.length > 0;
+      if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -300,6 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       stagedLocations = JSON.parse(initialSnapshot);
+      deletedIds.clear();
       syncState();
     });
   }
@@ -512,6 +542,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        const itemToDelete = stagedLocations[idx];
+        if (itemToDelete && itemToDelete.id && initialItemsMap.has(String(itemToDelete.id))) {
+          deletedIds.add(itemToDelete.id);
+        }
         stagedLocations.splice(idx, 1);
         syncState();
       }
