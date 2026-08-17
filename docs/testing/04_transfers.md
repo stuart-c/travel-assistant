@@ -1,7 +1,7 @@
-# Test Scenario 04: Interchange Transfers & Platform Transitions
+# Test Scenario 04: Platform & Stand Transfers
 
 ## Objective
-Validate the configuration of inter-location walking links (between stations/bus stops) and within-station platform transfer durations with step-free accessibility flags.
+Validate the configuration of intra-station platform and bus stand interchange transfer durations with step-free accessibility flags. (Inter-location walking connections are handled by the Walking feature).
 
 ## Preconditions
 1. Development server running: `bash scripts/run_dev.sh --sample-db`
@@ -12,48 +12,35 @@ Validate the configuration of inter-location walking links (between stations/bus
 
 ## Test Steps
 
-### Scenario 4.1: Inter-Location & Platform Transfer Tables
+### Scenario 4.1: Platform & Stand Transfers Table
 1. Navigate to `http://localhost:8099/config/transfers`.
 2. Verify page title is `Transfers - Travel Assistant`.
-3. Verify that two distinct tables are presented:
-   * **Location Transfers (Inter-modal / Station walking links)**.
-   * **Platform Transfers (Station interchange durations)**.
-4. Verify seeded transfers render in the respective tables:
-   * **London King's Cross to London St Pancras International** (4 minutes, Step-Free badge `✓`, Bidirectional badge `⇄`).
-   * **London King's Cross Platform 1 to Platform 8** (4 minutes, Step-Free badge `✓`).
+3. Verify that the **Platform & Stand Transfers** table is presented.
+4. Verify seeded platform transfers render in the table:
+   * **London King's Cross Platform 1 to Platform 8** (4 minutes, Step-Free badge `✓`, Bidirectional badge `⇄`).
 
-### Scenario 4.2: Adding a Walking Connection between Stations
-1. Click **+ Add Location Transfer**.
-2. In the modal dialog, configure:
-   * **From Place**: Search or select `London Euston` (Rail).
-   * **To Place**: Search or select `London King's Cross` (Rail).
-   * **Transfer Duration**: `10` minutes.
-   * **Bidirectional**: Checked (`Yes`).
-   * **Step-Free Access**: Checked (`Yes`).
-   * **Notes**: `Pedestrian walk via Euston Road.`
-3. Click **Add to Table**.
-4. Verify the row appears in the Location Transfers table.
-5. Click **Save Changes** in the bottom action bar.
-6. **Expected Result**:
-   * Flash confirmation: `Transfers saved successfully.`
-   * New transfer persists upon page reload.
-
-### Scenario 4.3: Adding a Platform Interchange Transfer
-1. In the Platform Transfers section, click **+ Add Platform Transfer**.
-2. In the modal dialog, configure:
-   * **Station**: Select `London Euston`.
+### Scenario 4.2: Adding a Platform Interchange Transfer
+1. Click **+ Add Platform Transfer**.
+2. In the modal dialogue, configure:
+   * **Station**: Search and select `London Euston`.
    * **From Platform**: `1`
    * **To Platform**: `8`
    * **Transfer Duration**: `3` minutes.
-   * **Step-Free**: Checked.
-3. Click **Add to Table** and save changes.
-4. **Expected Result**:
-   * Platform transfer persists with 3 minutes duration and step-free indicator.
+   * **Bidirectional**: Checked (`Yes`).
+   * **Step-Free**: Checked (`Yes`).
+   * **Interchange Notes**: `Use the central footbridge or ramp.`
+3. Click **Save Transfer**.
+4. Verify the row appears in the Platform Transfers table.
+5. Click **Save Changes** in the header action bar.
+6. **Expected Result**:
+   * Flash confirmation: `Transfers saved successfully.`
+   * Platform transfer persists with 3 minutes duration and step-free indicator upon page reload.
 
 ---
 
 ## Acceptance Criteria
-- [ ] Both Location and Platform transfer tables mount and render data cleanly.
+- [ ] Platform & Stand Transfers table mounts and renders data cleanly.
 - [ ] Transfer duration inputs accept valid positive integer minute values.
 - [ ] Step-free accessibility and bidirectional badges render accurately.
-- [ ] Saving updates both datasets atomically in the SQLite backend.
+- [ ] Saving updates platform transfers atomically in the SQLite backend.
+

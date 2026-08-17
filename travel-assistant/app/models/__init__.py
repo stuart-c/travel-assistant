@@ -9,7 +9,7 @@ from app.models.journey import Journey
 from app.models.location import Location
 from app.models.setting import Setting
 from app.models.timetable import Timetable
-from app.models.transfer import LocationTransfer, PlatformTransfer
+from app.models.transfer import PlatformTransfer
 from app.models.transit import (
     BusRoute,
     Stop,
@@ -23,7 +23,6 @@ ALL_MODELS = [
     SyncMetadata,
     BusRoute,
     Stop,
-    LocationTransfer,
     PlatformTransfer,
     Location,
     Journey,
@@ -40,7 +39,6 @@ __all__ = [
     "BusRoute",
     "Stop",
     "SyncMetadata",
-    "LocationTransfer",
     "PlatformTransfer",
     "ALL_MODELS",
 ]

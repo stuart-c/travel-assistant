@@ -28,12 +28,12 @@ This document establishes the UI/UX design standards, component architecture, an
 
 ## 3. Collapsible Section Pattern
 
-Pages containing multiple logical sections (e.g. **Transfers**, **API Credentials**) organise content into collapsible cards:
+Pages containing multiple logical sections (e.g. **API Credentials**) organise content into collapsible cards:
 - **Structure**: Each section is wrapped in a `.collapsible-section` container styled with rounded corners (`rounded-2xl`), subtle borders, and background shading.
 - **Interactive Header**: The header is clickable (`.section-toggle`) and features an animated chevron icon (`.collapsible-chevron`) that smoothly rotates 180° when expanded/collapsed.
 - **Header Action Visibility**: Action buttons (`+ Add`, `Check`, status pills) remain pinned and visible in the header even when the section body is collapsed.
 - **Default State Rules**:
-  - **Transfers / Multi-entity managers**: Default to **expanded** so users can immediately view tables and interact with content.
+  - **Multi-entity managers**: Default to **expanded** so users can immediately view tables and interact with content.
   - **API Credentials**: Default to **collapsed** on initial load if the section contains valid, verified credentials. Sections with invalid or missing credentials remain **expanded** for user input.
 
 ---

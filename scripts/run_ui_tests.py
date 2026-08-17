@@ -236,20 +236,6 @@ class UITester:
         )
 
         # Transfers Grid.js
-        loc_trans_payload = [
-            {
-                "from_type": "rail",
-                "from_id": "9100KNGX",
-                "from_name": "London King's Cross",
-                "to_type": "bus",
-                "to_id": "490000077E",
-                "to_name": "King's Cross Stop E",
-                "transfer_time_minutes": 3,
-                "bidirectional": True,
-                "step_free": True,
-                "notes": "Direct concourse connection",
-            }
-        ]
         plat_trans_payload = [
             {
                 "location_type": "rail",
@@ -266,20 +252,17 @@ class UITester:
         r_tr_post = self.client.post(
             "/config/transfers",
             data={
-                "location_transfers_json": json.dumps(loc_trans_payload),
                 "platform_transfers_json": json.dumps(plat_trans_payload),
             },
             follow_redirects=True,
         )
         soup_tr = BeautifulSoup(r_tr_post.get_data(as_text=True), "html.parser")
-        loc_tr_script = soup_tr.find("script", id="initial-location-transfers-data")
         plat_tr_script = soup_tr.find("script", id="initial-platform-transfers-data")
-        loc_tr = json.loads(loc_tr_script.string) if loc_tr_script else []
         plat_tr = json.loads(plat_tr_script.string) if plat_tr_script else []
         self.record(
             "Transfers Grid.js Data Persistence",
-            len(loc_tr) > 0 and len(plat_tr) > 0,
-            f"Verified {len(loc_tr)} location transfers and {len(plat_tr)} platform transfers",
+            len(plat_tr) > 0,
+            f"Verified {len(plat_tr)} platform transfers in payload",
         )
 
         # Journeys Grid.js

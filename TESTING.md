@@ -40,7 +40,7 @@ The sample dataset includes:
 * **Bus Stops & Routes**: TfL bus stops (`490000077E`, `490000077W`, `490000077C`) and routes (73, 30, 205).
 * **Locations**: Home Assistant zones (`zone.home`, `zone.work`, `zone.gym`) and custom places (`custom:central_library`, `custom:community_centre`, `custom:parents_house`).
 * **Timetables**: Configured weekday and weekend transit schedules.
-* **Transfers**: Inter-station walking links and within-station platform transfer times.
+* **Transfers**: Within-station platform and stand transfer times.
 * **Journeys**: Configured multi-leg travel routes with target arrival times.
 
 ---
@@ -52,7 +52,7 @@ For interactive browser testing sessions with Antigravity, refer to the modular 
 1. [**01_credentials.md**](docs/testing/01_credentials.md): API credentials configuration, password masking, and live asynchronous validator feedback.
 2. [**02_locations.md**](docs/testing/02_locations.md): Custom places, geographic coordinate validation, Home Assistant zone read-only protection, and place search autocomplete.
 3. [**03_timetables.md**](docs/testing/03_timetables.md): Transit timetable creation, operating day-of-week selection, and date validity constraints.
-4. [**04_transfers.md**](docs/testing/04_transfers.md): Station-to-station walking connections, platform transfer durations, and step-free accessibility indicators.
+4. [**04_transfers.md**](docs/testing/04_transfers.md): Intra-station platform and stand transfer durations, and step-free accessibility indicators.
 5. [**05_journeys.md**](docs/testing/05_journeys.md): Multi-leg journey definitions, origin/destination pickers, and trip time window configuration.
 6. [**06_ingress_and_theme.md**](docs/testing/06_ingress_and_theme.md): Home Assistant Ingress `X-Ingress-Path` prefixing, responsive mobile layout, and dark/light theme ergonomics.
 
