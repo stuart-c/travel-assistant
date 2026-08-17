@@ -8,7 +8,6 @@ from flask.testing import FlaskClient
 from app.models import (
     Journey,
     Location,
-    LocationTransfer,
     PlatformTransfer,
     Timetable,
     Walking,
@@ -46,17 +45,6 @@ def _seed_sample_data() -> None:
     tt.set_content({"stops": ["9100KNGX"], "trips": [{"time": "08:00"}]})
     tt.save()
 
-    LocationTransfer.create(
-        from_type="rail",
-        from_id="9100KNGX",
-        from_name="London King's Cross",
-        to_type="bus",
-        to_id="490000077E",
-        to_name="King's Cross Stop E",
-        transfer_time_minutes=3,
-        bidirectional=True,
-        step_free=True,
-    )
     PlatformTransfer.create(
         location_type="rail",
         location_id="9100KNGX",
@@ -250,24 +238,9 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
     get_resp = client.get("/config/transfers")
     assert get_resp.status_code == 200
     soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    loc_script = soup.find("script", id="initial-location-transfers-data")
     plat_script = soup.find("script", id="initial-platform-transfers-data")
-    assert loc_script is not None and plat_script is not None
+    assert plat_script is not None
 
-    loc_payload = [
-        {
-            "from_type": "rail",
-            "from_id": "9100KNGX",
-            "from_name": "London King's Cross",
-            "to_type": "rail",
-            "to_id": "9100STPX",
-            "to_name": "London St Pancras",
-            "transfer_time_minutes": 4,
-            "bidirectional": True,
-            "step_free": True,
-            "notes": "Pedestrian link",
-        }
-    ]
     plat_payload = [
         {
             "location_type": "rail",
@@ -284,17 +257,16 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
     post_resp = client.post(
         "/config/transfers",
         data={
-            "location_transfers_json": json.dumps(loc_payload),
             "platform_transfers_json": json.dumps(plat_payload),
         },
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
     soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_loc = json.loads(
-        soup_post.find("script", id="initial-location-transfers-data").string
+    updated_plat = json.loads(
+        soup_post.find("script", id="initial-platform-transfers-data").string
     )
-    assert any(t.get("from_id") == "9100KNGX" for t in updated_loc)
+    assert any(t.get("location_id") == "9100KNGX" for t in updated_plat)
 
 
 def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
@@ -485,23 +457,21 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     # 4. Add Transfer
     transfer_payload = [
         {
-            "from_type": "rail",
-            "from_id": "9100KNGX",
-            "from_name": "London King's Cross",
-            "to_type": "rail",
-            "to_id": "9100STPX",
-            "to_name": "London St Pancras",
+            "location_type": "rail",
+            "location_id": "9100KNGX",
+            "location_name": "London King's Cross",
+            "from_platform": "1",
+            "to_platform": "8",
             "transfer_time_minutes": 3,
             "bidirectional": True,
             "step_free": True,
-            "notes": "Walkway",
+            "notes": "Footbridge",
         }
     ]
     resp = client.post(
         "/config/transfers",
         data={
-            "location_transfers_json": json.dumps(transfer_payload),
-            "platform_transfers_json": "[]",
+            "platform_transfers_json": json.dumps(transfer_payload),
         },
         follow_redirects=True,
     )
@@ -585,10 +555,10 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert tr_get.status_code == 200
     tr_data = json.loads(
         BeautifulSoup(tr_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-location-transfers-data")
+        .find("script", id="initial-platform-transfers-data")
         .string
     )
-    assert any(t["notes"] == "Walkway" for t in tr_data)
+    assert any(t["notes"] == "Footbridge" for t in tr_data)
 
     # E. Verify Journeys
     j_get = client.get("/config/journeys")

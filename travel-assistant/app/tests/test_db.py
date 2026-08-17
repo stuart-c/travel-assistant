@@ -16,7 +16,6 @@ from app.db import (
 from app.models import (
     BusRoute,
     Location,
-    LocationTransfer,
     PlatformTransfer,
     Setting,
     Stop,
@@ -416,21 +415,8 @@ def test_timetable_model(app: Flask) -> None:
 
 
 def test_transfer_models(app: Flask) -> None:
-    """Test LocationTransfer and PlatformTransfer models and lookup."""
+    """Test PlatformTransfer model and lookup."""
     with app.app_context():
-        loc_t = LocationTransfer.create(
-            from_type="rail",
-            from_id="OXF",
-            from_name="Oxford Rail Station",
-            to_type="bus",
-            to_id="340000001",
-            to_name="Frideswide Square",
-            transfer_time_minutes=3,
-            bidirectional=True,
-            step_free=True,
-            notes="Walk via forecourt",
-        )
-
         plat_t = PlatformTransfer.create(
             location_type="rail",
             location_id="OXF",
@@ -442,20 +428,6 @@ def test_transfer_models(app: Flask) -> None:
             step_free=True,
             notes="Footbridge with lift",
         )
-
-        # Direct search
-        loc_search = LocationTransfer.search(query="Frideswide", step_free=True)
-        assert len(loc_search) == 1
-        assert loc_search[0].transfer_time_minutes == 3
-
-        # LocationTransfer find_transfer direct and reverse
-        t1 = LocationTransfer.find_transfer("rail", "OXF", "bus", "340000001")
-        assert t1 is not None
-        assert t1.id == loc_t.id
-
-        t2 = LocationTransfer.find_transfer("bus", "340000001", "rail", "OXF")
-        assert t2 is not None
-        assert t2.id == loc_t.id
 
         # PlatformTransfer find_transfer
         pt1 = PlatformTransfer.find_transfer("OXF", "1", "2")

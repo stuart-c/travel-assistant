@@ -6,7 +6,7 @@
 {% block config_title %}Transfers{% endblock %}
 
 {% block subtitle %}
-<p class="text-base text-slate-600 dark:text-slate-400">Configure interchange walking times between stations/stops and intra-station platform connections.</p>
+<p class="text-base text-slate-600 dark:text-slate-400">Configure intra-station platform and stand interchange connections.</p>
 {% endblock %}
 
 {% block config_content %}
@@ -14,66 +14,14 @@
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
 <link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css?v={{ cache_bust }}">
 
-<div class="space-y-8">
-  <!-- Section 1: Inter-Location Transfers -->
-  <section class="collapsible-section rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="section-loc-transfers">
-    <div class="section-toggle flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none" data-target="section-loc-transfers">
-      <div class="flex items-center gap-3 flex-1">
-        <button type="button" class="collapse-toggle-btn text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 cursor-pointer" data-target="section-loc-transfers" aria-label="Toggle Inter-Location Transfers section">
-          <span class="collapsible-chevron collapse-icon material-symbols-outlined text-2xl leading-none">keyboard_arrow_down</span>
-        </button>
+<div class="space-y-6">
+  <!-- Platform & Stand Transfers Section -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="section-plat-transfers">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-2xl">transfer_within_a_station</span>
         <div>
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-xl">directions_walk</span>
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Inter-Location Transfers</h2>
-          </div>
-          <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-            Walking connections between rail stations, bus stops, and coach terminals.
-          </p>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2 shrink-0">
-        <button 
-          type="button" 
-          id="open-add-location-modal-btn" 
-          class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-colors cursor-pointer"
-          title="Add Location Transfer"
-          aria-label="Add Location Transfer"
-        >
-          <span class="material-symbols-outlined text-xl">add</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Grid.js Container Mount Point -->
-    <div class="collapsible-body mt-6">
-      <div id="location-transfers-grid-wrapper"></div>
-      
-      <!-- Empty state container when 0 items -->
-      {{ macros.render_empty_state(
-        "location-grid-empty-state",
-        "directions_walk",
-        "No inter-location transfers configured",
-        "Add walking links between train stations and nearby bus stops or coach terminals.",
-        "empty-add-location-btn",
-        "+ Add First Location Transfer"
-      ) }}
-    </div>
-  </section>
-
-  <!-- Section 2: Platform & Stand Transfers -->
-  <section class="collapsible-section rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="section-plat-transfers">
-    <div class="section-toggle flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none" data-target="section-plat-transfers">
-      <div class="flex items-center gap-3 flex-1">
-        <button type="button" class="collapse-toggle-btn text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 cursor-pointer" data-target="section-plat-transfers" aria-label="Toggle Platform & Stand Transfers section">
-          <span class="collapsible-chevron collapse-icon material-symbols-outlined text-2xl leading-none">keyboard_arrow_down</span>
-        </button>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-xl">transfer_within_a_station</span>
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform &amp; Stand Transfers</h2>
-          </div>
+          <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform &amp; Stand Transfers</h2>
           <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
             Intra-station connections between platforms at rail stations or stands at bus terminals.
           </p>
@@ -94,7 +42,7 @@
     </div>
 
     <!-- Grid.js Container Mount Point -->
-    <div class="collapsible-body mt-6">
+    <div class="mt-6">
       <div id="platform-transfers-grid-wrapper"></div>
       
       <!-- Empty state container when 0 items -->
@@ -111,168 +59,13 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payloads -->
+<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
 <form method="POST" action="{{ ingress_path }}/config/transfers" data-search-url="{{ ingress_path }}/config/search/places" class="config-main-form hidden" id="transfers-form">
-  <input type="hidden" name="location_transfers_json" id="location_transfers_json" value="">
   <input type="hidden" name="platform_transfers_json" id="platform_transfers_json" value="">
-  <script id="initial-location-transfers-data" type="application/json">{{ location_transfers | tojson }}</script>
   <script id="initial-platform-transfers-data" type="application/json">{{ platform_transfers | tojson }}</script>
 </form>
 
-<!-- 1. Add / Edit Inter-Location Transfer Modal -->
-{% call macros.render_modal(
-  "location-transfer-modal",
-  "location-modal-title",
-  "Add Inter-Location Transfer",
-  "location-modal-icon",
-  "directions_walk",
-  "close-location-modal-btn",
-  "cancel-location-modal-btn",
-  "confirm-location-transfer-btn",
-  "Save Transfer",
-  icon_color="text-sky-600 dark:text-sky-400",
-  confirm_btn_color="bg-sky-600 hover:bg-sky-500 text-white"
-) %}
-  <input type="hidden" id="edit-location-index" value="-1">
-
-  <div class="space-y-4">
-    <!-- Origin Location Picker -->
-    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-3">
-      <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-        Origin Location (From) *
-      </label>
-      <input type="hidden" id="from_loc_type" value="">
-
-      <div class="relative">
-        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-          <span class="material-symbols-outlined text-lg">search</span>
-        </div>
-        <input 
-          type="text" 
-          id="from-loc-search" 
-          class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-          placeholder="Search station, stop, or location..."
-          autocomplete="off"
-        >
-        <div id="from-loc-suggestions" class="hidden absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-sm"></div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-        <div>
-          <label for="from_loc_name" class="block font-semibold text-slate-600 dark:text-slate-400 mb-1">Origin Name</label>
-          <input 
-            type="text" 
-            id="from_loc_name" 
-            class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. Oxford Rail Station"
-          >
-        </div>
-        <div>
-          <label for="from_loc_id" class="block font-semibold text-slate-600 dark:text-slate-400 mb-1">Origin Code / Identifier</label>
-          <input 
-            type="text" 
-            id="from_loc_id" 
-            class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-mono text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. naptan:OXF"
-          >
-        </div>
-      </div>
-    </div>
-
-    <!-- Destination Location Picker -->
-    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-3">
-      <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-        Destination Location (To) *
-      </label>
-      <input type="hidden" id="to_loc_type" value="">
-
-      <div class="relative">
-        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-          <span class="material-symbols-outlined text-lg">search</span>
-        </div>
-        <input 
-          type="text" 
-          id="to-loc-search" 
-          class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-          placeholder="Search destination station or stop..."
-          autocomplete="off"
-        >
-        <div id="to-loc-suggestions" class="hidden absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-sm"></div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-        <div>
-          <label for="to_loc_name" class="block font-semibold text-slate-600 dark:text-slate-400 mb-1">Destination Name</label>
-          <input 
-            type="text" 
-            id="to_loc_name" 
-            class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. Frideswide Square (Stop R1)"
-          >
-        </div>
-        <div>
-          <label for="to_loc_id" class="block font-semibold text-slate-600 dark:text-slate-400 mb-1">Destination Code / Identifier</label>
-          <input 
-            type="text" 
-            id="to_loc_id" 
-            class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-mono text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            placeholder="e.g. atco:340000001"
-          >
-        </div>
-      </div>
-    </div>
-
-    <!-- Transfer Time & Options -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-      <div>
-        <label for="location_transfer_time" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-          Duration (Mins) *
-        </label>
-        <input 
-          type="number" 
-          id="location_transfer_time" 
-          min="1" 
-          max="120" 
-          value="5" 
-          class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-        >
-      </div>
-
-      <div class="flex items-center pt-5">
-        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
-          <input type="checkbox" id="location_bidirectional" checked class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4">
-          <span>Bidirectional (Both Ways)</span>
-        </label>
-      </div>
-
-      <div class="flex items-center pt-5">
-        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
-          <input type="checkbox" id="location_step_free" class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4">
-          <span>Step-Free Accessible</span>
-        </label>
-      </div>
-    </div>
-
-    <!-- Walking Notes / Directions -->
-    <div>
-      <label for="location_notes" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-        Walking Directions / Notes (Optional)
-      </label>
-      <input 
-        type="text" 
-        id="location_notes" 
-        class="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
-        placeholder="e.g. Exit main concourse and cross at pelican crossing."
-      >
-    </div>
-
-    <div id="location-modal-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
-      Please specify origin and destination names, codes, and transfer duration.
-    </div>
-  </div>
-{% endcall %}
-
-<!-- 2. Add / Edit Platform & Stand Transfer Modal -->
+<!-- Add / Edit Platform & Stand Transfer Modal -->
 {% call macros.render_modal(
   "platform-transfer-modal",
   "platform-modal-title",

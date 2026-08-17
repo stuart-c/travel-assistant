@@ -22,7 +22,6 @@ from app.models import (  # noqa: E402
     BusRoute,
     Journey,
     Location,
-    LocationTransfer,
     PlatformTransfer,
     Setting,
     Stop,
@@ -462,48 +461,8 @@ def seed_database(db_path: str) -> None:
         )
         timetable_darwin_auto.save()
 
-        # 6. Seed Location Transfers & Platform Transfers
-        print("  -> Seeding walking links and station platform transfers...")
-        loc_transfers = [
-            LocationTransfer(
-                from_type="rail",
-                from_id="9100KNGX",
-                from_name="London King's Cross",
-                to_type="rail",
-                to_id="9100STPX",
-                to_name="London St Pancras International",
-                transfer_time_minutes=4,
-                bidirectional=True,
-                step_free=True,
-                notes="Pedestrian concourse connection with full ramp and lift access.",
-            ),
-            LocationTransfer(
-                from_type="rail",
-                from_id="9100KNGX",
-                from_name="London King's Cross",
-                to_type="bus",
-                to_id="490000077E",
-                to_name="King's Cross Station (Stop E)",
-                transfer_time_minutes=3,
-                bidirectional=True,
-                step_free=True,
-                notes="Exit via York Way entrance for direct stop access.",
-            ),
-            LocationTransfer(
-                from_type="rail",
-                from_id="9100EUSTON",
-                from_name="London Euston",
-                to_type="bus",
-                to_id="490000077C",
-                to_name="Euston Station (Stop C)",
-                transfer_time_minutes=2,
-                bidirectional=True,
-                step_free=True,
-                notes="Located directly on the bus forecourt.",
-            ),
-        ]
-        for lt in loc_transfers:
-            lt.save()
+        # 6. Seed Platform Transfers
+        print("  -> Seeding station platform transfers...")
 
         platform_transfers = [
             PlatformTransfer(

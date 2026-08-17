@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Removed
-- Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favor of pure OpenAPI/Swagger client integration.
+- Removed obsolete inter-location transfers feature, `LocationTransfer` model, and `location_transfers` SQLite table in favour of the dedicated Walking feature (`/config/walking`).
+- Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favour of pure OpenAPI/Swagger client integration.
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
+
+### Changed
+- Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
 
 ### Added
 - On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.

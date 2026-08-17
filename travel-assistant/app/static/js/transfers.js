@@ -1,8 +1,8 @@
 /**
  * Transfers Configuration Controller
  * 
- * Manages client-side staged state for both Inter-Location Transfers and
- * Platform/Stand Transfers using Grid.js and modal dialogs with live search autocomplete.
+ * Manages client-side staged state for Platform & Stand Transfers
+ * using Grid.js and modal dialogues with live search autocomplete.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -11,20 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
-  // Parse initial data payloads
-  const locScript = document.getElementById('initial-location-transfers-data');
+  // Parse initial data payload
   const platScript = document.getElementById('initial-platform-transfers-data');
-
-  let initialLocationData = [];
   let initialPlatformData = [];
-
-  try {
-    if (locScript && locScript.textContent) {
-      initialLocationData = JSON.parse(locScript.textContent);
-    }
-  } catch (e) {
-    console.error('Failed to parse initial location transfers data:', e);
-  }
 
   try {
     if (platScript && platScript.textContent) {
@@ -35,47 +24,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // In-memory staged state
-  let stagedLocationTransfers = JSON.parse(JSON.stringify(initialLocationData || []));
   let stagedPlatformTransfers = JSON.parse(JSON.stringify(initialPlatformData || []));
-
-  const initialLocationSnapshot = JSON.stringify(stagedLocationTransfers);
   const initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
 
-  // Hidden form inputs
-  const locHiddenInput = document.getElementById('location_transfers_json');
+  // Hidden form input
   const platHiddenInput = document.getElementById('platform_transfers_json');
 
   // Containers
-  const locGridWrapper = document.getElementById('location-transfers-grid-wrapper');
-  const locEmptyState = document.getElementById('location-grid-empty-state');
   const platGridWrapper = document.getElementById('platform-transfers-grid-wrapper');
   const platEmptyState = document.getElementById('platform-grid-empty-state');
-
-  // Location Modal Elements
-  const locModal = document.getElementById('location-transfer-modal');
-  const openAddLocBtn = document.getElementById('open-add-location-modal-btn');
-  const emptyAddLocBtn = document.getElementById('empty-add-location-btn');
-  const closeLocModalBtn = document.getElementById('close-location-modal-btn');
-  const cancelLocModalBtn = document.getElementById('cancel-location-modal-btn');
-  const confirmLocBtn = document.getElementById('confirm-location-transfer-btn');
-  const locModalTitle = document.getElementById('location-modal-title');
-  const locModalIcon = document.getElementById('location-modal-icon');
-  const editLocIndexInput = document.getElementById('edit-location-index');
-  const fromLocType = document.getElementById('from_loc_type');
-  const fromLocSearch = document.getElementById('from-loc-search');
-  const fromLocSuggestions = document.getElementById('from-loc-suggestions');
-  const fromLocName = document.getElementById('from_loc_name');
-  const fromLocId = document.getElementById('from_loc_id');
-  const toLocType = document.getElementById('to_loc_type');
-  const toLocSearch = document.getElementById('to-loc-search');
-  const toLocSuggestions = document.getElementById('to-loc-suggestions');
-  const toLocName = document.getElementById('to_loc_name');
-  const toLocId = document.getElementById('to_loc_id');
-  const locTransferTime = document.getElementById('location_transfer_time');
-  const locBidirectional = document.getElementById('location_bidirectional');
-  const locStepFree = document.getElementById('location_step_free');
-  const locNotes = document.getElementById('location_notes');
-  const locError = document.getElementById('location-modal-error');
 
   // Platform Modal Elements
   const platModal = document.getElementById('platform-transfer-modal');
@@ -131,82 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
   };
-
-  // --- Location Transfers Grid Data Formatter ---
-  function formatLocationGridData(items) {
-    return items.map((item, index) => {
-      const fromBadge = getLocationBadge(item.from_type);
-      const toBadge = getLocationBadge(item.to_type);
-
-      const dirHtml = item.bidirectional
-        ? `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300" title="Transfer valid in both directions"><span class="material-symbols-outlined text-sm leading-none text-sky-500">sync_alt</span> ⇄ Both ways</span>`
-        : `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400" title="One-way transfer"><span class="material-symbols-outlined text-sm leading-none">arrow_forward</span> → One way</span>`;
-
-      const stepFreeHtml = item.step_free
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300"><span class="material-symbols-outlined text-xs leading-none">accessible</span> Yes</span>`
-        : `<span class="text-xs text-slate-400 dark:text-slate-500">No</span>`;
-
-      return [
-        gridjs.html(`
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-1.5">
-              ${fromBadge}
-              <span class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.from_name)}</span>
-            </div>
-            <span class="text-xs font-mono text-slate-500 dark:text-slate-400">${escapeHtml(item.from_id)}</span>
-          </div>
-        `),
-        gridjs.html(`
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-1.5">
-              ${toBadge}
-              <span class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(item.to_name)}</span>
-            </div>
-            <span class="text-xs font-mono text-slate-500 dark:text-slate-400">${escapeHtml(item.to_id)}</span>
-          </div>
-        `),
-        gridjs.html(`
-          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 font-bold text-xs">
-            <span class="material-symbols-outlined text-sm leading-none">timer</span>
-            ${escapeHtml(item.transfer_time_minutes)} min${item.transfer_time_minutes > 1 ? 's' : ''}
-          </span>
-        `),
-        gridjs.html(dirHtml),
-        gridjs.html(stepFreeHtml),
-        gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-300 truncate max-w-xs block" title="${escapeHtml(item.notes || '')}">${escapeHtml(item.notes || '—')}</span>`),
-        gridjs.html(
-          window.TransitUI && window.TransitUI.renderActionButtons
-            ? window.TransitUI.renderActionButtons({
-                index,
-                editClass: 'edit-loc-row-btn',
-                deleteClass: 'remove-loc-row-btn',
-                editTitle: 'Edit transfer',
-                deleteTitle: 'Delete transfer',
-              })
-            : `<div class="flex items-center gap-1.5">
-                <button 
-                  type="button" 
-                  class="edit-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-                  data-index="${index}"
-                  title="Edit transfer"
-                  aria-label="Edit transfer"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-                </button>
-                <button 
-                  type="button" 
-                  class="remove-loc-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-                  data-index="${index}"
-                  title="Delete transfer"
-                  aria-label="Delete transfer"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-                </button>
-              </div>`
-        )
-      ];
-    });
-  }
 
   // --- Platform Transfers Grid Data Formatter ---
   function formatPlatformGridData(items) {
@@ -284,37 +165,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const locColumnsConfig = [
-    { name: 'Origin (From)', width: '220px', sort: true },
-    { name: 'Destination (To)', width: '220px', sort: true },
-    { name: 'Duration', width: '110px', sort: true },
-    { name: 'Direction', width: '130px', sort: true },
-    { name: 'Step-Free', width: '100px', sort: true },
-    { name: 'Notes', width: 'auto', sort: true },
-    { name: 'Actions', width: '90px', sort: false }
-  ];
-
-  // --- Initialise Location Grid.js ---
-  const locationGrid = new gridjs.Grid({
-    columns: locColumnsConfig,
-    data: formatLocationGridData(stagedLocationTransfers),
-    search: { placeholder: 'Search inter-location transfers...' },
-    pagination: { limit: 10, summary: true },
-    sort: true,
-    language: {
-      search: { placeholder: 'Search inter-location transfers...' },
-      pagination: {
-        previous: 'Previous',
-        next: 'Next',
-        showing: 'Showing',
-        of: 'of',
-        to: 'to',
-        results: 'transfers'
-      },
-      noRecordsFound: 'No matching transfers found'
-    }
-  }).render(locGridWrapper);
-
   const platColumnsConfig = [
     { name: 'Station / Interchange', width: '200px', sort: true },
     { name: 'From Platform', width: '130px', sort: true },
@@ -347,21 +197,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Sync State with Dirty Manager & Hidden Inputs ---
   function syncState() {
-    const currentLocJson = JSON.stringify(stagedLocationTransfers);
     const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
 
-    if (locHiddenInput) locHiddenInput.value = currentLocJson;
     if (platHiddenInput) platHiddenInput.value = currentPlatJson;
 
-    // Toggle Empty States vs Grids
-    if (stagedLocationTransfers.length === 0) {
-      locGridWrapper.classList.add('hidden');
-      locEmptyState.classList.remove('hidden');
-    } else {
-      locGridWrapper.classList.remove('hidden');
-      locEmptyState.classList.add('hidden');
-    }
-
+    // Toggle Empty State vs Grid
     if (stagedPlatformTransfers.length === 0) {
       platGridWrapper.classList.add('hidden');
       platEmptyState.classList.remove('hidden');
@@ -370,15 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
       platEmptyState.classList.add('hidden');
     }
 
-    // Force Re-render Grids & check pagination display
-    if (locGridWrapper.querySelector('.gridjs-container')) {
-      if (stagedLocationTransfers.length <= 10) {
-        locGridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
-      } else {
-        locGridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
-      }
-    }
-
+    // Force Re-render Grid & check pagination display
     if (platGridWrapper.querySelector('.gridjs-container')) {
       if (stagedPlatformTransfers.length <= 10) {
         platGridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
@@ -387,11 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    locationGrid.updateConfig({
-      columns: locColumnsConfig,
-      data: formatLocationGridData(stagedLocationTransfers)
-    }).forceRender();
-
     platformGrid.updateConfig({
       columns: platColumnsConfig,
       data: formatPlatformGridData(stagedPlatformTransfers)
@@ -399,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check Dirty Status
     if (window.ConfigDirtyManager) {
-      const isDirty = (currentLocJson !== initialLocationSnapshot) || (currentPlatJson !== initialPlatformSnapshot);
+      const isDirty = (currentPlatJson !== initialPlatformSnapshot);
       if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
@@ -411,153 +238,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial Sync
   syncState();
 
-  // Initialise collapsible sections
-  if (window.TransitUI && window.TransitUI.CollapsibleManager) {
-    window.TransitUI.CollapsibleManager.initialise();
-  }
-
   // Register Discard Handler with ConfigDirtyManager
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedLocationTransfers = JSON.parse(initialLocationSnapshot);
       stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
       syncState();
     });
   }
 
-  // --- Location Autocomplete Helpers ---
-  function setupAutocomplete(searchInput, suggestionsContainer, typeInput, nameInput, idInput, defaultFilter = 'all') {
-    const autocomplete = window.PlaceAutocomplete
-      ? window.PlaceAutocomplete.create({
-          inputEl: searchInput,
-          suggestionsEl: suggestionsContainer,
-          defaultFilter,
-          searchBaseUrl,
-          emptyText: 'No matching locations found. Enter details manually below.',
-          onSelect: (item) => {
-            if (nameInput) nameInput.value = item.name;
-            if (idInput) idInput.value = item.id;
-            if (typeInput && item.type) {
-              typeInput.value = item.type;
-            }
-            if (autocomplete) autocomplete.hide();
-          },
-        })
-      : null;
-
-    return {
-      resetFilter: (newDefault = defaultFilter) => {
-        if (autocomplete) autocomplete.resetFilter(newDefault);
-      },
-    };
-  }
-
-  // Setup Autocompletes
-  const fromAutocomplete = setupAutocomplete(fromLocSearch, fromLocSuggestions, fromLocType, fromLocName, fromLocId, 'all');
-  const toAutocomplete = setupAutocomplete(toLocSearch, toLocSuggestions, toLocType, toLocName, toLocId, 'all');
-  const platAutocomplete = setupAutocomplete(platStationSearch, platStationSuggestions, platStationType, platStationName, platStationId, 'rail');
-
-  // --- Location Modal Handlers ---
-  function showLocationModal(editIndex = -1) {
-    if (locError) locError.classList.add('hidden');
-    if (editLocIndexInput) editLocIndexInput.value = editIndex;
-    if (fromLocSuggestions) fromLocSuggestions.classList.add('hidden');
-    if (toLocSuggestions) toLocSuggestions.classList.add('hidden');
-
-    if (editIndex >= 0 && editIndex < stagedLocationTransfers.length) {
-      const item = stagedLocationTransfers[editIndex];
-      if (locModalTitle) locModalTitle.textContent = 'Edit Inter-Location Transfer';
-      if (locModalIcon) locModalIcon.textContent = 'edit';
-      if (fromLocType) fromLocType.value = item.from_type || '';
-      if (fromLocSearch) fromLocSearch.value = item.from_name || '';
-      if (fromLocName) fromLocName.value = item.from_name || '';
-      if (fromLocId) fromLocId.value = item.from_id || '';
-      if (toLocType) toLocType.value = item.to_type || '';
-      if (toLocSearch) toLocSearch.value = item.to_name || '';
-      if (toLocName) toLocName.value = item.to_name || '';
-      if (toLocId) toLocId.value = item.to_id || '';
-      if (locTransferTime) locTransferTime.value = item.transfer_time_minutes || 5;
-      if (locBidirectional) locBidirectional.checked = Boolean(item.bidirectional);
-      if (locStepFree) locStepFree.checked = Boolean(item.step_free);
-      if (locNotes) locNotes.value = item.notes || '';
-    } else {
-      if (locModalTitle) locModalTitle.textContent = 'Add Inter-Location Transfer';
-      if (locModalIcon) locModalIcon.textContent = 'directions_walk';
-      if (fromLocType) fromLocType.value = '';
-      if (fromLocSearch) fromLocSearch.value = '';
-      if (fromLocName) fromLocName.value = '';
-      if (fromLocId) fromLocId.value = '';
-      if (toLocType) toLocType.value = '';
-      if (toLocSearch) toLocSearch.value = '';
-      if (toLocName) toLocName.value = '';
-      if (toLocId) toLocId.value = '';
-      if (locTransferTime) locTransferTime.value = '5';
-      if (locBidirectional) locBidirectional.checked = true;
-      if (locStepFree) locStepFree.checked = false;
-      if (locNotes) locNotes.value = '';
-
-      fromAutocomplete.resetFilter('all');
-      toAutocomplete.resetFilter('all');
-    }
-
-    if (locModal && typeof locModal.showModal === 'function') {
-      locModal.showModal();
-    }
-  }
-
-  function closeLocationModal() {
-    if (locModal && typeof locModal.close === 'function') {
-      locModal.close();
-    }
-  }
-
-  if (openAddLocBtn) openAddLocBtn.addEventListener('click', () => showLocationModal(-1));
-  if (emptyAddLocBtn) emptyAddLocBtn.addEventListener('click', () => showLocationModal(-1));
-  if (closeLocModalBtn) closeLocModalBtn.addEventListener('click', closeLocationModal);
-  if (cancelLocModalBtn) cancelLocModalBtn.addEventListener('click', closeLocationModal);
-
-  if (confirmLocBtn) {
-    confirmLocBtn.addEventListener('click', () => {
-      const from_type = fromLocType ? fromLocType.value : '';
-      const from_name = fromLocName.value.trim();
-      const from_id = fromLocId.value.trim();
-      const to_type = toLocType ? toLocType.value : '';
-      const to_name = toLocName.value.trim();
-      const to_id = toLocId.value.trim();
-      const transfer_time_minutes = parseInt(locTransferTime.value, 10) || 5;
-      const bidirectional = locBidirectional.checked;
-      const step_free = locStepFree.checked;
-      const notes = locNotes.value.trim();
-
-      if (!from_name || !from_id || !to_name || !to_id) {
-        if (locError) locError.classList.remove('hidden');
-        return;
-      }
-
-      const itemPayload = {
-        from_type,
-        from_name,
-        from_id,
-        to_type,
-        to_name,
-        to_id,
-        transfer_time_minutes: Math.max(1, transfer_time_minutes),
-        bidirectional,
-        step_free,
-        notes
-      };
-
-      const editIdx = parseInt(editLocIndexInput.value, 10);
-      if (editIdx >= 0 && editIdx < stagedLocationTransfers.length) {
-        stagedLocationTransfers[editIdx] = itemPayload;
-      } else {
-        stagedLocationTransfers.push(itemPayload);
-      }
-
-      syncState();
-      closeLocationModal();
-    });
-  }
+  // --- Platform Autocomplete Setup ---
+  const platAutocomplete = window.PlaceAutocomplete
+    ? window.PlaceAutocomplete.create({
+        inputEl: platStationSearch,
+        suggestionsEl: platStationSuggestions,
+        defaultFilter: 'rail',
+        searchBaseUrl,
+        emptyText: 'No matching locations found. Enter details manually below.',
+        onSelect: (item) => {
+          if (platStationName) platStationName.value = item.name;
+          if (platStationId) platStationId.value = item.id;
+          if (platStationType && item.type) {
+            platStationType.value = item.type;
+          }
+          if (platAutocomplete) platAutocomplete.hide();
+        },
+      })
+    : null;
 
   // --- Platform Modal Handlers ---
   function showPlatformModal(editIndex = -1) {
@@ -593,7 +299,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (platStepFree) platStepFree.checked = false;
       if (platNotes) platNotes.value = '';
 
-      platAutocomplete.resetFilter('rail');
+      if (platAutocomplete) {
+        platAutocomplete.resetFilter('rail');
+      }
     }
 
     if (platModal && typeof platModal.showModal === 'function') {
@@ -655,24 +363,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Row Action Delegations ---
   document.addEventListener('click', (e) => {
-    // Location Grid Actions
-    const editLocBtn = e.target.closest('.edit-loc-row-btn');
-    if (editLocBtn) {
-      const idx = parseInt(editLocBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx)) showLocationModal(idx);
-      return;
-    }
-
-    const removeLocBtn = e.target.closest('.remove-loc-row-btn');
-    if (removeLocBtn) {
-      const idx = parseInt(removeLocBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocationTransfers.length) {
-        stagedLocationTransfers.splice(idx, 1);
-        syncState();
-      }
-      return;
-    }
-
     // Platform Grid Actions
     const editPlatBtn = e.target.closest('.edit-plat-row-btn');
     if (editPlatBtn) {
@@ -692,3 +382,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+

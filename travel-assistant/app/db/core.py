@@ -94,13 +94,14 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.location import Location
     from app.models.setting import Setting
     from app.models.timetable import Timetable
-    from app.models.transfer import LocationTransfer, PlatformTransfer
+    from app.models.transfer import PlatformTransfer
     from app.models.transit import BusRoute, Stop, SyncMetadata
     from app.models.walking import Walking
 
     try:
         database.execute_sql('DROP TABLE IF EXISTS "bus_stops"')
         database.execute_sql('DROP TABLE IF EXISTS "stations"')
+        database.execute_sql('DROP TABLE IF EXISTS "location_transfers"')
     except Exception:
         pass
 
@@ -110,7 +111,6 @@ def run_migrations(database: SqliteDatabase) -> None:
         SyncMetadata,
         BusRoute,
         Stop,
-        LocationTransfer,
         PlatformTransfer,
         Location,
         Journey,
@@ -314,7 +314,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.location import Location
     from app.models.setting import Setting
     from app.models.timetable import Timetable
-    from app.models.transfer import LocationTransfer, PlatformTransfer
+    from app.models.transfer import PlatformTransfer
     from app.models.transit import BusRoute, Stop, SyncMetadata
     from app.models.walking import Walking
 
@@ -380,7 +380,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "sync_metadata": SyncMetadata,
             "bus_routes": BusRoute,
             "stops": Stop,
-            "location_transfers": LocationTransfer,
             "platform_transfers": PlatformTransfer,
             "locations": Location,
             "journeys": Journey,
