@@ -48,7 +48,7 @@ Home Assistant Add-on providing travel and transport intelligence powered by Pyt
    ```
 
 For detailed testing guidelines, test runbooks, and Antigravity `/browser` instructions, see [TESTING.md](TESTING.md).
-For the system architecture, transit graph topology, and route planning engine specifications, see [Route Planning Engine Architecture](docs/architecture/01_route_planning_engine.md).
+For the system architecture, transit graph topology, and route planning engine specifications, see [Route Planning Engine Architecture](docs/architecture/01_route_planning_engine.md) and the [Phased Implementation Roadmap](docs/architecture/02_route_planning_implementation_plan.md).
 
 ## Agent and Contribution Guidelines
 
