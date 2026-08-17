@@ -1,14 +1,12 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from app.models import Journey
+from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
 from app.sync.walking_sync import trigger_journey_walking_sync_async
 from app.views.config import config_bp
 from app.views.config.common import save_changeset_config
 from flask import current_app, render_template, request
-
-VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun", "bank_holiday")
 
 
 def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
@@ -61,28 +59,11 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         for tw in raw_time_settings:
             if not isinstance(tw, dict):
                 continue
-            days = tw.get("days", [])
-            if not isinstance(days, list):
-                days = []
-            valid_days = [
-                str(d).lower().strip()
-                for d in days
-                if str(d).lower().strip() in VALID_DAYS
-            ]
-            mode = str(tw.get("mode", "depart")).lower().strip()
-            if mode not in ("depart", "arrive"):
-                mode = "depart"
-            start_time = str(tw.get("start_time", "")).strip()
-            end_time = str(tw.get("end_time", "")).strip()
-
-            cleaned_time_settings.append(
-                {
-                    "days": valid_days,
-                    "mode": mode,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                }
-            )
+            try:
+                setting_obj = JourneyTimeSetting.model_validate(tw)
+                cleaned_time_settings.append(setting_obj.model_dump())
+            except Exception:
+                continue
 
     result: Dict[str, Any] = {
         "name": name,
