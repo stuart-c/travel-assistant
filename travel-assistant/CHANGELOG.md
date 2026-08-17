@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed Google Maps Directions API walking duration extraction to round durations in seconds up into whole minutes (`math.ceil`) rather than nearest-integer rounding, ensuring symmetrical forward and reverse walking durations produce a single bi-directional route entry.
+- Fixed concurrent walking route synchronisations creating duplicate records by introducing thread synchronization (`_walking_sync_lock`) in `walking_sync.py`.
+- Optimised transit candidate stop discovery in `find_candidate_stops_for_location` with bounding-box coordinate pre-filtering for large NaPTAN stop datasets.
 - Fixed Darwin live departure board (`LDBWS`) credential validation failing with HTTP 403 on Rail Data Marketplace by setting custom `User-Agent` headers and formatting operational path URLs (`/api/20220120/...`).
 - Fixed Timetable Grid Editor stop search autocomplete popup being overlapped by sticky table headers and displaying scrollbars by adjusting z-index stacking contexts, adding no-scrollbar utilities, and ensuring solid background opacities.
 - Fixed unmocked transit synchronisation calls (`sync_stops` and `sync_bus_routes`) in `test_sync_table_and_sync_all_with_ha` and background worker daemon checks in `test_sync.py`, eliminating live external NaPTAN CSV downloads and thread timeout delays to reduce unit test suite execution time from ~2 minutes to ~12 seconds.
