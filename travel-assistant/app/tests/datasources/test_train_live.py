@@ -1,5 +1,4 @@
-"""Unit tests for TrainLiveClient."""
-
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 import requests
@@ -9,6 +8,7 @@ from app.datasources.train_live import (
     DEFAULT_DARWIN_OPENAPI_ENDPOINT,
     DEFAULT_DARWIN_SOAP_ENDPOINT,
     TrainLiveClient,
+    sync_swagger_schema,
 )
 from app.datasources.exceptions import (
     DataSourceAuthError,
@@ -321,3 +321,28 @@ def test_train_live_operations_execution(mock_get_swagger: MagicMock) -> None:
     # get_service_details
     client.get_service_details(service_id="service-123")
     mock_op.assert_called_with(serviceid="service-123")
+
+
+@patch("app.datasources.train_live.requests.get")
+def test_sync_swagger_schema_success(mock_get: MagicMock, tmp_path: Path) -> None:
+    """Test sync_swagger_schema downloads and persists schema locally."""
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"swagger": "2.0", "paths": {}},
+    )
+    dest = str(tmp_path / "schemas" / "custom_swagger.json")
+    result = sync_swagger_schema(schema_path=dest)
+    assert result is True
+
+
+@patch("app.datasources.train_live.requests.get")
+def test_sync_swagger_schema_failure(mock_get: MagicMock, tmp_path: Path) -> None:
+    """Test sync_swagger_schema handles HTTP failure and exceptions gracefully."""
+    # HTTP error
+    mock_get.return_value = MagicMock(status_code=500)
+    dest = str(tmp_path / "fail.json")
+    assert sync_swagger_schema(schema_path=dest) is False
+
+    # Exception
+    mock_get.side_effect = requests.exceptions.ConnectionError("Refused")
+    assert sync_swagger_schema(schema_path=dest) is False

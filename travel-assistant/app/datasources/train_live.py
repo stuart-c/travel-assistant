@@ -26,8 +26,38 @@ DEFAULT_DARWIN_SOAP_ENDPOINT = (
 )
 DEFAULT_DARWIN_ENDPOINT = DEFAULT_DARWIN_OPENAPI_ENDPOINT
 DEFAULT_USER_AGENT = "TravelAssistant/1.0 (HomeAssistant; Linux)"
+DEFAULT_SWAGGER_SCHEMA_URL = (
+    "https://realtime.nationalrail.co.uk/LDBWS/static/ldbws.json"
+)
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schemas", "ldbws_swagger.json")
+
+
+def sync_swagger_schema(
+    schema_path: str = SCHEMA_PATH,
+    url: str = DEFAULT_SWAGGER_SCHEMA_URL,
+    timeout: float = 5.0,
+) -> bool:
+    """Download the latest Swagger schema from the live URL and cache locally.
+
+    Returns True if a new schema was successfully downloaded and saved, False otherwise.
+    """
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"},
+            timeout=timeout,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, dict) and "paths" in data and "swagger" in data:
+                os.makedirs(os.path.dirname(schema_path), exist_ok=True)
+                with open(schema_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                return True
+    except Exception:
+        pass
+    return False
 
 
 class TrainLiveClient(BaseDataSource):
@@ -102,6 +132,9 @@ class TrainLiveClient(BaseDataSource):
                 "SOAP endpoint cannot be used with SwaggerClient.",
                 provider=self.provider_name,
             )
+
+        if not os.path.exists(SCHEMA_PATH):
+            sync_swagger_schema(SCHEMA_PATH)
 
         if not os.path.exists(SCHEMA_PATH):
             raise DataSourceConfigError(
