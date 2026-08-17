@@ -33,24 +33,22 @@ def test_train_live_from_settings(app: Flask) -> None:
 
 def test_train_live_parse_endpoint() -> None:
     """Test endpoint URL parsing for OpenAPI and SOAP endpoints."""
-    client = TrainLiveClient(
-        endpoint="https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS"
-    )
+    client = TrainLiveClient(endpoint="https://example.com/custom-live-board/LDBWS")
     scheme, host, base_path, is_soap = client._parse_endpoint(client.endpoint)
     assert scheme == "https"
-    assert host == "api1.raildata.org.uk"
-    assert base_path == "/1010-live-departure-board-dep1_2/LDBWS"
+    assert host == "example.com"
+    assert base_path == "/custom-live-board/LDBWS"
     assert not is_soap
 
     # Test stripping sub-operation path if pasted
     client_sub = TrainLiveClient(
         endpoint=(
-            "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS"
+            "https://example.com/custom-live-board/LDBWS"
             "/api/20220120/GetDepartureBoard"
         )
     )
     scheme, host, base_path, is_soap = client_sub._parse_endpoint(client_sub.endpoint)
-    assert base_path == "/1010-live-departure-board-dep1_2/LDBWS"
+    assert base_path == "/custom-live-board/LDBWS"
     assert not is_soap
 
     # Test SOAP endpoint
@@ -59,15 +57,26 @@ def test_train_live_parse_endpoint() -> None:
     assert is_soap
 
 
-def test_train_live_swagger_client_initialisation() -> None:
+@patch("app.datasources.train_live.os.path.exists", return_value=True)
+@patch("app.datasources.train_live.open")
+@patch("app.datasources.train_live.SwaggerClient.from_spec")
+def test_train_live_swagger_client_initialisation(
+    mock_from_spec: MagicMock, mock_open_file: MagicMock, mock_exists: MagicMock
+) -> None:
     """Test SwaggerClient initialisation with host and basePath overrides."""
+    mock_swagger_inst = MagicMock()
+    mock_from_spec.return_value = mock_swagger_inst
+    mock_open_file.return_value.__enter__.return_value.read.return_value = (
+        '{"swagger": "2.0", "paths": {}}'
+    )
+
     client = TrainLiveClient(
         api_key="test-api-key",
-        endpoint="https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS",
+        endpoint="https://example.com/custom-live-board/LDBWS",
     )
     swagger = client.get_swagger_client()
-    assert swagger is not None
-    assert swagger.swagger_spec.origin_url is None or True
+    assert swagger is mock_swagger_inst
+    mock_from_spec.assert_called_once()
     # Cached instance
     assert client.get_swagger_client() is swagger
 

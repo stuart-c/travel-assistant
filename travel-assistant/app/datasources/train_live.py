@@ -18,9 +18,7 @@ from app.datasources.exceptions import (
 )
 from app.models.setting import Setting
 
-DEFAULT_DARWIN_OPENAPI_ENDPOINT = (
-    "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS"
-)
+DEFAULT_DARWIN_OPENAPI_ENDPOINT = "https://realtime.nationalrail.co.uk/LDBWS"
 DEFAULT_DARWIN_SOAP_ENDPOINT = (
     "https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx"
 )

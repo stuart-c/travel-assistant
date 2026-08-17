@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Added
-- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), dynamically applying host and base path overrides from configured endpoints (`api1.raildata.org.uk`).
-- Added bundled `ldbws_swagger.json` specification schema in `app/datasources/schemas/` for fast, offline, and deterministic initialisation.
+- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), dynamically applying host and base path overrides from configured endpoints.
+- Added automated startup schema download and local caching for the live LDBWS Swagger specification.
 - Added typed OpenAPI client methods on `TrainLiveClient` (`get_departure_board`, `get_dep_board_with_details`, `get_arrival_board`, `get_service_details`, `get_fastest_departures`) and structured JSON departure fetching.
 - Added live base URL and token configuration fields in the Train Live Credentials web UI (`/config/credentials`).
 - Automated walking route discovery and background synchronisation (`walking_sync.py`), identifying public transit stops (NaPTAN stops and custom timetable stops) within 500 metres of custom and Home Assistant journey endpoints using the Haversine formula.
