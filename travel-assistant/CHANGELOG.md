@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed unmocked transit synchronisation calls (`sync_stops` and `sync_bus_routes`) in `test_sync_table_and_sync_all_with_ha` and background worker daemon checks in `test_sync.py`, eliminating live external NaPTAN CSV downloads and thread timeout delays to reduce unit test suite execution time from ~2 minutes to ~12 seconds.
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
+### Removed
+- Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favor of pure OpenAPI/Swagger client integration.
+
 ### Added
 - Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), dynamically applying host and base path overrides from configured endpoints.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.

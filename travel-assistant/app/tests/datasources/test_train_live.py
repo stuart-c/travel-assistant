@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 import pytest
 import requests
@@ -6,7 +7,6 @@ from flask import Flask
 
 from app.datasources.train_live import (
     DEFAULT_DARWIN_OPENAPI_ENDPOINT,
-    DEFAULT_DARWIN_SOAP_ENDPOINT,
     TrainLiveClient,
     sync_swagger_schema,
 )
@@ -23,22 +23,21 @@ def test_train_live_from_settings(app: Flask) -> None:
     """Test TrainLiveClient initialisation from Setting model."""
     with app.app_context():
         Setting.set_val("train_live_api_key", "test-live-key")
-        Setting.set_val("train_live_endpoint", "https://custom.darwin/soap")
+        Setting.set_val("train_live_endpoint", "https://example.com/darwin/ldbws")
 
         client = TrainLiveClient.from_settings()
         assert client.api_key == "test-live-key"
-        assert client.endpoint == "https://custom.darwin/soap"
+        assert client.endpoint == "https://example.com/darwin/ldbws"
         assert client.provider_name == "train_live"
 
 
 def test_train_live_parse_endpoint() -> None:
-    """Test endpoint URL parsing for OpenAPI and SOAP endpoints."""
+    """Test endpoint URL parsing for OpenAPI endpoints."""
     client = TrainLiveClient(endpoint="https://example.com/custom-live-board/LDBWS")
-    scheme, host, base_path, is_soap = client._parse_endpoint(client.endpoint)
+    scheme, host, base_path = client._parse_endpoint(client.endpoint)
     assert scheme == "https"
     assert host == "example.com"
     assert base_path == "/custom-live-board/LDBWS"
-    assert not is_soap
 
     # Test stripping sub-operation path if pasted
     client_sub = TrainLiveClient(
@@ -47,14 +46,8 @@ def test_train_live_parse_endpoint() -> None:
             "/api/20220120/GetDepartureBoard"
         )
     )
-    scheme, host, base_path, is_soap = client_sub._parse_endpoint(client_sub.endpoint)
+    scheme, host, base_path = client_sub._parse_endpoint(client_sub.endpoint)
     assert base_path == "/custom-live-board/LDBWS"
-    assert not is_soap
-
-    # Test SOAP endpoint
-    client_soap = TrainLiveClient(endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
-    _, _, _, is_soap = client_soap._parse_endpoint(client_soap.endpoint)
-    assert is_soap
 
 
 @patch("app.datasources.train_live.os.path.exists", return_value=True)
@@ -81,9 +74,13 @@ def test_train_live_swagger_client_initialisation(
     assert client.get_swagger_client() is swagger
 
 
-def test_train_live_swagger_client_soap_raises_config_error() -> None:
-    """Test get_swagger_client raises DataSourceConfigError on SOAP endpoint."""
-    client = TrainLiveClient(endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
+@patch("app.datasources.train_live.os.path.exists", return_value=False)
+@patch("app.datasources.train_live.sync_swagger_schema", return_value=False)
+def test_train_live_swagger_client_missing_schema_raises_config_error(
+    mock_sync: MagicMock, mock_exists: MagicMock
+) -> None:
+    """Test get_swagger_client raises error if schema cannot be found or downloaded."""
+    client = TrainLiveClient(endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
     with pytest.raises(DataSourceConfigError):
         client.get_swagger_client()
 
@@ -133,88 +130,36 @@ def test_train_live_validate_openapi_auth_fail(
 
 
 @patch.object(TrainLiveClient, "get_departure_board")
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_validate_openapi_fallback_to_soap(
-    mock_post: MagicMock, mock_get_board: MagicMock
-) -> None:
-    """Test validate_credentials falls back to SOAP when OpenAPI returns 404."""
-    mock_get_board.side_effect = RuntimeError("Endpoint not found (404)")
-    mock_post.return_value = MagicMock(
-        status_code=200, text="<GetStationBoardResult>OK</GetStationBoardResult>"
-    )
-
+def test_train_live_validate_openapi_errors(mock_get_board: MagicMock) -> None:
+    """Test validate_credentials handles timeout, connection errors, 404, and exceptions."""
     client = TrainLiveClient(
-        api_key="valid-key",
-        endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT,
+        api_key="test-key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT
     )
-    res = client.validate_credentials()
-    assert res["valid"] is True
-    assert "valid and active (SOAP)" in res["message"]
-
-
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_validate_soap_success(mock_post: MagicMock) -> None:
-    """Test SOAP validation success."""
-    mock_post.return_value = MagicMock(
-        status_code=200,
-        text="<GetStationBoardResult>Departure</GetStationBoardResult>",
-    )
-    client = TrainLiveClient(
-        api_key="valid-soap-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT
-    )
-    res = client.validate_credentials()
-    assert res["valid"] is True
-    assert "valid and active (SOAP)" in res["message"]
-
-
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_validate_soap_invalid_token(mock_post: MagicMock) -> None:
-    """Test SOAP validation with Invalid token string in response body."""
-    mock_post.return_value = MagicMock(
-        status_code=200, text="<faultstring>Invalid token value</faultstring>"
-    )
-    client = TrainLiveClient(
-        api_key="bad-soap-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT
-    )
-    res = client.validate_credentials()
-    assert res["valid"] is False
-    assert "authentication failed" in res["message"]
-
-
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_validate_soap_http_errors(mock_post: MagicMock) -> None:
-    """Test SOAP validation with HTTP 403 and unexpected 500 status codes."""
-    mock_post.return_value = MagicMock(status_code=403, text="Forbidden")
-    client = TrainLiveClient(api_key="bad-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
-    res = client.validate_credentials()
-    assert res["valid"] is False
-    assert "HTTP 403" in res["message"]
-
-    mock_post.return_value = MagicMock(status_code=500, text="Server Error")
-    res2 = client.validate_credentials()
-    assert res2["valid"] is False
-    assert "unexpected status code 500" in res2["message"]
-
-
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_validate_soap_exceptions(mock_post: MagicMock) -> None:
-    """Test SOAP validation timeout, request error, and generic exception."""
-    client = TrainLiveClient(api_key="test-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
 
     # Timeout
-    mock_post.side_effect = requests.exceptions.Timeout("Timed out")
+    mock_get_board.side_effect = DataSourceConnectionError(
+        "Request timed out", provider="train_live"
+    )
     res_t = client.validate_credentials()
     assert res_t["valid"] is False
     assert "timed out" in res_t["message"]
 
-    # RequestException
-    mock_post.side_effect = requests.exceptions.ConnectionError("Refused")
-    res_r = client.validate_credentials()
-    assert res_r["valid"] is False
-    assert "Network error" in res_r["message"]
+    # Connection / Network error
+    mock_get_board.side_effect = DataSourceConnectionError(
+        "Network unreachable", provider="train_live"
+    )
+    res_c = client.validate_credentials()
+    assert res_c["valid"] is False
+    assert "Network error" in res_c["message"]
 
-    # Generic Exception
-    mock_post.side_effect = RuntimeError("Crash")
+    # 404 error
+    mock_get_board.side_effect = RuntimeError("Endpoint not found (404)")
+    res_404 = client.validate_credentials()
+    assert res_404["valid"] is False
+    assert "HTTP 404" in res_404["message"]
+
+    # Generic unexpected error
+    mock_get_board.side_effect = RuntimeError("Crash")
     res_g = client.validate_credentials()
     assert res_g["valid"] is False
     assert "Unexpected error" in res_g["message"]
@@ -253,47 +198,22 @@ def test_train_live_fetch_departures_openapi_success(
     assert res["status"] == "success"
 
 
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_fetch_departures_soap_success(mock_post: MagicMock) -> None:
-    """Test fetch_departures with SOAP endpoint returns XML result."""
-    mock_post.return_value = MagicMock(
-        status_code=200,
-        text="<GetStationBoardResult>10:00 Oxford</GetStationBoardResult>",
+@patch.object(TrainLiveClient, "get_dep_board_with_details")
+def test_train_live_fetch_departures_errors(mock_get_board: MagicMock) -> None:
+    """Test fetch_departures propagates errors correctly."""
+    client = TrainLiveClient(
+        api_key="test-key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT
     )
-    client = TrainLiveClient(api_key="valid-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
-    res = client.fetch_departures("pad", num_rows=5)
-    assert res["crs"] == "PAD"
-    assert res["status"] == "success"
-    assert "10:00 Oxford" in res["raw_xml"]
-
-
-@patch("app.datasources.train_live.requests.post")
-def test_train_live_fetch_departures_soap_errors(mock_post: MagicMock) -> None:
-    """Test fetch_departures SOAP error scenarios."""
-    client = TrainLiveClient(api_key="test-key", endpoint=DEFAULT_DARWIN_SOAP_ENDPOINT)
 
     # Auth error
-    mock_post.return_value = MagicMock(status_code=401, text="Unauthorized")
+    mock_get_board.side_effect = DataSourceAuthError(
+        "Invalid token", provider="train_live"
+    )
     with pytest.raises(DataSourceAuthError):
         client.fetch_departures("PAD")
 
-    # Other HTTP error
-    mock_post.return_value = MagicMock(status_code=502, text="Bad Gateway")
-    with pytest.raises(DataSourceError):
-        client.fetch_departures("PAD")
-
-    # Timeout
-    mock_post.side_effect = requests.exceptions.Timeout("Timed out")
-    with pytest.raises(DataSourceConnectionError):
-        client.fetch_departures("PAD")
-
-    # Connection Error
-    mock_post.side_effect = requests.exceptions.ConnectionError("Refused")
-    with pytest.raises(DataSourceConnectionError):
-        client.fetch_departures("PAD")
-
-    # Generic Exception
-    mock_post.side_effect = RuntimeError("Crash")
+    # Generic exception wrapped in DataSourceError
+    mock_get_board.side_effect = RuntimeError("Service failure")
     with pytest.raises(DataSourceError):
         client.fetch_departures("PAD")
 
@@ -306,12 +226,19 @@ def test_train_live_operations_execution(mock_get_swagger: MagicMock) -> None:
     mock_response.result = {"success": True}
     mock_op.return_value.response.return_value = mock_response
 
-    mock_client = MagicMock()
-    mock_client._20220120.GetDepartureBoard = mock_op
-    mock_client._20220120.GetDepBoardWithDetails = mock_op
-    mock_client._20220120.GetArrivalBoard = mock_op
-    mock_client._20220120.GetServiceDetails = mock_op
-    mock_get_swagger.return_value = mock_client
+    class FakeNamespace:
+        def __init__(self, op: Any) -> None:
+            self.GetDepartureBoard = op
+            self.GetDepBoardWithDetails = op
+            self.GetArrivalBoard = op
+            self.GetServiceDetails = op
+            self.GetFastestDepartures = op
+
+    class FakeClient:
+        def __init__(self, op: Any) -> None:
+            self._20220120 = FakeNamespace(op)
+
+    mock_get_swagger.return_value = FakeClient(mock_op)
 
     client = TrainLiveClient(api_key="key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
 
@@ -330,6 +257,70 @@ def test_train_live_operations_execution(mock_get_swagger: MagicMock) -> None:
     # get_service_details
     client.get_service_details(service_id="service-123")
     mock_op.assert_called_with(serviceid="service-123")
+
+    # get_fastest_departures
+    client.get_fastest_departures(crs="CBG", filter_list="KGX")
+    mock_op.assert_called_with(crs="CBG", filterList="KGX")
+
+
+@patch.object(TrainLiveClient, "get_swagger_client")
+def test_train_live_call_operation_errors(mock_get_swagger: MagicMock) -> None:
+    """Test error handling in _call_operation across HTTP, timeout, and network errors."""
+
+    class FakeClient:
+        pass
+
+    fake_client = FakeClient()
+    mock_get_swagger.return_value = fake_client
+    client = TrainLiveClient(api_key="key", endpoint=DEFAULT_DARWIN_OPENAPI_ENDPOINT)
+
+    # Missing operation
+    with pytest.raises(DataSourceConfigError):
+        client._call_operation("NonExistentOperation")
+
+    # Mock operation raising errors
+    mock_op = MagicMock()
+    fake_client.TestOp = mock_op
+
+    # Timeout
+    mock_op.return_value.response.side_effect = requests.exceptions.Timeout("Timeout")
+    with pytest.raises(DataSourceConnectionError):
+        client._call_operation("TestOp")
+
+    # HTTP 401
+    resp_401 = MagicMock(status_code=401, text="Unauthorised")
+    req_err_401 = requests.exceptions.RequestException(response=resp_401)
+    mock_op.return_value.response.side_effect = req_err_401
+    with pytest.raises(DataSourceAuthError):
+        client._call_operation("TestOp")
+
+    # HTTP 500
+    resp_500 = MagicMock(status_code=500, text="Server Error")
+    req_err_500 = requests.exceptions.RequestException(response=resp_500)
+    mock_op.return_value.response.side_effect = req_err_500
+    with pytest.raises(DataSourceError):
+        client._call_operation("TestOp")
+
+    # Network Error
+    req_err_net = requests.exceptions.RequestException(response=None)
+    mock_op.return_value.response.side_effect = req_err_net
+    with pytest.raises(DataSourceConnectionError):
+        client._call_operation("TestOp")
+
+    # Generic 403 in message
+    mock_op.return_value.response.side_effect = RuntimeError("HTTP 403 Forbidden")
+    with pytest.raises(DataSourceAuthError):
+        client._call_operation("TestOp")
+
+    # Generic Timeout in message
+    mock_op.return_value.response.side_effect = RuntimeError("timed out")
+    with pytest.raises(DataSourceConnectionError):
+        client._call_operation("TestOp")
+
+    # Generic Other Exception
+    mock_op.return_value.response.side_effect = RuntimeError("Unknown error")
+    with pytest.raises(DataSourceError):
+        client._call_operation("TestOp")
 
 
 @patch("app.datasources.train_live.requests.get")
