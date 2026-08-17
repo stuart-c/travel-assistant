@@ -360,6 +360,254 @@ def test_sync_train_timetables_errors(app: Flask) -> None:
             assert "Unexpected error" in res["message"]
 
 
+def test_sync_bus_timetables_missing_credentials(app: Flask) -> None:
+    """Test sync_bus_timetables records skipped status when API key is missing."""
+    with app.app_context():
+        from app.sync import sync_bus_timetables
+
+        res = sync_bus_timetables(app=app)
+        assert res["status"] == "skipped_no_credentials"
+        assert res["records"] == 0
+        assert "not configured" in res["message"]
+
+        meta = SyncMetadata.get_meta("bus_timetables")
+        assert meta is not None
+        assert meta.status == "skipped"
+
+
+def test_sync_bus_timetables_no_stops(app: Flask) -> None:
+    """Test sync_bus_timetables returns success 0 records when no bus stops are found."""
+    with app.app_context():
+        from app.sync import sync_bus_timetables
+
+        Setting.set_val("bus_api_key", "valid-bods-key")
+        res = sync_bus_timetables(app=app)
+        assert res["status"] == "success"
+        assert res["records"] == 0
+        assert "No bus stops found" in res["message"]
+
+        meta = SyncMetadata.get_meta("bus_timetables")
+        assert meta is not None
+        assert meta.status == "success"
+        assert meta.records_count == 0
+
+
+def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
+    """Test sync_bus_timetables reconciles auto_added bus timetables and preserves others."""
+    with app.app_context():
+        import datetime
+        from app.models import Journey, Timetable, Walking
+        from app.sync import sync_bus_timetables
+
+        Setting.set_val("bus_api_key", "valid-bods-key")
+
+        # Create stops in Stop table
+        Stop.bulk_upsert(
+            [
+                {
+                    "atco_code": "049000001",
+                    "naptan_code": "hrtaaaa",
+                    "name": "Stevenage Bus Station",
+                    "stop_type": "bus",
+                    "latitude": 51.901,
+                    "longitude": -0.201,
+                },
+                {
+                    "atco_code": "049000002",
+                    "naptan_code": "hrtbbbb",
+                    "name": "Hitchin High Street",
+                    "stop_type": "bus",
+                    "latitude": 51.950,
+                    "longitude": -0.278,
+                },
+            ]
+        )
+
+        # Create a Walking record referencing bus stop
+        Walking.create(
+            start_type="custom",
+            start_id="custom:1",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="naptan:049000001",
+            finish_name="Stevenage Bus Station",
+            time_needed_minutes=5,
+        )
+
+        # Create a Journey record referencing bus stop
+        Journey.create(
+            name="Daily Commute",
+            from_type="bus",
+            from_id="049000002",
+            from_name="Hitchin High Street",
+            to_type="custom",
+            to_id="custom:2",
+            to_name="Work",
+        )
+
+        # Pre-populate custom timetable, existing auto train timetable, and old auto bus timetable
+        Timetable.create(
+            name="My Custom Timetable",
+            transport_type="bus",
+            auto_added=False,
+            content={"stops": [], "trips": []},
+        )
+        Timetable.create(
+            name="Stevenage to London King's Cross",
+            transport_type="rail",
+            auto_added=True,
+            content={"stops": [], "trips": []},
+        )
+        Timetable.create(
+            name="Old Bus 99",
+            transport_type="bus",
+            auto_added=True,
+            content={"stops": [], "trips": []},
+        )
+
+        mock_bods_timetables = [
+            {
+                "name": "Bus 10: Stevenage to Hitchin",
+                "transport_type": "bus",
+                "start_date": datetime.date(2026, 1, 1),
+                "end_date": datetime.date(2026, 12, 31),
+                "monday": True,
+                "tuesday": True,
+                "wednesday": True,
+                "thursday": True,
+                "friday": True,
+                "saturday": False,
+                "sunday": False,
+                "bank_holiday": False,
+                "auto_added": True,
+                "content": {
+                    "stops": [
+                        {
+                            "id": "049000001",
+                            "name": "Stevenage Bus Station",
+                            "type": "bus",
+                        },
+                        {
+                            "id": "049000002",
+                            "name": "Hitchin High Street",
+                            "type": "bus",
+                        },
+                    ],
+                    "trips": [
+                        {
+                            "id": "vj_1",
+                            "headsign": "10 to Hitchin",
+                            "operator": "Arriva",
+                            "times": ["08:30", "08:45"],
+                        },
+                    ],
+                },
+            }
+        ]
+
+        with patch(
+            "app.datasources.bods.BodsClient.fetch_timetables",
+            return_value=mock_bods_timetables,
+        ) as mock_fetch:
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "success"
+            assert res["records"] == 1
+            assert "1 bus route timetable" in res["message"]
+
+            assert mock_fetch.called
+            call_kwargs = mock_fetch.call_args[1]
+            assert (
+                "049000001" in call_kwargs["target_stop_codes"]
+                or "049000002" in call_kwargs["target_stop_codes"]
+            )
+
+        meta = SyncMetadata.get_meta("bus_timetables")
+        assert meta is not None
+        assert meta.status == "success"
+        assert meta.records_count == 1
+
+        # Check database: custom_tt and train_tt should remain; old_auto_bus replaced by new bus 10
+        all_tt = list(Timetable.select())
+        assert len(all_tt) == 3
+        names = {t.name for t in all_tt}
+        assert "My Custom Timetable" in names
+        assert "Stevenage to London King's Cross" in names
+        assert "Bus 10: Stevenage to Hitchin" in names
+        assert "Old Bus 99" not in names
+
+
+def test_sync_bus_timetables_errors(app: Flask) -> None:
+    """Test sync_bus_timetables error paths."""
+    with app.app_context():
+        from app.models import Walking
+        from app.sync import sync_bus_timetables
+        from app.datasources.exceptions import (
+            DataSourceAuthError,
+            DataSourceConnectionError,
+            DataSourceError,
+        )
+
+        Setting.set_val("bus_api_key", "my-bus-key")
+        Walking.create(
+            start_type="bus",
+            start_id="049000001",
+            start_name="Bus Stop A",
+            finish_type="custom",
+            finish_id="custom:1",
+            finish_name="Home",
+            time_needed_minutes=5,
+        )
+
+        # 1. Auth error
+        with patch(
+            "app.datasources.bods.BodsClient.fetch_timetables",
+            side_effect=DataSourceAuthError("Access denied"),
+        ):
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Access denied" in res["message"]
+
+        # 2. Connection error
+        with patch(
+            "app.datasources.bods.BodsClient.fetch_timetables",
+            side_effect=DataSourceConnectionError("Timeout"),
+        ):
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Network or API error" in res["message"]
+
+        # 3. DataSourceError
+        with patch(
+            "app.datasources.bods.BodsClient.fetch_timetables",
+            side_effect=DataSourceError("TransXChange corrupt"),
+        ):
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "error"
+            assert "TransXChange corrupt" in res["message"]
+
+        # 4. Generic Exception
+        with patch(
+            "app.datasources.bods.BodsClient.fetch_timetables",
+            side_effect=RuntimeError("Fatal error"),
+        ):
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Unexpected error" in res["message"]
+
+
+def test_sync_table_bus_timetables(app: Flask) -> None:
+    """Test sync_table router with bus_timetables."""
+    with app.app_context():
+        with patch(
+            "app.sync.transit_sync.sync_bus_timetables",
+            return_value={"status": "success", "records": 3},
+        ) as mock_sync:
+            res = sync_table("bus_timetables", app=app)
+            assert res["status"] == "success"
+            assert res["records"] == 3
+            mock_sync.assert_called_once()
+
+
 def test_sync_all(app: Flask) -> None:
     """Test sync_all runs all registered transit synchronisations."""
     with app.app_context():
@@ -367,17 +615,18 @@ def test_sync_all(app: Flask) -> None:
             mock_sync.return_value = {"status": "success", "records": 2}
             res = sync_all(app=app)
             assert res["success"] is True
-            assert res["total_records"] == 10
-            assert len(res["tables"]) == 5
+            assert res["total_records"] == 12
+            assert len(res["tables"]) == 6
 
 
 def test_check_and_run_background_sync(app: Flask) -> None:
     """Test check_and_run_background_sync only triggers overdue tables."""
     with app.app_context():
-        # bus_routes, ha_locations, train_timetables, and walking are up to date
+        # bus_routes, ha_locations, train_timetables, bus_timetables, and walking are up to date
         SyncMetadata.record_success("bus_routes", 10, 1.0)
         SyncMetadata.record_success("ha_locations", 5, 0.5)
         SyncMetadata.record_success("train_timetables", 2, 0.8)
+        SyncMetadata.record_success("bus_timetables", 3, 0.9)
         SyncMetadata.record_success("walking", 3, 0.4)
         # stops is not synced
 
@@ -389,6 +638,7 @@ def test_check_and_run_background_sync(app: Flask) -> None:
             assert "bus_routes" not in res["results"]
             assert "ha_locations" not in res["results"]
             assert "train_timetables" not in res["results"]
+            assert "bus_timetables" not in res["results"]
             assert "walking" not in res["results"]
 
 
@@ -455,10 +705,11 @@ def test_sync_all_with_table_error(app: Flask) -> None:
                 {"status": "success", "records": 3},
                 {"status": "success", "records": 2},
                 {"status": "success", "records": 1},
+                {"status": "success", "records": 1},
             ]
             res = sync_all(app=app)
             assert res["success"] is False
-            assert res["total_records"] == 11
+            assert res["total_records"] == 12
 
 
 def test_background_worker_handles_exception_in_loop(app: Flask) -> None:

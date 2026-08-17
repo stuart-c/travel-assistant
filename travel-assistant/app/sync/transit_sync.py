@@ -5,7 +5,7 @@ bus stops, and rail station datasets using modular datasource clients.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 from flask import Flask
 import requests
 
@@ -21,9 +21,11 @@ from app.datasources import (
 from app.db import SYNCABLE_TABLES, db, init_db
 from app.models import (
     BusRoute,
+    Journey,
     Stop,
     SyncMetadata,
     Timetable,
+    Walking,
 )
 from app.sync.ha_sync import sync_ha_locations
 from app.sync.walking_sync import sync_walking_routes
@@ -208,9 +210,10 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
             count = len(parsed_timetables)
 
             with db.atomic():
-                # Reconcile auto_added train timetables while preserving custom timetables
+                # Reconcile auto_added train timetables while preserving custom and bus timetables
                 Timetable.delete().where(
-                    Timetable.auto_added == True  # noqa: E712
+                    (Timetable.auto_added == True)  # noqa: E712
+                    & (Timetable.transport_type == "rail")
                 ).execute()
                 if parsed_timetables:
                     Timetable.insert_many(parsed_timetables).execute()
@@ -274,6 +277,221 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
             }
 
 
+def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
+    """Synchronise bus timetables for routes covering stops in walking or journey tables."""
+    _ensure_db_initialized(app)
+    start_time = time.time()
+
+    with db.connection_context():
+        client = BodsClient.from_settings()
+        if not client.api_key:
+            msg = "Bus API Key not configured in Settings > API Credentials"
+            SyncMetadata.record_skipped("bus_timetables", msg)
+            return {
+                "table": "bus_timetables",
+                "status": "skipped_no_credentials",
+                "records": 0,
+                "message": msg,
+                "duration_seconds": 0.0,
+            }
+
+        SyncMetadata.record_start("bus_timetables")
+
+        try:
+            # 1. Collect all bus stop IDs/codes referenced in Walking and Journey tables
+            target_stop_codes: Set[str] = set()
+
+            # From Walking table
+            for w in Walking.select():
+                if w.start_type == "bus" or (
+                    w.start_id
+                    and (
+                        w.start_id.startswith("naptan:")
+                        or w.start_id.startswith("atco:")
+                    )
+                ):
+                    raw_id = (
+                        w.start_id.split(":", 1)[1] if ":" in w.start_id else w.start_id
+                    )
+                    if raw_id:
+                        target_stop_codes.add(raw_id.strip())
+                if w.finish_type == "bus" or (
+                    w.finish_id
+                    and (
+                        w.finish_id.startswith("naptan:")
+                        or w.finish_id.startswith("atco:")
+                    )
+                ):
+                    raw_id = (
+                        w.finish_id.split(":", 1)[1]
+                        if ":" in w.finish_id
+                        else w.finish_id
+                    )
+                    if raw_id:
+                        target_stop_codes.add(raw_id.strip())
+
+            # From Journey table
+            for j in Journey.select():
+                if j.from_type == "bus" or (
+                    j.from_id
+                    and (
+                        j.from_id.startswith("naptan:") or j.from_id.startswith("atco:")
+                    )
+                ):
+                    raw_id = (
+                        j.from_id.split(":", 1)[1] if ":" in j.from_id else j.from_id
+                    )
+                    if raw_id:
+                        target_stop_codes.add(raw_id.strip())
+                if j.to_type == "bus" or (
+                    j.to_id
+                    and (j.to_id.startswith("naptan:") or j.to_id.startswith("atco:"))
+                ):
+                    raw_id = j.to_id.split(":", 1)[1] if ":" in j.to_id else j.to_id
+                    if raw_id:
+                        target_stop_codes.add(raw_id.strip())
+
+            if not target_stop_codes:
+                duration = round(time.time() - start_time, 2)
+                msg = "No bus stops found in walking or journey tables for timetable discovery."
+                SyncMetadata.record_success("bus_timetables", 0, duration)
+                return {
+                    "table": "bus_timetables",
+                    "status": "success",
+                    "records": 0,
+                    "message": msg,
+                    "duration_seconds": duration,
+                }
+
+            # 2. Build stop lookup dictionary, admin areas, and bounding box from cached bus stops
+            stop_lookup: Dict[str, Dict[str, Any]] = {}
+            admin_areas: Set[str] = set()
+            lats: List[float] = []
+            lons: List[float] = []
+            target_upper = {c.upper() for c in target_stop_codes}
+
+            for stp in Stop.select().where(Stop.stop_type == "bus"):
+                meta = {
+                    "id": stp.atco_code or stp.naptan_code,
+                    "name": stp.name,
+                    "type": "bus",
+                    "indicator": stp.indicator or "Bus Stop",
+                    "icon": "directions_bus",
+                    "latitude": stp.latitude,
+                    "longitude": stp.longitude,
+                }
+                if stp.atco_code:
+                    code_clean = stp.atco_code.upper().strip()
+                    stop_lookup[code_clean] = meta
+                    if len(code_clean) >= 3 and code_clean[:3].isdigit():
+                        admin_areas.add(code_clean[:3])
+                if stp.naptan_code:
+                    stop_lookup[stp.naptan_code.upper().strip()] = meta
+                if stp.name:
+                    stop_lookup[stp.name.upper().strip()] = meta
+
+                is_target = (
+                    (stp.atco_code and stp.atco_code.upper().strip() in target_upper)
+                    or (
+                        stp.naptan_code
+                        and stp.naptan_code.upper().strip() in target_upper
+                    )
+                    or (stp.name and stp.name.upper().strip() in target_upper)
+                )
+                if is_target and stp.latitude is not None and stp.longitude is not None:
+                    try:
+                        lats.append(float(stp.latitude))
+                        lons.append(float(stp.longitude))
+                    except (ValueError, TypeError):
+                        pass
+
+            bounding_box = None
+            if lats and lons:
+                bounding_box = (
+                    round(min(lons) - 0.05, 4),
+                    round(min(lats) - 0.05, 4),
+                    round(max(lons) + 0.05, 4),
+                    round(max(lats) + 0.05, 4),
+                )
+
+            # 3. Fetch matching timetables from BODS
+            parsed_timetables = client.fetch_timetables(
+                target_stop_codes=target_stop_codes,
+                admin_areas=list(admin_areas) if admin_areas else None,
+                bounding_box=bounding_box,
+                stop_lookup=stop_lookup,
+            )
+            count = len(parsed_timetables)
+
+            with db.atomic():
+                # Reconcile auto_added bus timetables while preserving
+                # custom timetables and rail timetables
+                Timetable.delete().where(
+                    (Timetable.auto_added == True)  # noqa: E712
+                    & (Timetable.transport_type == "bus")
+                ).execute()
+                if parsed_timetables:
+                    Timetable.insert_many(parsed_timetables).execute()
+
+            duration = round(time.time() - start_time, 2)
+            SyncMetadata.record_success("bus_timetables", count, duration)
+            return {
+                "table": "bus_timetables",
+                "status": "success",
+                "records": count,
+                "message": (
+                    f"Successfully synchronised {count} bus route timetable(s) from BODS."
+                ),
+                "duration_seconds": duration,
+            }
+        except (DataSourceAuthError, DataSourceConfigError) as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = str(exc)
+            SyncMetadata.record_error("bus_timetables", err_msg, duration)
+            return {
+                "table": "bus_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except DataSourceConnectionError as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = f"Network or API error while contacting BODS: {str(exc)}"
+            SyncMetadata.record_error("bus_timetables", err_msg, duration)
+            return {
+                "table": "bus_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except DataSourceError as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = str(exc)
+            SyncMetadata.record_error("bus_timetables", err_msg, duration)
+            return {
+                "table": "bus_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+        except Exception as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = (
+                f"Unexpected error during bus timetable synchronisation: {str(exc)}"
+            )
+            SyncMetadata.record_error("bus_timetables", err_msg, duration)
+            return {
+                "table": "bus_timetables",
+                "status": "error",
+                "records": 0,
+                "message": err_msg,
+                "duration_seconds": duration,
+            }
+
+
 def sync_table(
     table_name: str,
     force: bool = False,
@@ -289,6 +507,8 @@ def sync_table(
         return sync_ha_locations(app=app)
     elif norm_name == "train_timetables":
         return sync_train_timetables(app=app)
+    elif norm_name in ("bus_timetables", "bus_timetable"):
+        return sync_bus_timetables(app=app)
     elif norm_name in ("walking", "walking_routes"):
         return sync_walking_routes(app=app, force=force)
     else:
