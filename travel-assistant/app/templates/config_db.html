@@ -5,24 +5,38 @@
 {% block config_title %}Database{% endblock %}
 
 {% block subtitle %}
-<p class="text-sm text-slate-600 dark:text-slate-400">View SQLite database disk storage usage and schema metrics.</p>
+<p class="text-sm text-slate-600 dark:text-slate-400">View SQLite database disk storage usage, schema metrics, and download the database file.</p>
 {% endblock %}
 
 {% block action_bar %}
-<!-- Database Size widget in Action Bar (replacing Save/Discard) -->
-<div class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-xs" id="stat-db-size-container">
-  <span class="material-symbols-outlined text-lg text-sky-500 leading-none">hard_drive</span>
-  <div class="flex items-baseline gap-1.5 text-xs">
-    <span class="font-bold text-slate-700 dark:text-slate-300">Size:</span>
-    <span class="font-bold text-slate-900 dark:text-white cursor-help" id="stat-db-size" title="{{ "{:,}".format(stats.file_size_bytes) }} bytes">{{ stats.file_size_formatted }}</span>
+<div class="flex items-center gap-2.5">
+  <!-- Database Size widget in Action Bar -->
+  <div class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 shadow-xs" id="stat-db-size-container">
+    <span class="material-symbols-outlined text-lg text-sky-500 leading-none">hard_drive</span>
+    <div class="flex items-baseline gap-1.5 text-xs">
+      <span class="font-bold text-slate-700 dark:text-slate-300">Size:</span>
+      <span class="font-bold text-slate-900 dark:text-white cursor-help" id="stat-db-size" title="{{ "{:,}".format(stats.file_size_bytes) }} bytes">{{ stats.file_size_formatted }}</span>
+    </div>
   </div>
+
+  <!-- Download Database Button -->
+  <a 
+    href="{{ ingress_path }}/config/db/download" 
+    id="download-db-btn" 
+    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors cursor-pointer"
+    title="Download current SQLite database file"
+    download="travel_assistant.db"
+  >
+    <span class="material-symbols-outlined text-base leading-none">download</span>
+    <span>Download Database</span>
+  </a>
 </div>
 {% endblock %}
 
 {% block config_content %}
 <!-- Grid.js Stylesheet (CDN) and Custom Theme -->
 <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
-<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css">
+<link rel="stylesheet" href="{{ ingress_path }}/static/css/tables.css?v={{ cache_bust }}">
 
 <div class="space-y-6" id="db-stats-container">
   <!-- Database Tables Section -->

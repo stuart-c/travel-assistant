@@ -1,9 +1,13 @@
 """Database statistics and transit dataset background synchronisation views."""
 
 from typing import Any
-from flask import jsonify, render_template
+import io
+import os
+import sqlite3
+import tempfile
+from flask import abort, current_app, jsonify, render_template, send_file
 
-from app.db import get_db_stats
+from app.db import db, get_db_path, get_db_stats, init_db
 from app.sync import sync_table
 from app.views.config import config_bp
 
@@ -17,6 +21,69 @@ def db_stats() -> Any:
         stats=stats,
         active_tab="db",
     )
+
+
+@config_bp.route("/db/download", methods=["GET"])
+def download_db() -> Any:
+    """Download the SQLite database file as an attachment."""
+    if db.obj is None:
+        init_db(current_app)
+
+    db_path = get_db_path(current_app)
+
+    # If the database is an active SqliteDatabase instance, checkpoint WAL log to disk
+    try:
+        if db.obj is not None and not db.obj.is_closed():
+            db.obj.execute_sql("PRAGMA wal_checkpoint(PASSIVE)")
+    except Exception:
+        pass
+
+    # Check if physical database file exists on disk
+    if (
+        db_path != ":memory:"
+        and not db_path.startswith("file:")
+        and os.path.exists(db_path)
+        and os.path.isfile(db_path)
+    ):
+        return send_file(
+            db_path,
+            as_attachment=True,
+            download_name="travel_assistant.db",
+            mimetype="application/vnd.sqlite3",
+        )
+
+    # In-memory or URI database backup fallback
+    try:
+        if db.obj is not None and (
+            db_path == ":memory:" or db_path.startswith("file:")
+        ):
+            temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+            temp_db_path = temp_db.name
+            temp_db.close()
+
+            dest_conn = sqlite3.connect(temp_db_path)
+            src_conn = db.obj.connection()
+            src_conn.backup(dest_conn)
+            dest_conn.close()
+
+            with open(temp_db_path, "rb") as f:
+                db_bytes = io.BytesIO(f.read())
+
+            try:
+                os.remove(temp_db_path)
+            except OSError:
+                pass
+
+            return send_file(
+                db_bytes,
+                as_attachment=True,
+                download_name="travel_assistant.db",
+                mimetype="application/vnd.sqlite3",
+            )
+    except Exception as e:
+        current_app.logger.error("Failed to backup SQLite database: %s", e)
+
+    abort(404, description="Database file not found.")
 
 
 @config_bp.route("/sync", methods=["GET"])

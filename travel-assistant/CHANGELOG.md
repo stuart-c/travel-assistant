@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
 
 ### Added
+- On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.
 - Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
 - Added automated startup schema download and local caching for the live LDBWS Swagger specification.
 - Added typed OpenAPI client methods on `TrainLiveClient` (`get_departure_board`, `get_dep_board_with_details`, `get_arrival_board`, `get_service_details`, `get_fastest_departures`) and structured JSON departure fetching.

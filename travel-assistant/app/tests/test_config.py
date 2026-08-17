@@ -773,11 +773,13 @@ def test_timetables_ingress_header(client: FlaskClient) -> None:
 
 
 def test_get_db_page_initial_render(client: FlaskClient) -> None:
-    """Test GET /config/db renders database size card and tables grid."""
+    """Test GET /config/db renders database size card, download button, and tables grid."""
     response = client.get("/config/db")
     assert response.status_code == 200
     assert b"Database Size" in response.data
     assert b"stat-db-size" in response.data
+    assert b"download-db-btn" in response.data
+    assert b"Download Database" in response.data
     assert b"Database Tables" in response.data
     assert b"db-grid-wrapper" in response.data
     assert b"initial-db-stats" in response.data
@@ -799,6 +801,7 @@ def test_get_db_page_with_populated_tables(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"Database Size" in response.data
     assert b"stat-db-size" in response.data
+    assert b"download-db-btn" in response.data
     assert b"Database Tables" in response.data
     assert b"db-grid-wrapper" in response.data
 
@@ -811,9 +814,88 @@ def test_db_page_ingress_header(client: FlaskClient) -> None:
     )
     assert response.status_code == 200
     assert b'href="/api/hassio_ingress/test_token/config/db"' in response.data
+    assert b'href="/api/hassio_ingress/test_token/config/db/download"' in response.data
     assert b'href="/api/hassio_ingress/test_token/config/credentials"' in response.data
     assert b'href="/api/hassio_ingress/test_token/config/timetables"' in response.data
     assert b'href="/api/hassio_ingress/test_token/config/sync"' in response.data
+
+
+def test_download_db_endpoint(client: FlaskClient) -> None:
+    """Test GET /config/db/download returns a valid SQLite database attachment."""
+    import sqlite3
+    import tempfile
+
+    # Seed data
+    Setting.set_val("test_api_key", "secret_download_123", category="credentials")
+    Timetable.create(
+        transport_type="bus",
+        name="Download Route Test",
+        monday=True,
+    )
+
+    response = client.get("/config/db/download")
+    assert response.status_code == 200
+    assert "application/vnd.sqlite3" in response.headers.get("Content-Type", "")
+    assert 'attachment; filename="travel_assistant.db"' in response.headers.get(
+        "Content-Disposition", ""
+    ) or "attachment; filename=travel_assistant.db" in response.headers.get(
+        "Content-Disposition", ""
+    )
+    assert response.data.startswith(b"SQLite format 3\x00")
+
+    # Validate that downloaded file contains the seeded data
+    with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
+        tmp.write(response.data)
+        tmp.flush()
+
+        conn = sqlite3.connect(tmp.name)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT value FROM settings WHERE category='credentials' AND key='test_api_key'"
+        )
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[0] == "secret_download_123"
+
+        cursor.execute("SELECT name FROM timetables WHERE transport_type='bus'")
+        tt_row = cursor.fetchone()
+        assert tt_row is not None
+        assert tt_row[0] == "Download Route Test"
+
+        conn.close()
+
+
+def test_download_db_in_memory_or_uri(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test GET /config/db/download fallback for in-memory or URI SQLite instances."""
+    from app.views.config import sync
+
+    Setting.set_val("mem_key", "mem_val", category="credentials")
+
+    # Simulate get_db_path returning an in-memory URI
+    monkeypatch.setattr(sync, "get_db_path", lambda _app: ":memory:")
+
+    response = client.get("/config/db/download")
+    assert response.status_code == 200
+    assert response.data.startswith(b"SQLite format 3\x00")
+
+
+def test_download_db_missing_file(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test GET /config/db/download returns 404 when database cannot be found."""
+    from app.views.config import sync
+    from app.db import db
+
+    monkeypatch.setattr(
+        sync, "get_db_path", lambda _app: "/nonexistent/path/travel_assistant.db"
+    )
+    monkeypatch.setattr(db, "obj", None)
+
+    response = client.get("/config/db/download")
+    assert response.status_code == 404
 
 
 def test_get_sync_page_initial_render(client: FlaskClient) -> None:

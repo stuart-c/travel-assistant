@@ -611,7 +611,13 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     assert any(w["start_name"] == "Home Zone" for w in w_data)
 
     # G. Verify Database and Sync views
-    assert client.get("/config/db").status_code == 200
+    db_resp = client.get("/config/db")
+    assert db_resp.status_code == 200
+    db_soup = BeautifulSoup(db_resp.get_data(as_text=True), "html.parser")
+    dl_btn = db_soup.find("a", id="download-db-btn")
+    assert dl_btn is not None
+    assert "Download Database" in dl_btn.get_text()
+
     assert client.get("/config/sync").status_code == 200
     assert client.get("/").status_code == 200
 

@@ -145,6 +145,14 @@ class UITester:
             f"Found {len(search_data)} matching places for 'King'",
         )
 
+        r_download = self.client.get("/config/db/download")
+        self.record(
+            "Database File Download (/config/db/download)",
+            r_download.status_code == 200
+            and r_download.data.startswith(b"SQLite format 3\x00"),
+            f"Downloaded valid SQLite payload ({len(r_download.data)} bytes)",
+        )
+
         # 4. Form Submissions & Data Persistence
         print("\n--- 4. Testing Form Submissions & Grid.js Data Bindings ---")
         # Credentials save
