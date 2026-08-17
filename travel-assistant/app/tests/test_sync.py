@@ -190,6 +190,177 @@ def test_sync_table_dispatch(app: Flask) -> None:
             res = sync_table("stops")
             assert res["status"] == "success"
 
+        with patch(
+            "app.sync.transit_sync.sync_train_timetables",
+            return_value={"status": "success", "records": 7},
+        ):
+            res = sync_table("train_timetables")
+            assert res["status"] == "success"
+            res2 = sync_table("timetables")
+            assert res2["status"] == "success"
+
+
+def test_sync_train_timetables_missing_credentials(app: Flask) -> None:
+    """Test sync_train_timetables records skipped status when S3 bucket is empty."""
+    with app.app_context():
+        from app.sync import sync_train_timetables
+
+        Setting.set_val("train_s3_bucket", "")
+        res = sync_train_timetables(app=app)
+        assert res["status"] == "skipped_no_credentials"
+        assert res["records"] == 0
+        assert "not configured" in res["message"]
+
+        meta = SyncMetadata.get_meta("train_timetables")
+        assert meta is not None
+        assert meta.status == "skipped"
+
+
+def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
+    """Test sync_train_timetables reconciles auto_added timetables
+    while preserving custom records."""
+    with app.app_context():
+        from app.sync import sync_train_timetables
+        from app.models import Timetable, Stop
+
+        Setting.set_val("train_s3_bucket", "my-rail-bucket")
+
+        # Create a rail stop
+        Stop.create(
+            atco_code="9100STEVNG",
+            naptan_code="SVG",
+            name="Stevenage",
+            stop_type="rail",
+            latitude=51.9018,
+            longitude=-0.2065,
+        )
+
+        # Create an existing custom timetable
+        custom_tt = Timetable.create(
+            name="My Custom Bus",
+            transport_type="bus",
+            auto_added=False,
+        )
+        custom_tt.set_content({"stops": [], "trips": []})
+        custom_tt.save()
+
+        # Create an old auto timetable to be replaced
+        old_auto_tt = Timetable.create(
+            name="Old Auto Rail",
+            transport_type="rail",
+            auto_added=True,
+        )
+        old_auto_tt.set_content({"stops": [], "trips": []})
+        old_auto_tt.save()
+
+        mock_parsed = [
+            {
+                "name": "Stevenage to Cambridge",
+                "transport_type": "rail",
+                "auto_added": True,
+                "monday": True,
+                "tuesday": True,
+                "wednesday": True,
+                "thursday": True,
+                "friday": True,
+                "saturday": True,
+                "sunday": True,
+                "bank_holiday": True,
+                "content": {
+                    "stops": [
+                        {
+                            "id": "SVG",
+                            "name": "Stevenage",
+                            "type": "rail",
+                            "indicator": "Station",
+                            "icon": "train",
+                        }
+                    ],
+                    "trips": [
+                        {
+                            "id": "trip-1",
+                            "headsign": "TL 1T44",
+                            "toc": "TL",
+                            "operator": "Thameslink",
+                            "times": ["07:00"],
+                        }
+                    ],
+                },
+            }
+        ]
+
+        with patch(
+            "app.datasources.train_s3.TrainS3Client.fetch_timetables",
+            return_value=mock_parsed,
+        ):
+            res = sync_train_timetables(app=app)
+            assert res["status"] == "success"
+            assert res["records"] == 1
+
+            meta = SyncMetadata.get_meta("train_timetables")
+            assert meta is not None
+            assert meta.status == "success"
+
+            # Check database: custom_tt should remain, old_auto_tt should be replaced by new one
+            timetables = list(Timetable.select())
+            assert len(timetables) == 2
+            custom_recs = [t for t in timetables if not t.auto_added]
+            auto_recs = [t for t in timetables if t.auto_added]
+            assert len(custom_recs) == 1
+            assert custom_recs[0].name == "My Custom Bus"
+            assert len(auto_recs) == 1
+            assert auto_recs[0].name == "Stevenage to Cambridge"
+            assert auto_recs[0].get_content()["trips"][0]["toc"] == "TL"
+
+
+def test_sync_train_timetables_errors(app: Flask) -> None:
+    """Test sync_train_timetables error paths."""
+    with app.app_context():
+        from app.sync import sync_train_timetables
+        from app.datasources.exceptions import (
+            DataSourceAuthError,
+            DataSourceConnectionError,
+            DataSourceError,
+        )
+
+        Setting.set_val("train_s3_bucket", "my-rail-bucket")
+
+        # 1. Auth error
+        with patch(
+            "app.datasources.train_s3.TrainS3Client.fetch_timetables",
+            side_effect=DataSourceAuthError("Access denied"),
+        ):
+            res = sync_train_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Access denied" in res["message"]
+
+        # 2. Connection error
+        with patch(
+            "app.datasources.train_s3.TrainS3Client.fetch_timetables",
+            side_effect=DataSourceConnectionError("Timeout"),
+        ):
+            res = sync_train_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Network or API error" in res["message"]
+
+        # 3. DataSourceError
+        with patch(
+            "app.datasources.train_s3.TrainS3Client.fetch_timetables",
+            side_effect=DataSourceError("Snapshot corrupt"),
+        ):
+            res = sync_train_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Snapshot corrupt" in res["message"]
+
+        # 4. Generic Exception
+        with patch(
+            "app.datasources.train_s3.TrainS3Client.fetch_timetables",
+            side_effect=RuntimeError("Fatal error"),
+        ):
+            res = sync_train_timetables(app=app)
+            assert res["status"] == "error"
+            assert "Unexpected error" in res["message"]
+
 
 def test_sync_all(app: Flask) -> None:
     """Test sync_all runs all registered transit synchronisations."""
@@ -198,16 +369,17 @@ def test_sync_all(app: Flask) -> None:
             mock_sync.return_value = {"status": "success", "records": 2}
             res = sync_all(app=app)
             assert res["success"] is True
-            assert res["total_records"] == 6
-            assert len(res["tables"]) == 3
+            assert res["total_records"] == 8
+            assert len(res["tables"]) == 4
 
 
 def test_check_and_run_background_sync(app: Flask) -> None:
     """Test check_and_run_background_sync only triggers overdue tables."""
     with app.app_context():
-        # bus_routes and ha_locations are up to date
+        # bus_routes, ha_locations, and train_timetables are up to date
         SyncMetadata.record_success("bus_routes", 10, 1.0)
         SyncMetadata.record_success("ha_locations", 5, 0.5)
+        SyncMetadata.record_success("train_timetables", 2, 0.8)
         # stops is not synced
 
         with patch("app.sync.transit_sync.sync_table") as mock_sync:
@@ -217,6 +389,7 @@ def test_check_and_run_background_sync(app: Flask) -> None:
             assert "stops" in res["results"]
             assert "bus_routes" not in res["results"]
             assert "ha_locations" not in res["results"]
+            assert "train_timetables" not in res["results"]
 
 
 def test_background_worker_lifecycle(app: Flask) -> None:
@@ -280,10 +453,11 @@ def test_sync_all_with_table_error(app: Flask) -> None:
                 {"status": "success", "records": 5},
                 {"status": "error", "records": 0, "message": "Failed"},
                 {"status": "success", "records": 3},
+                {"status": "success", "records": 2},
             ]
             res = sync_all(app=app)
             assert res["success"] is False
-            assert res["total_records"] == 8
+            assert res["total_records"] == 10
 
 
 def test_background_worker_handles_exception_in_loop(app: Flask) -> None:

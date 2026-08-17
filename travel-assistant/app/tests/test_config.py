@@ -378,6 +378,103 @@ def test_clean_timetable_item_polymorphic_times() -> None:
     assert trip["times"][4] == ""
 
 
+def test_clean_timetable_item_with_toc_and_auto_added() -> None:
+    """Test clean_timetable_item preserves TOC codes and auto_added attributes."""
+    from app.views.config.timetables import clean_timetable_item
+
+    raw_item = {
+        "name": "London to Cambridge",
+        "transport_type": "rail",
+        "auto_added": True,
+        "content": {
+            "stops": ["London King's Cross", "Cambridge"],
+            "trips": [
+                {
+                    "id": "trip_1",
+                    "headsign": "TL 1T44",
+                    "toc": "tl",
+                    "operator": "Thameslink",
+                    "times": ["07:00", "07:50"],
+                }
+            ],
+        },
+    }
+
+    cleaned = clean_timetable_item(raw_item)
+    assert cleaned is not None
+    assert cleaned["name"] == "London to Cambridge"
+    assert cleaned["auto_added"] is True
+    trip = cleaned["content"]["trips"][0]
+    assert trip["toc"] == "TL"
+    assert trip["operator"] == "Thameslink"
+
+
+def test_post_timetables_preserves_auto_added_records(client: FlaskClient) -> None:
+    """Test saving timetables via POST /config/timetables preserves
+    existing auto_added=True records."""
+    # Pre-populate an auto_added timetable and an old custom timetable
+    auto_tt = Timetable.create(
+        name="Auto Darwin Timetable",
+        transport_type="rail",
+        auto_added=True,
+    )
+    auto_tt.set_content(
+        {
+            "stops": [{"id": "SVG", "name": "Stevenage", "type": "rail"}],
+            "trips": [{"id": "trip_auto", "toc": "TL", "times": ["08:00"]}],
+        }
+    )
+    auto_tt.save()
+
+    old_custom_tt = Timetable.create(
+        name="Old Custom Bus",
+        transport_type="bus",
+        auto_added=False,
+    )
+    old_custom_tt.set_content({"stops": [], "trips": []})
+    old_custom_tt.save()
+
+    # User submits only new custom timetables
+    new_custom_items = [
+        {
+            "name": "New Custom Express",
+            "transport_type": "bus",
+            "start_date": None,
+            "end_date": None,
+            "monday": True,
+            "tuesday": True,
+            "wednesday": True,
+            "thursday": True,
+            "friday": True,
+            "saturday": True,
+            "sunday": True,
+            "bank_holiday": True,
+            "content": {
+                "stops": [{"id": "bus1", "name": "High Street", "type": "bus"}],
+                "trips": [{"id": "t1", "times": ["09:00"]}],
+            },
+        }
+    ]
+
+    response = client.post(
+        "/config/timetables",
+        data={"timetables_json": json.dumps(new_custom_items)},
+    )
+    assert response.status_code == 303
+
+    saved = list(Timetable.select())
+    assert len(saved) == 2
+    auto_recs = [t for t in saved if t.auto_added]
+    custom_recs = [t for t in saved if not t.auto_added]
+
+    assert len(auto_recs) == 1
+    assert auto_recs[0].name == "Auto Darwin Timetable"
+    assert auto_recs[0].get_content()["trips"][0]["toc"] == "TL"
+
+    assert len(custom_recs) == 1
+    assert custom_recs[0].name == "New Custom Express"
+
+
 def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
     """Test POST /config/timetables validates end_date is after start_date."""
     items = [

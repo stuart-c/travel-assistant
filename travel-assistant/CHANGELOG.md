@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Added
+- Darwin AWS S3 train timetable background synchronisation ingesting National Rail Darwin XML timetable snapshots (`PPTimetable` v8), extracting passenger journey services, and grouping them by route corridor into timetable matrices with calling points and scheduled arrival/departure timings.
+- Train Operating Company (`toc`) code and operator name extraction on each timetable journey trip object in the content schema (e.g. `{"toc": "TL", "operator": "Thameslink"}`).
+- Auto-added indicator (`auto_added = BooleanField(default=False)`) on `Timetable` model and database schema migration, distinguishing Darwin-synced timetables from custom user timetables.
+- Protection and preservation of auto-added train timetables during manual timetable saves in the web configuration interface (`save_timetables_with_auto_preservation`).
+- Visual `Auto` badge with cloud sync icon, read-only view mode, and deletion protection for Darwin-synced timetables in the Timetables configuration table and Grid Editor.
+- `train_timetables` dataset entry in Background Synchronisation dashboard (`/config/sync`) and automated 24-hour periodic freshness checks in `TransitBackgroundWorker`.
 - Polymorphic timetable schema supporting dual arrival and departure timings per stop (`{"arr": "HH:MM", "dep": "HH:MM"}`) alongside standard single times (`"HH:MM"`).
 - Interactive stacked dual-input visual design in the Timetable Grid Editor with compact uppercase `ARR` and `DEP` labels and dedicated `<input type="time">` elements.
 - Seamless double-click cell interaction allowing users to double-click a single time box to split into Arrival & Departure, and double-click to collapse back to a single box.

@@ -17,7 +17,7 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLES = ("bus_routes", "stops", "ha_locations")
+SYNCABLE_TABLES = ("bus_routes", "stops", "ha_locations", "train_timetables")
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -199,6 +199,7 @@ def run_migrations(database: SqliteDatabase) -> None:
                 "transport_type" not in cols
                 or "content" not in cols
                 or "start_date" not in cols
+                or "auto_added" not in cols
             ):
                 # Timetable schema has evolved.
                 # Recreate table cleanly to ensure all columns and defaults are preserved.
@@ -220,6 +221,7 @@ def run_migrations(database: SqliteDatabase) -> None:
                 saturday_col = '"saturday"' if "saturday" in cols else "1"
                 sunday_col = '"sunday"' if "sunday" in cols else "1"
                 bank_holiday_col = '"bank_holiday"' if "bank_holiday" in cols else "1"
+                auto_added_col = '"auto_added"' if "auto_added" in cols else "0"
                 content_col = (
                     '"content"' if "content" in cols else '\'{"stops":[], "trips":[]}\''
                 )
@@ -236,14 +238,14 @@ def run_migrations(database: SqliteDatabase) -> None:
                             "id", "created_at", "updated_at", "name", "transport_type",
                             "start_date", "end_date",
                             "monday", "tuesday", "wednesday", "thursday",
-                            "friday", "saturday", "sunday", "bank_holiday", "content"
+                            "friday", "saturday", "sunday", "bank_holiday", "auto_added", "content"
                         )
                         SELECT
                             "id", {created_col}, {updated_col}, {name_col}, {transport_type_col},
                             {start_date_col}, {end_date_col},
                             {monday_col}, {tuesday_col}, {wednesday_col}, {thursday_col},
                             {friday_col}, {saturday_col}, {sunday_col},
-                            {bank_holiday_col}, {content_col}
+                            {bank_holiday_col}, {auto_added_col}, {content_col}
                         FROM "_timetables_old"
                         """)
                     database.execute_sql('DROP TABLE "_timetables_old"')
@@ -384,7 +386,10 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             columns = [col[1] for col in col_cursor.fetchall()]
 
             # Determine sync status and last updated
-            is_syncable = table_name in SYNCABLE_TABLES or table_name == "locations"
+            is_syncable = table_name in SYNCABLE_TABLES or table_name in (
+                "locations",
+                "timetables",
+            )
             last_updated_at = None
             sync_status = "idle" if is_syncable else "managed"
             error_message = None
@@ -395,7 +400,12 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
                 else (
                     "ha_locations"
                     if table_name == "locations" and "ha_locations" in sync_meta_map
-                    else None
+                    else (
+                        "train_timetables"
+                        if table_name == "timetables"
+                        and "train_timetables" in sync_meta_map
+                        else None
+                    )
                 )
             )
             if meta_key:

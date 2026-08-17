@@ -229,3 +229,216 @@ def test_train_s3_fetch_stations_errors() -> None:
     mock_boto.get_object.side_effect = RuntimeError("Broken")
     with pytest.raises(DataSourceError):
         client.fetch_stations()
+
+
+def test_train_s3_get_latest_timetable_key_empty_bucket() -> None:
+    """Test get_latest_timetable_key raises DataSourceConfigError when bucket is empty."""
+    client = TrainS3Client(bucket_name="")
+    with pytest.raises(DataSourceConfigError):
+        client.get_latest_timetable_key()
+
+
+def test_train_s3_get_latest_timetable_key_success_and_none() -> None:
+    """Test get_latest_timetable_key finds latest _v8.xml.gz or returns None."""
+    mock_boto = MagicMock()
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_boto)
+
+    # 1. Matching keys returned
+    mock_boto.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "PPTimetable/20260816_ref_v8.xml.gz"},
+            {"Key": "PPTimetable/20260817_v8.xml.gz"},
+            {"Key": "PPTimetable/20260815_v8.xml.gz"},
+            {"Key": "PPTimetable/other_file.txt"},
+        ]
+    }
+    latest = client.get_latest_timetable_key()
+    assert latest == "PPTimetable/20260817_v8.xml.gz"
+
+    # 2. No matching keys
+    mock_boto.list_objects_v2.return_value = {
+        "Contents": [{"Key": "PPTimetable/some_random_file.txt"}]
+    }
+    assert client.get_latest_timetable_key() is None
+
+    # 3. Empty list
+    mock_boto.list_objects_v2.return_value = {}
+    assert client.get_latest_timetable_key() is None
+
+
+def test_train_s3_get_latest_timetable_key_errors() -> None:
+    """Test get_latest_timetable_key error handling."""
+    mock_boto = MagicMock()
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_boto)
+
+    mock_boto.list_objects_v2.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "Access Denied"}}, "ListObjectsV2"
+    )
+    with pytest.raises(DataSourceAuthError):
+        client.get_latest_timetable_key()
+
+    mock_boto.list_objects_v2.side_effect = BotoCoreError()
+    with pytest.raises(DataSourceConnectionError):
+        client.get_latest_timetable_key()
+
+
+def test_train_s3_download_timetable_snapshot_success_and_errors() -> None:
+    """Test download_timetable_snapshot byte retrieval and errors."""
+    mock_boto = MagicMock()
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_boto)
+
+    mock_boto.get_object.return_value = {"Body": BytesIO(b"<xml>darwin</xml>")}
+    content = client.download_timetable_snapshot("PPTimetable/test.xml.gz")
+    assert content == b"<xml>darwin</xml>"
+
+    # Empty bucket
+    client_empty = TrainS3Client(bucket_name="")
+    with pytest.raises(DataSourceConfigError):
+        client_empty.download_timetable_snapshot("key")
+
+    # Error
+    mock_boto.get_object.side_effect = ClientError(
+        {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
+    )
+    with pytest.raises(DataSourceError):
+        client.download_timetable_snapshot("missing.xml.gz")
+
+
+def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
+    """Test parse_darwin_timetables extracting journeys and TOC metadata."""
+    import gzip
+
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
+  <Journey rid="20260817111111" trainId="1T44" toc="TL" ssd="2026-08-17" isPassengerSvc="true">
+    <OR tpl="STEVNG" act="TB" ptd="06:48"/>
+    <IP tpl="HITCHIN" pta="06:54" ptd="06:55"/>
+    <DT tpl="CAMBDGE" act="TF" pta="07:49"/>
+  </Journey>
+  <Journey rid="20260817222222" trainId="2P22" toc="GN" ssd="2026-08-17" isPassengerSvc="true">
+    <OR tpl="STEVNG" act="TB" ptd="07:20"/>
+    <IP tpl="HITCHIN" pta="07:26" ptd="07:27"/>
+    <DT tpl="CAMBDGE" act="TF" pta="08:19"/>
+  </Journey>
+  <Journey rid="20260817333333" trainId="0Z99" toc="ZZ" ssd="2026-08-17" isPassengerSvc="false">
+    <OR tpl="STEVNG" ptd="05:00"/>
+    <DT tpl="CAMBDGE" pta="05:30"/>
+  </Journey>
+  <Journey rid="20260817444444" trainId="EMPTY" toc="TL" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="08:00"/>
+  </Journey>
+</PportTimetable>"""
+
+    gz_bytes = gzip.compress(xml_content.encode("utf-8"))
+    client = TrainS3Client(bucket_name="rail-bucket")
+
+    # 1. Parse with cached stop lookup
+    stop_lookup = {
+        "SVG": {
+            "id": "SVG",
+            "name": "Stevenage",
+            "type": "rail",
+            "indicator": "Station",
+            "icon": "train",
+        },
+        "HIT": {
+            "id": "HIT",
+            "name": "Hitchin",
+            "type": "rail",
+            "indicator": "Station",
+            "icon": "train",
+        },
+        "CBG": {
+            "id": "CBG",
+            "name": "Cambridge",
+            "type": "rail",
+            "indicator": "Station",
+            "icon": "train",
+        },
+    }
+
+    timetables = client.parse_darwin_timetables(gz_bytes, stop_lookup=stop_lookup)
+    assert len(timetables) == 1
+    tt = timetables[0]
+    assert tt["name"] == "Stevenage to Cambridge"
+    assert tt["transport_type"] == "rail"
+    assert tt["auto_added"] is True
+    assert str(tt["start_date"]) == "2026-08-17"
+    assert str(tt["end_date"]) == "2026-08-17"
+
+    content = tt["content"]
+    assert len(content["stops"]) == 3
+    assert content["stops"][0]["name"] == "Stevenage"
+    assert content["stops"][1]["name"] == "Hitchin"
+    assert content["stops"][2]["name"] == "Cambridge"
+
+    assert len(content["trips"]) == 2
+    trip1 = content["trips"][0]
+    assert trip1["toc"] == "TL"
+    assert trip1["operator"] == "Thameslink"
+    assert trip1["headsign"] == "TL 1T44"
+    assert trip1["times"] == [
+        {"arr": "", "dep": "06:48"},
+        {"arr": "06:54", "dep": "06:55"},
+        {"arr": "07:49", "dep": ""},
+    ]
+
+    trip2 = content["trips"][1]
+    assert trip2["toc"] == "GN"
+    assert trip2["operator"] == "Great Northern"
+    assert trip2["headsign"] == "GN 2P22"
+    assert trip2["times"] == [
+        {"arr": "", "dep": "07:20"},
+        {"arr": "07:26", "dep": "07:27"},
+        {"arr": "08:19", "dep": ""},
+    ]
+
+    # 2. Parse raw uncompressed XML bytes
+    timetables_raw = client.parse_darwin_timetables(
+        xml_content.encode("utf-8"), stop_lookup=stop_lookup
+    )
+    assert len(timetables_raw) == 1
+
+
+def test_train_s3_parse_darwin_timetables_invalid_xml() -> None:
+    """Test parse_darwin_timetables raises DataSourceError for invalid XML."""
+    client = TrainS3Client(bucket_name="rail-bucket")
+    with pytest.raises(DataSourceError):
+        client.parse_darwin_timetables(b"corrupted bytes <<>>")
+
+
+def test_train_s3_fetch_timetables_workflow() -> None:
+    """Test fetch_timetables full integration."""
+    import gzip
+
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
+  <Journey rid="20260817111111" trainId="1T44" toc="TL" ssd="2026-08-17" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="06:48"/>
+    <DT tpl="CAMBDGE" pta="07:49"/>
+  </Journey>
+</PportTimetable>"""
+    gz_bytes = gzip.compress(xml_content.encode("utf-8"))
+
+    mock_boto = MagicMock()
+    mock_boto.list_objects_v2.return_value = {
+        "Contents": [{"Key": "PPTimetable/20260817_v8.xml.gz"}]
+    }
+    mock_boto.get_object.return_value = {"Body": BytesIO(gz_bytes)}
+
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_boto)
+    timetables = client.fetch_timetables()
+    assert len(timetables) == 1
+    assert timetables[0]["auto_added"] is True
+    assert timetables[0]["content"]["trips"][0]["toc"] == "TL"
+
+    # Empty bucket
+    client_empty = TrainS3Client(bucket_name="")
+    with pytest.raises(DataSourceConfigError):
+        client_empty.fetch_timetables()
+
+    # No timetable files in S3
+    mock_boto.list_objects_v2.return_value = {}
+    with pytest.raises(DataSourceError) as exc_info:
+        client.fetch_timetables()
+    assert "No Darwin XML timetable snapshots found" in str(exc_info.value)
