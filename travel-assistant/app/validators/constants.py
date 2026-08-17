@@ -2,7 +2,6 @@
 
 # Standard default endpoints and models
 DEFAULT_BODS_BASE = "https://data.bus-data.dft.gov.uk/api/v1"
-DEFAULT_LDBWS_BASE = "https://realtime.nationalrail.co.uk/LDBWS"
 DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODELS = [
     "gpt-4o-mini",

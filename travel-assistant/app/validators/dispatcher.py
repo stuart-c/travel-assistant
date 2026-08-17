@@ -5,7 +5,7 @@ from typing import Any, Dict, Tuple
 from app.datasources.bods import BodsClient, DEFAULT_BODS_BASE_URL
 from app.datasources.google_maps import GoogleMapsClient
 from app.datasources.openai import DEFAULT_OPENAI_BASE_URL, OpenAIClient
-from app.datasources.train_live import DEFAULT_DARWIN_ENDPOINT, TrainLiveClient
+from app.datasources.train_live import TrainLiveClient
 from app.datasources.train_s3 import DEFAULT_S3_REGION, TrainS3Client
 
 
@@ -49,7 +49,7 @@ def validate_service_credentials(
     if service_normalised == "train_live":
         client = TrainLiveClient(
             api_key=payload.get("train_live_api_key", ""),
-            endpoint=payload.get("train_live_endpoint") or DEFAULT_DARWIN_ENDPOINT,
+            endpoint=payload.get("train_live_endpoint") or None,
             timeout=timeout,
         )
         valid, msg = client.validate_tuple()

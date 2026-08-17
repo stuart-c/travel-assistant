@@ -64,6 +64,19 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
     ):
         start_background_worker(app)
 
+    # Refresh live LDBWS Swagger schema on startup outside test environments
+    if (
+        not app.config.get("TESTING")
+        and "pytest" not in sys.modules
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+    ):
+        try:
+            from app.datasources.train_live import sync_swagger_schema
+
+            sync_swagger_schema()
+        except Exception:
+            pass
+
     @app.context_processor
     def inject_ingress_path() -> Dict[str, str]:
         """Inject ingress base path and cache busting token into templates."""
