@@ -8,11 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed Darwin live departure board (`LDBWS`) credential validation failing with HTTP 403 on Rail Data Marketplace by setting custom `User-Agent` headers and formatting operational path URLs (`/api/20220120/...`).
 - Fixed Timetable Grid Editor stop search autocomplete popup being overlapped by sticky table headers and displaying scrollbars by adjusting z-index stacking contexts, adding no-scrollbar utilities, and ensuring solid background opacities.
 - Fixed unmocked transit synchronisation calls (`sync_stops` and `sync_bus_routes`) in `test_sync_table_and_sync_all_with_ha` and background worker daemon checks in `test_sync.py`, eliminating live external NaPTAN CSV downloads and thread timeout delays to reduce unit test suite execution time from ~2 minutes to ~12 seconds.
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Added
+- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), dynamically applying host and base path overrides from configured endpoints (`api1.raildata.org.uk`).
+- Added bundled `ldbws_swagger.json` specification schema in `app/datasources/schemas/` for fast, offline, and deterministic initialisation.
+- Added typed OpenAPI client methods on `TrainLiveClient` (`get_departure_board`, `get_dep_board_with_details`, `get_arrival_board`, `get_service_details`, `get_fastest_departures`) and structured JSON departure fetching.
+- Added live base URL and token configuration fields in the Train Live Credentials web UI (`/config/credentials`).
 - Automated walking route discovery and background synchronisation (`walking_sync.py`), identifying public transit stops (NaPTAN stops and custom timetable stops) within 500 metres of custom and Home Assistant journey endpoints using the Haversine formula.
 - Google Maps Directions Walking API integration calculating forward and reverse walking durations in minutes, inserting a single `bidirectional=True` record when walking times match or two distinct directional records when they differ.
 - `auto_generated` boolean indicator on `Walking` model (`walking` table) and automatic SQLite schema migration, distinguishing auto-discovered walking connections from manual configurations.
