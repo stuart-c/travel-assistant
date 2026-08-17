@@ -33,7 +33,9 @@ The timetable configuration subsystem operates across incremental stages:
      - **Train Journeys**: Bi-directional rail journey selection between two stations via asynchronous search autocompletion against cached rail stations (`stops` with `stop_type="rail"`), automatically formatting timetable names (`Station 1 ↔ Station 2`) and identifiers (`CRS1 ↔ CRS2`).
      - **Bus Routes**: Two-step bus configuration workflow allowing users to choose a bus stop (`stops` with `stop_type="bus"`), followed by an associated bus route (`bus_routes`), automatically formatting timetable names (`Route [Route] at [Stop Name]`) and identifiers (`[Route]@[Stop ATCO Code]`).
      - **Caching Prerequisites & Guidance**: Contextual guidance alerting users when transit datasets require synchronisation before adding timetables.
-3. **Stage 3 (Future)**: Real-time route planning, multi-modal interchange guidance, disruption alerts, and Home Assistant sensor entity publishing.
+3. **Stage 3 (Future)**: Route planning engine and real-time transit intelligence:
+   - **Route Planning Engine (Tier 1)**: Two-phase topological route template discovery and multi-modal graph search connecting journey endpoints, with automated intermediate timetable retrieval (BODS / Darwin S3), last-possible interchange pruning, and Pareto dominance filtering. See the [Architecture Specification](../docs/architecture/01_route_planning_engine.md) and [Phased Implementation Roadmap](../docs/architecture/02_route_planning_implementation_plan.md) for full technical designs.
+   - **Real-Time Journey Dispatcher (Tier 2)**: Dynamic trip calculation matching live departure feeds against active route templates, multi-modal interchange guidance, disruption alerts, and Home Assistant sensor entity publishing.
 
 
 ## Configuration
