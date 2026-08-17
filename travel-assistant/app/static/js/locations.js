@@ -18,11 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Failed to parse initial locations data:', e);
   }
 
-  // In-memory staged state
-  let stagedLocations = JSON.parse(JSON.stringify(initialRaw || []));
-  const initialSnapshot = JSON.stringify(stagedLocations);
-  const initialItemsMap = new Map((initialRaw || []).map((item) => [String(item.id), item]));
-  const deletedIds = new Set();
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(initialRaw || [], {
+    compareFunc: (a, b) =>
+      a.name !== b.name ||
+      parseFloat(a.latitude) !== parseFloat(b.latitude) ||
+      parseFloat(a.longitude) !== parseFloat(b.longitude),
+  });
+  let stagedLocations = tracker.getItems();
 
   const hiddenInput = document.getElementById('locations_json');
   const emptyState = document.getElementById('locations-grid-empty-state');
@@ -258,31 +261,9 @@ document.addEventListener('DOMContentLoaded', () => {
     grid.render(gridContainer);
   }
 
-  function computeChangeset() {
-    const added = [];
-    const updated = [];
-    const deleted = Array.from(deletedIds);
-
-    for (const item of stagedLocations) {
-      const idStr = item.id ? String(item.id) : null;
-      if (!idStr || !initialItemsMap.has(idStr)) {
-        added.push(item);
-      } else {
-        const initial = initialItemsMap.get(idStr);
-        const isModified =
-          item.name !== initial.name ||
-          parseFloat(item.latitude) !== parseFloat(initial.latitude) ||
-          parseFloat(item.longitude) !== parseFloat(initial.longitude);
-        if (isModified) {
-          updated.push(item);
-        }
-      }
-    }
-    return { added, updated, deleted };
-  }
-
   function syncState() {
-    const changeset = computeChangeset();
+    const changeset = tracker.getChangeset();
+    stagedLocations = tracker.getItems();
     if (hiddenInput) {
       hiddenInput.value = JSON.stringify(changeset);
     }
@@ -310,11 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      const isDirty =
-        changeset.added.length > 0 ||
-        changeset.updated.length > 0 ||
-        changeset.deleted.length > 0;
-      if (isDirty) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -328,8 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedLocations = JSON.parse(initialSnapshot);
-      deletedIds.clear();
+      tracker.discard();
       syncState();
     });
   }
@@ -511,11 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ha: isHa,
       };
 
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        stagedLocations[idx] = entry;
-      } else {
-        stagedLocations.push(entry);
-      }
+      tracker.saveModalItem(idx, entry);
 
       syncState();
       closeModal();
@@ -542,11 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        const itemToDelete = stagedLocations[idx];
-        if (itemToDelete && itemToDelete.id && initialItemsMap.has(String(itemToDelete.id))) {
-          deletedIds.add(itemToDelete.id);
-        }
-        stagedLocations.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
       return;

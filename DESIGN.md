@@ -49,16 +49,12 @@ Configuration forms that require persistent saving follow a centralised dirty-tr
   - **Clean state (Default)**: Both Save Changes and Discard buttons are **disabled** (`opacity-50`, `cursor-not-allowed`) when there are no unsaved changes. There is no redundant "No unsaved changes" badge.
   - **Dirty state**: Both buttons become **active and vibrant** (`bg-sky-600` for Save, `bg-slate-100`/`dark:bg-slate-800` for Discard) as soon as any input or staged table item changes.
   - **Submitting state**: Save Changes displays an animated spinner (`sync`) and disables buttons during network persistence.
-- **Client-Side Changeset Payload (`{ added, updated, deleted }`)**:
-  - Instead of re-submitting the full dataset on save, client-side scripts track initial states, record deleted record IDs, and compute delta changesets:
-    ```json
-    {
-      "added": [ ...new items... ],
-      "updated": [ ...modified items with id... ],
-      "deleted": [ id1, id2, ... ]
-    }
-    ```
-  - For simple forms (such as API Credentials), unchanged input fields are disabled immediately before submission so only modified key-value pairs are sent in the HTTP POST request.
+- **Componentised Client-Side `ChangesetTracker` (`transit-ui.js`)**:
+  - The shared `window.TransitUI.createChangesetTracker(initialData, options)` component manages staged collections across configuration pages (`locations`, `timetables`, `journeys`, `transfers`, `walking`).
+  - **Modal Adjustment Lifecycle**: When saving from an edit modal via `tracker.saveModalItem(index, item)`, the tracker compares the staged record against its initial snapshot; if adjustments were made, the item's key is flagged in `updatedKeys` (and removed if reverted to match initial state). New records are staged in `added`.
+  - **Deletion Tracking**: Calling `tracker.deleteItem(index)` removes the item from staged state and adds its key to `deletedKeys` if it was an existing record.
+  - **Changeset Generation**: `tracker.getChangeset()` outputs a standardised `{ added: [...], updated: [...], deleted: [...] }` payload and `tracker.isDirty()` provides instant boolean dirty status.
+  - **Discard Handler**: `tracker.discard()` cleanly resets all staged records back to initial snapshots.
 - **Differential Server Persistence**:
   - The backend parses the delta changeset and executes targeted database operations within an atomic transaction.
   - Existing records are updated in place with updated `updated_at` timestamps only when values have actually changed.

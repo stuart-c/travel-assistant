@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
+- Componentised staged collection and changeset management across all configuration controllers (`locations`, `timetables`, `journeys`, `transfers`, `walking`) with `TransitUI.createChangesetTracker` in `transit-ui.js`, unifying modal adjustment detection, item staging, deletion tracking, and delta payload generation.
 
 ### Added
 - Daily background synchronisation of bus timetables from the UK Bus Open Data Service (BODS) REST API and TransXChange timetable datasets (`sync_bus_timetables`).

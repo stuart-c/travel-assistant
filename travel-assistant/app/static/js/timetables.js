@@ -156,16 +156,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // In-memory staged state
-  let stagedTimetables = (initialRaw || []).map(normaliseItem);
-  const initialSnapshot = JSON.stringify(stagedTimetables);
-  const initialItemsMap = new Map(
-    (initialRaw || [])
-      .map(normaliseItem)
-      .filter((t) => t.id !== null && t.id !== undefined)
-      .map((t) => [String(t.id), t])
+  // Initialise ChangesetTracker
+  const tracker = window.TransitUI.createChangesetTracker(
+    (initialRaw || []).map(normaliseItem)
   );
-  const deletedIds = new Set();
+  let stagedTimetables = tracker.getItems();
   let currentEditIndex = -1;
   let activeEditorIndex = -1;
   let matrixStopAutocomplete = null;
@@ -659,30 +654,13 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   }).render(gridContainer);
 
-  function computeChangeset() {
-    const added = [];
-    const updated = [];
-    const deleted = Array.from(deletedIds);
-
-    for (const item of stagedTimetables) {
-      const idStr = item.id !== null && item.id !== undefined ? String(item.id) : null;
-      if (!idStr || !initialItemsMap.has(idStr)) {
-        added.push(item);
-      } else {
-        const initial = initialItemsMap.get(idStr);
-        const currentJson = JSON.stringify(item);
-        const initialJson = JSON.stringify(initial);
-        if (currentJson !== initialJson) {
-          updated.push(item);
-        }
-      }
-    }
-    return { added, updated, deleted };
-  }
-
   // Sync in-memory changes with hidden form input and dirty manager
   function syncState() {
-    const changeset = computeChangeset();
+    if (activeEditorIndex >= 0) {
+      tracker.markUpdated(activeEditorIndex);
+    }
+    const changeset = tracker.getChangeset();
+    stagedTimetables = tracker.getItems();
     if (hiddenInput) {
       hiddenInput.value = JSON.stringify(changeset);
     }
@@ -718,11 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check dirty state
     if (window.ConfigDirtyManager) {
-      const isDirty =
-        changeset.added.length > 0 ||
-        changeset.updated.length > 0 ||
-        changeset.deleted.length > 0;
-      if (isDirty) {
+      if (tracker.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -737,8 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedTimetables = JSON.parse(initialSnapshot);
-      deletedIds.clear();
+      tracker.discard();
       selectedTripIndices.clear();
       if (activeEditorIndex >= 0) {
         if (activeEditorIndex >= stagedTimetables.length) {
@@ -845,16 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
-        const itemToDelete = stagedTimetables[idx];
-        if (
-          itemToDelete &&
-          itemToDelete.id !== null &&
-          itemToDelete.id !== undefined &&
-          initialItemsMap.has(String(itemToDelete.id))
-        ) {
-          deletedIds.add(itemToDelete.id);
-        }
-        stagedTimetables.splice(idx, 1);
+        tracker.deleteItem(idx);
         syncState();
       }
     }
@@ -921,10 +885,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentEditIndex >= 0 && currentEditIndex < stagedTimetables.length) {
         payloadItem.id = stagedTimetables[currentEditIndex].id;
         payloadItem.content = stagedTimetables[currentEditIndex].content;
-        stagedTimetables[currentEditIndex] = normaliseItem(payloadItem);
+        tracker.saveModalItem(currentEditIndex, normaliseItem(payloadItem));
       } else {
         payloadItem.content = { stops: [], trips: [] };
-        stagedTimetables.push(normaliseItem(payloadItem));
+        tracker.saveModalItem(-1, normaliseItem(payloadItem));
       }
 
       syncState();

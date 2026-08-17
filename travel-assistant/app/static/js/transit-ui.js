@@ -427,6 +427,138 @@ window.TransitUI = (function () {
     }
   }
 
+  /**
+   * ChangesetTracker - Componentised staged collection manager for configuration pages.
+   * Handles staged state, deletion tracking, modal adjustment detection, and standard
+   * { added, updated, deleted } changeset generation.
+   */
+  class ChangesetTracker {
+    constructor(initialData = [], options = {}) {
+      this.keyField = options.keyField || 'id';
+      this.compareFunc = typeof options.compareFunc === 'function' ? options.compareFunc : null;
+      this.initialItems = JSON.parse(JSON.stringify(initialData || []));
+      this.stagedItems = JSON.parse(JSON.stringify(initialData || []));
+
+      this.initialMap = new Map();
+      this.initialItems.forEach((item) => {
+        const key = this._getItemKey(item);
+        if (key !== null) {
+          this.initialMap.set(key, JSON.parse(JSON.stringify(item)));
+        }
+      });
+
+      this.updatedKeys = new Set();
+      this.deletedKeys = new Set();
+    }
+
+    _getItemKey(item) {
+      if (!item) return null;
+      const val = item[this.keyField];
+      if (val === null || val === undefined || val === '') return null;
+      return String(val);
+    }
+
+    hasAdjustments(original, current) {
+      if (this.compareFunc) {
+        return this.compareFunc(original, current);
+      }
+      return JSON.stringify(original) !== JSON.stringify(current);
+    }
+
+    getItems() {
+      return this.stagedItems;
+    }
+
+    getItem(index) {
+      return this.stagedItems[index];
+    }
+
+    setItems(items) {
+      this.stagedItems = items || [];
+    }
+
+    saveModalItem(index, item) {
+      const idx = parseInt(index, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < this.stagedItems.length) {
+        const existing = this.stagedItems[idx];
+        const key = this._getItemKey(existing);
+
+        this.stagedItems[idx] = item;
+
+        if (key !== null && this.initialMap.has(key)) {
+          const initial = this.initialMap.get(key);
+          if (this.hasAdjustments(initial, item)) {
+            this.updatedKeys.add(key);
+          } else {
+            this.updatedKeys.delete(key);
+          }
+        }
+        return item;
+      } else {
+        this.stagedItems.push(item);
+        return item;
+      }
+    }
+
+    markUpdated(index) {
+      const idx = parseInt(index, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < this.stagedItems.length) {
+        const key = this._getItemKey(this.stagedItems[idx]);
+        if (key !== null && this.initialMap.has(key)) {
+          this.updatedKeys.add(key);
+        }
+      }
+    }
+
+    deleteItem(index) {
+      const idx = parseInt(index, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < this.stagedItems.length) {
+        const [removed] = this.stagedItems.splice(idx, 1);
+        if (removed) {
+          const key = this._getItemKey(removed);
+          if (key !== null && this.initialMap.has(key)) {
+            this.deletedKeys.add(removed[this.keyField]);
+            this.updatedKeys.delete(key);
+          }
+        }
+        return removed;
+      }
+      return null;
+    }
+
+    getChangeset() {
+      const added = [];
+      const updated = [];
+      const deleted = Array.from(this.deletedKeys);
+
+      for (const item of this.stagedItems) {
+        const key = this._getItemKey(item);
+        if (key === null || !this.initialMap.has(key)) {
+          added.push(item);
+        } else if (this.updatedKeys.has(key)) {
+          updated.push(item);
+        }
+      }
+
+      return { added, updated, deleted };
+    }
+
+    isDirty() {
+      const cs = this.getChangeset();
+      return cs.added.length > 0 || cs.updated.length > 0 || cs.deleted.length > 0;
+    }
+
+    discard() {
+      this.stagedItems = JSON.parse(JSON.stringify(this.initialItems));
+      this.updatedKeys.clear();
+      this.deletedKeys.clear();
+    }
+  }
+
+  function createChangesetTracker(initialData = [], options = {}) {
+    return new ChangesetTracker(initialData, options);
+  }
+
   return {
     escapeHtml,
     TRANSPORT_MODES,
@@ -439,5 +571,7 @@ window.TransitUI = (function () {
     formatDaysSummary,
     CollapsibleManager,
     showNotification,
+    ChangesetTracker,
+    createChangesetTracker,
   };
 })();
