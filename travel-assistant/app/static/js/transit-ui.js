@@ -555,8 +555,51 @@ window.TransitUI = (function () {
     }
   }
 
-  function createChangesetTracker(initialData = [], options = {}) {
-    return new ChangesetTracker(initialData, options);
+  function computeChangeset(initialList = [], currentList = [], keyField = 'id') {
+    const initialMap = new Map();
+    (initialList || []).forEach((item) => {
+      if (
+        item &&
+        item[keyField] !== undefined &&
+        item[keyField] !== null &&
+        item[keyField] !== ''
+      ) {
+        initialMap.set(String(item[keyField]), item);
+      }
+    });
+
+    const currentMap = new Map();
+    const added = [];
+    const updated = [];
+
+    (currentList || []).forEach((item) => {
+      const key =
+        item &&
+        item[keyField] !== undefined &&
+        item[keyField] !== null &&
+        item[keyField] !== ''
+          ? String(item[keyField])
+          : null;
+
+      if (key === null || !initialMap.has(key)) {
+        added.push(item);
+      } else {
+        currentMap.set(key, item);
+        const orig = initialMap.get(key);
+        if (JSON.stringify(orig) !== JSON.stringify(item)) {
+          updated.push(item);
+        }
+      }
+    });
+
+    const deleted = [];
+    for (const [key, origItem] of initialMap.entries()) {
+      if (!currentMap.has(key)) {
+        deleted.push(origItem[keyField]);
+      }
+    }
+
+    return { added, updated, deleted };
   }
 
   return {
@@ -573,5 +616,6 @@ window.TransitUI = (function () {
     showNotification,
     ChangesetTracker,
     createChangesetTracker,
+    computeChangeset,
   };
 })();

@@ -6,24 +6,24 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('transfers-form');
-  if (!form) return;
+  const configEl =
+    document.getElementById('transfers-config') ||
+    document.getElementById('transfers-form');
+  if (!configEl) return;
 
-  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
-
-  const dataUrl = form.getAttribute('data-data-url') || '/config/transfers/data';
-
-
+  const searchBaseUrl =
+    configEl.getAttribute('data-search-url') || '/config/search/places';
+  const dataUrl =
+    configEl.getAttribute('data-data-url') || '/config/transfers/data';
 
   // In-memory staged state (seeded after remote fetch)
   let stagedPlatformTransfers = [];
   let initialPlatformSnapshot = '[]';
 
-  // Hidden form input
-  const platHiddenInput = document.getElementById('platform_transfers_json');
-
   // Containers
-  const platGridWrapper = document.getElementById('platform-transfers-grid-wrapper');
+  const platGridWrapper = document.getElementById(
+    'platform-transfers-grid-wrapper'
+  );
   const platEmptyState = document.getElementById('platform-grid-empty-state');
 
   // Platform Modal Elements
@@ -187,23 +187,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  GridLoader.load(dataUrl, platGridWrapper, {
-    label: 'transfers',
-    emptyState: platEmptyState,
-    onSuccess(json) {
-      stagedPlatformTransfers = Array.isArray(json.data) ? json.data : [];
-      initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
-      platformGrid.render(platGridWrapper);
-      syncState();
-    },
-  });
+  let gridRendered = false;
 
-  // --- Sync State with Dirty Manager & Hidden Inputs ---
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  function loadTransfers() {
+    GridLoader.load(dataUrl, platGridWrapper, {
+      label: 'transfers',
+      emptyState: platEmptyState,
+      onSuccess(json) {
+        stagedPlatformTransfers = Array.isArray(json.data) ? json.data : [];
+        initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
+        if (!gridRendered) {
+          platformGrid.render(platGridWrapper);
+          gridRendered = true;
+        }
+        syncState();
+      },
+    });
+  }
+
+  // --- Sync State with Dirty Manager ---
   function syncState() {
     const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
-
-    if (platHiddenInput) platHiddenInput.value = currentPlatJson;
 
     // Toggle Empty State vs Grid
     if (stagedPlatformTransfers.length === 0) {
@@ -217,20 +222,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Force Re-render Grid & check pagination display
     if (platGridWrapper.querySelector('.gridjs-container')) {
       if (stagedPlatformTransfers.length <= 10) {
-        platGridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+        platGridWrapper
+          .querySelector('.gridjs-container')
+          .setAttribute('data-single-page', 'true');
       } else {
-        platGridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
+        platGridWrapper
+          .querySelector('.gridjs-container')
+          .removeAttribute('data-single-page');
       }
     }
 
-    platformGrid.updateConfig({
-      columns: platColumnsConfig,
-      data: formatPlatformGridData(stagedPlatformTransfers)
-    }).forceRender();
+    platformGrid
+      .updateConfig({
+        columns: platColumnsConfig,
+        data: formatPlatformGridData(stagedPlatformTransfers),
+      })
+      .forceRender();
 
     // Check Dirty Status
     if (window.ConfigDirtyManager) {
-      const isDirty = (currentPlatJson !== initialPlatformSnapshot);
+      const isDirty = currentPlatJson !== initialPlatformSnapshot;
       if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
@@ -385,5 +396,33 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
   });
+
+  // Register discard handler
+  if (window.ConfigDirtyManager) {
+    window.ConfigDirtyManager.registerDiscardHandler(() => {
+      stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
+      syncState();
+    });
+  }
+
+  // Register with ConfigSave
+  if (window.ConfigSave) {
+    window.ConfigSave.register({
+      endpoint: dataUrl,
+      getChangeset: () => {
+        const initialList = JSON.parse(initialPlatformSnapshot || '[]');
+        return window.TransitUI.computeChangeset(
+          initialList,
+          stagedPlatformTransfers,
+          'id'
+        );
+      },
+      onSaveSuccess: () => {
+        loadTransfers();
+      },
+    });
+  }
+
+  loadTransfers();
 });
 

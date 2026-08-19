@@ -8,25 +8,23 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('journeys-form');
-  if (!form) return;
+  const configEl =
+    document.getElementById('journeys-config') ||
+    document.getElementById('journeys-form');
+  if (!configEl) return;
 
-  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
-
-form.getAttribute('data-data-url') || '/config/journeys/data';
-
-
+  const searchBaseUrl =
+    configEl.getAttribute('data-search-url') || '/config/search/places';
+  const dataUrl =
+    configEl.getAttribute('data-data-url') || '/config/journeys/data';
 
   // In-memory staged state (seeded after remote fetch)
   let stagedJourneys = [];
   let initialSnapshot = '[]';
 
   // DOM Elements
-  const hiddenInput = document.getElementById('journeys_json');
   const gridWrapper = document.getElementById('journeys-grid-wrapper');
   const emptyState = document.getElementById('journeys-grid-empty-state');
-
-  const dataUrl = form.getAttribute('data-data-url') || '/config/journeys/data';
 
   // Modal Elements
   const modal = document.getElementById('journey-modal');
@@ -302,15 +300,11 @@ form.getAttribute('data-data-url') || '/config/journeys/data';
       }
     }
 
-    updateHiddenInput();
+    syncDirtyState();
   }
 
-  function updateHiddenInput() {
+  function syncDirtyState() {
     const currentSnapshot = JSON.stringify(stagedJourneys);
-    if (hiddenInput) {
-      hiddenInput.value = currentSnapshot;
-    }
-    // Check dirty state with ConfigDirtyManager
     if (window.ConfigDirtyManager) {
       if (currentSnapshot !== initialSnapshot) {
         window.ConfigDirtyManager.markDirty();
@@ -760,14 +754,34 @@ form.getAttribute('data-data-url') || '/config/journeys/data';
     });
   }
 
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  GridLoader.load(dataUrl, gridWrapper, {
-    label: 'journeys',
-    emptyState,
-    onSuccess(json) {
-      stagedJourneys = Array.isArray(json.data) ? json.data : [];
-      initialSnapshot = JSON.stringify(stagedJourneys);
-      renderGrid();
-    },
-  });
+  function loadJourneys() {
+    GridLoader.load(dataUrl, gridWrapper, {
+      label: 'journeys',
+      emptyState,
+      onSuccess(json) {
+        stagedJourneys = Array.isArray(json.data) ? json.data : [];
+        initialSnapshot = JSON.stringify(stagedJourneys);
+        renderGrid();
+      },
+    });
+  }
+
+  if (window.ConfigSave) {
+    window.ConfigSave.register({
+      endpoint: dataUrl,
+      getChangeset: () => {
+        const initialList = JSON.parse(initialSnapshot || '[]');
+        return window.TransitUI.computeChangeset(
+          initialList,
+          stagedJourneys,
+          'id'
+        );
+      },
+      onSaveSuccess: () => {
+        loadJourneys();
+      },
+    });
+  }
+
+  loadJourneys();
 });

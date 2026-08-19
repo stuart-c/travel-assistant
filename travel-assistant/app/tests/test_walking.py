@@ -1,6 +1,5 @@
 """Unit tests for Walking configuration page, Peewee model, and CRUD workflows."""
 
-import json
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -184,13 +183,19 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
     }
 
     response = client.post(
-        "/config/walking",
-        data={"walking_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/walking/data",
+        json=payload,
     )
 
     assert response.status_code == 200
-    assert b"Walking saved successfully." in response.data
+    res_data = response.get_json()
+    assert res_data["success"] is True
+    assert res_data["stats"]["added"] == 2
+    assert res_data["stats"]["deleted"] == 1
+
+    # Verify POST to HTML page URL returns 405 Method Not Allowed
+    page_post_resp = client.post("/config/walking")
+    assert page_post_resp.status_code == 405
 
     with app.app_context():
         saved = list(Walking.select())
@@ -204,7 +209,7 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
 def test_post_walking_empty_list_clears_records(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/walking with empty changeset preserves existing records."""
+    """Test POST /config/walking/data with empty changeset preserves existing records."""
     with app.app_context():
         Walking.create(
             start_type="custom",
@@ -218,43 +223,40 @@ def test_post_walking_empty_list_clears_records(
         assert Walking.select().count() == 1
 
     response = client.post(
-        "/config/walking",
-        data={"walking_json": json.dumps({"added": [], "updated": [], "deleted": []})},
-        follow_redirects=True,
+        "/config/walking/data",
+        json={"added": [], "updated": [], "deleted": []},
     )
 
     assert response.status_code == 200
-    assert b"Walking saved successfully." in response.data
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         assert Walking.select().count() == 1
 
 
 def test_post_walking_invalid_json(client: FlaskClient) -> None:
-    """Test POST /config/walking with invalid JSON displays error message."""
+    """Test POST /config/walking/data with invalid JSON returns 400."""
     response = client.post(
-        "/config/walking",
-        data={"walking_json": "invalid-json-{"},
-        follow_redirects=True,
+        "/config/walking/data",
+        data="invalid-json-{",
+        content_type="application/json",
     )
-    assert response.status_code == 200
-    assert b"Failed to save walking:" in response.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_walking_non_list_payload(client: FlaskClient) -> None:
-    """Test POST /config/walking with a non-changeset JSON payload."""
+    """Test POST /config/walking/data with a non-changeset JSON payload returns 400."""
     response = client.post(
-        "/config/walking",
-        data={"walking_json": json.dumps({"start_name": "Solo Object"})},
-        follow_redirects=True,
+        "/config/walking/data",
+        json={"start_name": "Solo Object"},
     )
-    assert response.status_code == 200
-    assert b"Failed to save walking:" in response.data
-    assert b"must contain" in response.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_walking_skips_invalid_entries(client: FlaskClient, app: Flask) -> None:
-    """Test POST /config/walking skips malformed entries."""
+    """Test POST /config/walking/data skips malformed entries."""
     payload = {
         "added": [
             "not-a-dict",
@@ -282,13 +284,12 @@ def test_post_walking_skips_invalid_entries(client: FlaskClient, app: Flask) -> 
     }
 
     response = client.post(
-        "/config/walking",
-        data={"walking_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/walking/data",
+        json=payload,
     )
 
     assert response.status_code == 200
-    assert b"Walking saved successfully." in response.data
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         saved = list(Walking.select())

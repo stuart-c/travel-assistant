@@ -1,12 +1,11 @@
 """Transfers configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify
 
 from app.models import PlatformTransfer
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_html_page
+from app.views.config.common import PageConfig, register_config_page
 
 
 def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -55,23 +54,14 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
     return result
 
 
-@config_bp.route("/transfers/data", methods=["GET"])
-def transfers_data() -> Any:
-    """Return all platform transfers as JSON for Grid.js remote data loading."""
-    items = [t.to_dict() for t in PlatformTransfer.select()]
-    return jsonify({"data": items, "total": len(items)})
-
-
-register_html_page(
+register_config_page(
     config_bp,
     PageConfig(
         route="/transfers",
         endpoint="transfers",
         template="config_transfers.html",
-        form_key="platform_transfers_json",
         model_class=PlatformTransfer,
         clean_item_func=clean_platform_transfer_item,
         entity_label="Transfers",
-        get_template_context=lambda: {},
     ),
 )

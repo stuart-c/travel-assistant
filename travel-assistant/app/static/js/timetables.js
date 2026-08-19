@@ -6,10 +6,13 @@
  */
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    const form = document.getElementById('timetables-form');
-    if (!form) return;
+    const configEl =
+      document.getElementById('timetables-config') ||
+      document.getElementById('timetables-form');
+    if (!configEl) return;
 
-  const dataUrl = form.getAttribute('data-data-url') || '/config/timetables/data';
+    const dataUrl =
+      configEl.getAttribute('data-data-url') || '/config/timetables/data';
   let initialRaw = [];
 
   // Transport mode definitions
@@ -159,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let matrixStopAutocomplete = null;
   const selectedTripIndices = new Set();
 
-  const hiddenInput = document.getElementById('timetables_json');
   const emptyState = document.getElementById('grid-empty-state');
   const gridContainer = document.getElementById('timetables-grid-wrapper');
 
@@ -645,14 +647,11 @@ document.addEventListener('DOMContentLoaded', () => {
         results: () => 'timetables',
       },
     },
-  }).render(gridContainer);
+  });
 
-  // Sync in-memory changes with hidden form input and dirty manager
+  // Sync in-memory changes with dirty manager
   function syncState() {
     const currentJson = JSON.stringify(stagedTimetables);
-    if (hiddenInput) {
-      hiddenInput.value = currentJson;
-    }
 
     // Update empty state vs grid visibility in list view
     if (stagedTimetables.length === 0) {
@@ -693,21 +692,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-
+  let gridRendered = false;
 
   // Fetch remote data then render — loading/error UI managed by GridLoader
-  GridLoader.load(dataUrl, gridContainer, {
-    label: 'timetables',
-    emptyState,
-    onSuccess(json) {
-      initialRaw = Array.isArray(json.data) ? json.data : [];
-      stagedTimetables = initialRaw.map(normaliseItem);
-      initialSnapshot = JSON.stringify(stagedTimetables);
-      grid.render(gridContainer);
-      syncState();
-      setupStopSearchAutocomplete();
-    },
-  });
+  function loadTimetables() {
+    GridLoader.load(dataUrl, gridContainer, {
+      label: 'timetables',
+      emptyState,
+      onSuccess(json) {
+        initialRaw = Array.isArray(json.data) ? json.data : [];
+        stagedTimetables = initialRaw.map(normaliseItem);
+        initialSnapshot = JSON.stringify(stagedTimetables);
+        if (!gridRendered) {
+          grid.render(gridContainer);
+          gridRendered = true;
+        }
+        syncState();
+        setupStopSearchAutocomplete();
+      },
+    });
+  }
 
   // Register discard handler
   if (window.ConfigDirtyManager) {
@@ -724,6 +728,26 @@ document.addEventListener('DOMContentLoaded', () => {
       syncState();
     });
   }
+
+  // Register with ConfigSave
+  if (window.ConfigSave) {
+    window.ConfigSave.register({
+      endpoint: dataUrl,
+      getChangeset: () => {
+        const initialList = JSON.parse(initialSnapshot || '[]');
+        return window.TransitUI.computeChangeset(
+          initialList,
+          stagedTimetables,
+          'id'
+        );
+      },
+      onSaveSuccess: () => {
+        loadTimetables();
+      },
+    });
+  }
+
+  loadTimetables();
 
   // Open Add Timetable Modal
   function showAddModal() {

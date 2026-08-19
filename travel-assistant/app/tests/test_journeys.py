@@ -1,6 +1,5 @@
 """Unit tests for Journeys configuration page, SQLite model, and location search."""
 
-import json
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
@@ -178,16 +177,17 @@ def test_config_journeys_post_persistence(app: Flask, client: FlaskClient) -> No
     ]
 
     response = client.post(
-        "/config/journeys",
-        data={
-            "journeys_json": json.dumps(
-                {"added": payload, "updated": [], "deleted": []}
-            )
-        },
-        follow_redirects=False,
+        "/config/journeys/data",
+        json={"added": payload, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/config/journeys")
+    assert response.status_code == 200
+    res_data = response.get_json()
+    assert res_data["success"] is True
+    assert res_data["stats"]["added"] == 2
+
+    # Verify POST to HTML page URL returns 405 Method Not Allowed
+    page_post_resp = client.post("/config/journeys")
+    assert page_post_resp.status_code == 405
 
     # Verify saved in database
     with app.app_context():
@@ -208,14 +208,16 @@ def test_config_journeys_post_persistence(app: Flask, client: FlaskClient) -> No
 
 
 def test_config_journeys_post_invalid_json(client: FlaskClient) -> None:
-    """Test POST /config/journeys gracefully handles invalid JSON."""
+    """Test POST /config/journeys/data gracefully handles invalid JSON."""
     response = client.post(
-        "/config/journeys",
-        data={"journeys_json": "invalid-non-json"},
-        follow_redirects=True,
+        "/config/journeys/data",
+        data="invalid-non-json",
+        content_type="application/json",
     )
-    assert response.status_code == 200
-    assert b"Failed to save journeys" in response.data
+    assert response.status_code == 400
+    res_data = response.get_json()
+    assert res_data["success"] is False
+    assert "Invalid JSON body" in res_data["message"]
 
 
 def test_config_journeys_search(
@@ -303,16 +305,11 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
 
     # POST Save Changes
     save_resp = client.post(
-        "/config/journeys",
-        data={
-            "journeys_json": json.dumps(
-                {"added": new_journey_payload, "updated": [], "deleted": []}
-            )
-        },
-        follow_redirects=True,
+        "/config/journeys/data",
+        json={"added": new_journey_payload, "updated": [], "deleted": []},
     )
     assert save_resp.status_code == 200
-    assert b"Journeys saved successfully." in save_resp.data
+    assert save_resp.get_json()["success"] is True
 
     # 2. Leave the page (navigate to Locations & Timetables)
     loc_resp = client.get("/config/locations")
@@ -373,9 +370,8 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     }
 
     client.post(
-        "/config/journeys",
-        data={"journeys_json": json.dumps(initial_payload)},
-        follow_redirects=True,
+        "/config/journeys/data",
+        json=initial_payload,
     )
 
     from app.models import Journey
@@ -412,9 +408,8 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     }
 
     save_resp = client.post(
-        "/config/journeys",
-        data={"journeys_json": json.dumps(updated_payload)},
-        follow_redirects=True,
+        "/config/journeys/data",
+        json=updated_payload,
     )
     assert save_resp.status_code == 200
 

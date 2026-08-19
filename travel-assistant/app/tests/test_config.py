@@ -180,7 +180,7 @@ def test_get_timetables_page_initial_empty(client: FlaskClient) -> None:
 
 
 def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
-    """Test POST /config/timetables stores valid entries with transport_type and grid content."""
+    """Test POST /config/timetables/data stores valid entries with grid content."""
     items = [
         {
             "name": "Standard Commute Schedule",
@@ -235,15 +235,17 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     ]
 
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/config/timetables")
+    assert response.status_code == 200
+    res_data = response.get_json()
+    assert res_data["success"] is True
+    assert res_data["stats"]["added"] == 2
+
+    # Verify POST to HTML page URL returns 405 Method Not Allowed
+    page_post_resp = client.post("/config/timetables")
+    assert page_post_resp.status_code == 405
 
     # Verify model has items
     saved = [t.to_dict() for t in Timetable.select()]
@@ -264,16 +266,11 @@ def test_post_timetables_saves_and_redirects(client: FlaskClient) -> None:
     assert saved[1]["saturday"] is True
     assert len(saved[1]["content"]["stops"]) == 1
 
-    # Follow redirect
-    follow = client.get("/config/timetables")
-    assert follow.status_code == 200
-    assert b"Timetables saved successfully." in follow.data
-
 
 def test_post_timetables_with_dual_arrival_departure_timings(
     client: FlaskClient,
 ) -> None:
-    """Test POST /config/timetables correctly preserves dual arrival and departure entries."""
+    """Test POST /config/timetables/data correctly preserves dual arrival and departure entries."""
     items = [
         {
             "name": "Intercity Express Schedule",
@@ -319,15 +316,11 @@ def test_post_timetables_with_dual_arrival_departure_timings(
     ]
 
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/config/timetables")
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
 
     saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 1
@@ -466,18 +459,15 @@ def test_post_timetables_preserves_auto_added_records(client: FlaskClient) -> No
     ]
 
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {
-                    "added": new_custom_items,
-                    "updated": [],
-                    "deleted": [old_custom_tt.id, auto_tt.id],
-                }
-            )
+        "/config/timetables/data",
+        json={
+            "added": new_custom_items,
+            "updated": [],
+            "deleted": [old_custom_tt.id, auto_tt.id],
         },
     )
-    assert response.status_code == 303
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
 
     saved = list(Timetable.select())
     assert len(saved) == 2
@@ -493,7 +483,7 @@ def test_post_timetables_preserves_auto_added_records(client: FlaskClient) -> No
 
 
 def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
-    """Test POST /config/timetables validates end_date is after start_date."""
+    """Test POST /config/timetables/data validates end_date is after start_date."""
     items = [
         {
             "name": "Invalid Date Schedule",
@@ -502,22 +492,17 @@ def test_post_timetables_invalid_date_order(client: FlaskClient) -> None:
         }
     ]
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
-    follow = client.get("/config/timetables")
-    assert follow.status_code == 200
-    assert b"End date" in follow.data
-    assert b"cannot be before start date" in follow.data
+    assert response.status_code == 400
+    res_data = response.get_json()
+    assert res_data["success"] is False
+    assert "cannot be before start date" in res_data["message"]
 
 
 def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
-    """Test POST /config/timetables rejects malformed date format."""
+    """Test POST /config/timetables/data rejects malformed date format."""
     items = [
         {
             "name": "Malformed Start Date Schedule",
@@ -526,17 +511,13 @@ def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
         }
     ]
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
-    follow = client.get("/config/timetables")
-    assert follow.status_code == 200
-    assert b"Invalid start date format" in follow.data
+    assert response.status_code == 400
+    res_data = response.get_json()
+    assert res_data["success"] is False
+    assert "Invalid start date format" in res_data["message"]
 
     items_end = [
         {
@@ -546,45 +527,38 @@ def test_post_timetables_invalid_date_format(client: FlaskClient) -> None:
         }
     ]
     response_end = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items_end, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items_end, "updated": [], "deleted": []},
     )
-    assert response_end.status_code == 303
-    follow_end = client.get("/config/timetables")
-    assert follow_end.status_code == 200
-    assert b"Invalid end date format" in follow_end.data
+    assert response_end.status_code == 400
+    res_data_end = response_end.get_json()
+    assert res_data_end["success"] is False
+    assert "Invalid end date format" in res_data_end["message"]
 
 
 def test_post_timetables_malformed_json(client: FlaskClient) -> None:
-    """Test POST /config/timetables handles invalid JSON gracefully."""
+    """Test POST /config/timetables/data handles invalid JSON gracefully."""
     response = client.post(
-        "/config/timetables",
-        data={"timetables_json": "invalid-json-string{"},
+        "/config/timetables/data",
+        data="invalid-json-string{",
+        content_type="application/json",
     )
-    assert response.status_code == 303
-    follow = client.get("/config/timetables")
-    assert follow.status_code == 200
-    assert b"Failed to save timetables" in follow.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_timetables_non_list_json(client: FlaskClient) -> None:
-    """Test POST /config/timetables handles JSON that is not a valid changeset."""
+    """Test POST /config/timetables/data handles JSON that is not a valid changeset."""
     response = client.post(
-        "/config/timetables",
-        data={"timetables_json": '{"key": "not-a-changeset"}'},
+        "/config/timetables/data",
+        json={"key": "not-a-changeset"},
     )
-    assert response.status_code == 303
-    follow = client.get("/config/timetables")
-    assert follow.status_code == 200
-    assert b"Failed to save timetables" in follow.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
-    """Test POST /config/timetables sanitises input and skips empty names."""
+    """Test POST /config/timetables/data sanitises input and skips empty names."""
     items = [
         "not-a-dict",
         {
@@ -598,14 +572,15 @@ def test_post_timetables_sanitises_entries(client: FlaskClient) -> None:
     ]
 
     response = client.post(
-        "/config/timetables",
-        data={
-            "timetables_json": json.dumps(
-                {"added": items, "updated": [], "deleted": []}
-            )
-        },
+        "/config/timetables/data",
+        json={"added": items, "updated": [], "deleted": []},
     )
-    assert response.status_code == 303
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    saved = [t.to_dict() for t in Timetable.select()]
+    assert len(saved) == 1
+    assert saved[0]["name"] == "Valid Route Schedule"
+    assert saved[0]["monday"] is True
     saved = [t.to_dict() for t in Timetable.select()]
     assert len(saved) == 1
     assert saved[0]["name"] == "Valid Route Schedule"
@@ -801,7 +776,10 @@ def test_timetables_ingress_header(client: FlaskClient) -> None:
         headers={"X-Ingress-Path": "/api/hassio_ingress/token123"},
     )
     assert response.status_code == 200
-    assert b'action="/api/hassio_ingress/token123/config/timetables"' in response.data
+    assert (
+        b'data-data-url="/api/hassio_ingress/token123/config/timetables/data"'
+        in response.data
+    )
     assert b'href="/api/hassio_ingress/token123/config/credentials"' in response.data
 
 
@@ -1051,24 +1029,18 @@ def test_config_pages_include_no_cache_meta_tags(client: FlaskClient) -> None:
         ), f"Missing Expires meta tag in {page}"
 
 
-def test_parse_json_form_changeset_invalid(app: FlaskClient) -> None:
-    """Test parse_json_form_changeset error on invalid JSON and invalid changeset shapes."""
+def test_parse_json_changeset_invalid(app: FlaskClient) -> None:
+    """Test parse_json_changeset error on invalid JSON and invalid changeset shapes."""
     import pytest
-    from flask import Flask
-    from app.views.config.common import parse_json_form_changeset
+    from app.views.config.common import parse_json_changeset
 
-    test_app = Flask(__name__)
-    with test_app.test_request_context("/", data={"test_key": "not-valid-json{"}):
-        with pytest.raises(Exception):
-            parse_json_form_changeset("test_key")
+    with pytest.raises(ValueError, match="must be a JSON dictionary"):
+        parse_json_changeset("not-a-dict")
 
-    with test_app.test_request_context(
-        "/", data={"test_key": '{"is": "not-changeset"}'}
+    with pytest.raises(
+        ValueError, match="must contain 'added', 'updated', or 'deleted' lists"
     ):
-        with pytest.raises(
-            ValueError, match="must contain 'added', 'updated', or 'deleted' lists"
-        ):
-            parse_json_form_changeset("test_key")
+        parse_json_changeset({"is": "not-changeset", "added": "not-a-list"})
 
 
 def test_timetables_save_leave_and_return_persistence(client: FlaskClient) -> None:
@@ -1096,12 +1068,11 @@ def test_timetables_save_leave_and_return_persistence(client: FlaskClient) -> No
     }
 
     post_resp = client.post(
-        "/config/timetables",
-        data={"timetables_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/timetables/data",
+        json=payload,
     )
     assert post_resp.status_code == 200
-    assert b"Timetables saved successfully." in post_resp.data
+    assert post_resp.get_json()["success"] is True
 
     # Leave page
     assert client.get("/").status_code == 200
