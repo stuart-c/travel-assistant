@@ -303,16 +303,36 @@ def test_sync_metadata_model(app: Flask) -> None:
         )
 
         # Error
-        SyncMetadata.record_error("bus_stops", "Network timed out", 5.0)
-        meta_err = SyncMetadata.get_meta("bus_stops")
+        SyncMetadata.record_error("ha_locations", "Network timed out", 5.0)
+        meta_err = SyncMetadata.get_meta("ha_locations")
         assert meta_err.status == "error"
         assert meta_err.error_message == "Network timed out"
 
         # Skipped
-        SyncMetadata.record_skipped("stations", "No credentials")
-        meta_skip = SyncMetadata.get_meta("stations")
+        SyncMetadata.record_skipped("train_timetables", "No credentials")
+        meta_skip = SyncMetadata.get_meta("train_timetables")
         assert meta_skip.status == "skipped"
         assert meta_skip.error_message == "No credentials"
+
+        # Obsolete entries cleanup
+        SyncMetadata.record_success("bus_stops", 10, 1.0)
+        SyncMetadata.record_success("stations", 5, 1.0)
+        assert SyncMetadata.get_meta("bus_stops") is not None
+        assert SyncMetadata.get_meta("stations") is not None
+
+        # Empty valid table list returns 0 and does nothing
+        assert SyncMetadata.cleanup_obsolete_entries([]) == 0
+
+        # Purge obsolete entries
+        deleted = SyncMetadata.cleanup_obsolete_entries(
+            ["bus_routes", "ha_locations", "train_timetables"]
+        )
+        assert deleted == 2
+        assert SyncMetadata.get_meta("bus_stops") is None
+        assert SyncMetadata.get_meta("stations") is None
+        assert SyncMetadata.get_meta("bus_routes") is not None
+        assert SyncMetadata.get_meta("ha_locations") is not None
+        assert SyncMetadata.get_meta("train_timetables") is not None
 
 
 def test_timetable_model(app: Flask) -> None:
@@ -525,11 +545,11 @@ def test_get_sync_stats(app: Flask) -> None:
         SyncMetadata.record_success("bus_routes", 15, 0.42)
         SyncMetadata.record_error("stops", "API timeout", 1.5)
         SyncMetadata.record_skipped("train_timetables", "No S3 credentials")
-        # Custom extra sync record outside standard registry
+        # Custom extra sync record outside standard registry (should not be returned)
         SyncMetadata.record_success("custom_feed", 99, 2.0)
 
         stats = get_sync_stats(app)
-        assert len(stats) == 7
+        assert len(stats) == 6
 
         bus_entry = next((s for s in stats if s["name"] == "bus_routes"), None)
         assert bus_entry is not None
@@ -554,9 +574,7 @@ def test_get_sync_stats(app: Flask) -> None:
         assert ha_entry["records_count"] == 0
 
         custom_entry = next((s for s in stats if s["name"] == "custom_feed"), None)
-        assert custom_entry is not None
-        assert custom_entry["sync_status"] == "success"
-        assert custom_entry["records_count"] == 99
+        assert custom_entry is None
 
 
 def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
@@ -676,6 +694,55 @@ def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert locs[0].ha is False
         assert locs[0].id.startswith("custom:")
         assert len(locs[0].id) > 7
+
+    test_db.close()
+
+
+def test_run_migrations_cleans_up_sync_metadata() -> None:
+    """Test run_migrations purges obsolete sync metadata entries."""
+    test_db = SqliteDatabase(":memory:")
+    test_db.connect()
+
+    # Create sync_metadata table with valid and obsolete entries
+    test_db.execute_sql("""
+        CREATE TABLE "sync_metadata" (
+            "table_name" VARCHAR(255) NOT NULL PRIMARY KEY,
+            "created_at" DATETIME NOT NULL,
+            "updated_at" DATETIME NOT NULL,
+            "last_updated_at" DATETIME,
+            "status" VARCHAR(255) NOT NULL,
+            "error_message" TEXT,
+            "records_count" INTEGER NOT NULL,
+            "duration_seconds" REAL NOT NULL,
+            "sync_requested" INTEGER NOT NULL DEFAULT 0
+        );
+    """)
+
+    test_db.execute_sql("""
+        INSERT INTO "sync_metadata" (
+            "table_name", "created_at", "updated_at", "status", "records_count", "duration_seconds"
+        ) VALUES
+        ('bus_routes', '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'success', 100, 1.0),
+        ('stops', '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'success', 200, 2.0),
+        ('bus_stops', '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'success', 50, 0.5),
+        ('stations', '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'success', 20, 0.2),
+        ('legacy_transfers', '2026-08-15 12:00:00', '2026-08-15 12:00:00', 'error', 0, 0.0);
+    """)
+
+    # Run migrations
+    run_migrations(test_db)
+
+    # Inspect remaining rows in sync_metadata
+    cursor = test_db.execute_sql(
+        'SELECT "table_name" FROM "sync_metadata" ORDER BY "table_name" ASC'
+    )
+    remaining_tables = [row[0] for row in cursor.fetchall()]
+
+    assert "bus_routes" in remaining_tables
+    assert "stops" in remaining_tables
+    assert "bus_stops" not in remaining_tables
+    assert "stations" not in remaining_tables
+    assert "legacy_transfers" not in remaining_tables
 
     test_db.close()
 

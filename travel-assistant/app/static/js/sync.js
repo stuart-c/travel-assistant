@@ -1,6 +1,6 @@
 /**
  * Background Sync View Controller.
- * Manages Grid.js data table rendering for transit datasets (bus_routes, bus_stops, stations),
+ * Manages Grid.js data table rendering for transit datasets,
  * on-demand asynchronous dataset refresh requests, and notification alerts.
  */
 document.addEventListener('DOMContentLoaded', () => {

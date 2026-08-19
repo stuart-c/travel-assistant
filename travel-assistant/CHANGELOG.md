@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed obsolete dataset entries (e.g. legacy `bus_stops` and `stations`) persisting in `sync_metadata` and appearing on the Background Synchronisation page (`/config/sync`) by implementing automated startup cleanup in `run_migrations` and `SyncMetadata.cleanup_obsolete_entries`, restricting `get_sync_stats()` exclusively to registered datasets in `SYNC_REGISTRY`.
 - Fixed Background Synchronisation page (`/config/sync`) and endpoint (`/config/sync/data`) querying physical SQLite tables from `get_db_stats()` by introducing `get_sync_stats()` to query `sync_metadata` directly, restoring independent rows and status telemetry for all 6 registered background synchronisation datasets (`bus_routes`, `stops`, `ha_locations`, `train_timetables`, `walking`, `bus_timetables`).
 - Fixed Google Maps Directions API walking duration extraction to round durations in seconds up into whole minutes (`math.ceil`) rather than nearest-integer rounding, ensuring symmetrical forward and reverse walking durations produce a single bi-directional route entry.
 - Fixed concurrent walking route synchronisations creating duplicate records by introducing thread synchronization (`_walking_sync_lock`) in `walking_sync.py`.
