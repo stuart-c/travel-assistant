@@ -400,7 +400,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
 
         Setting.set_val("bus_api_key", "valid-bods-key")
 
-        # Create stops in Stop table
+        # Create stops in Stop table (including non-target stops from other regions)
         Stop.bulk_upsert(
             [
                 {
@@ -418,6 +418,14 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
                     "stop_type": "bus",
                     "latitude": 51.950,
                     "longitude": -0.278,
+                },
+                {
+                    "atco_code": "670000001",
+                    "naptan_code": "leeds01",
+                    "name": "Leeds Bus Station",
+                    "stop_type": "bus",
+                    "latitude": 53.797,
+                    "longitude": -1.536,
                 },
             ]
         )
@@ -519,6 +527,8 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
                 "049000001" in call_kwargs["target_stop_codes"]
                 or "049000002" in call_kwargs["target_stop_codes"]
             )
+            # Ensure non-target admin areas (like 670) are not passed
+            assert call_kwargs["admin_areas"] == ["049"]
 
         meta = SyncMetadata.get_meta("bus_timetables")
         assert meta is not None

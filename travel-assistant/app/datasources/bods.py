@@ -747,8 +747,10 @@ class BodsClient(BaseDataSource):
         }
 
         if admin_areas:
-            params["adminArea"] = ",".join(admin_areas)
-        if bounding_box:
+            clean_areas = [str(a).strip() for a in admin_areas if str(a).strip()]
+            if clean_areas:
+                params["adminArea"] = ",".join(clean_areas)
+        if bounding_box and len(bounding_box) == 4:
             params["boundingBox"] = ",".join(str(c) for c in bounding_box)
 
         try:
