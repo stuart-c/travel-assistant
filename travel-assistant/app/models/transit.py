@@ -350,6 +350,13 @@ class SyncMetadata(BaseModel):
             return None
 
     @classmethod
+    def cleanup_obsolete_entries(cls, valid_table_names: List[str]) -> int:
+        """Delete sync metadata entries for tables not present in valid_table_names."""
+        if not valid_table_names:
+            return 0
+        return cls.delete().where(cls.table_name.not_in(valid_table_names)).execute()
+
+    @classmethod
     def is_due_for_update(cls, table_name: str, max_age_seconds: int = 86400) -> bool:
         """Determine if a dataset table is due for a synchronisation refresh."""
         meta = cls.get_meta(table_name)
