@@ -1,7 +1,7 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import current_app, jsonify
+from flask import jsonify
 
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
