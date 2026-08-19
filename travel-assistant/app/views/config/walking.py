@@ -1,12 +1,12 @@
 """Walking connections configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify, render_template, request
+from flask import jsonify
 
 from app.models import Walking
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import save_changeset_config
+from app.views.config.common import PageConfig, register_html_page
 
 
 def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -67,20 +67,17 @@ def walking_data() -> Any:
     return jsonify({"data": items, "total": len(items)})
 
 
-@config_bp.route("/walking", methods=["GET", "POST"])
-def walking() -> Any:
-    """Manage configured walking connections between locations."""
-    if request.method == "POST":
-        return save_changeset_config(
-            form_key="walking_json",
-            model_class=Walking,
-            clean_item_func=clean_walking_item,
-            entity_label="Walking",
-            redirect_endpoint="config.walking",
-            scope_filter=(Walking.auto_generated == False),  # noqa: E712
-        )
-
-    return render_template(
-        "config_walking.html",
-        active_tab="walking",
-    )
+register_html_page(
+    config_bp,
+    PageConfig(
+        route="/walking",
+        endpoint="walking",
+        template="config_walking.html",
+        form_key="walking_json",
+        model_class=Walking,
+        clean_item_func=clean_walking_item,
+        entity_label="Walking",
+        get_template_context=lambda: {},
+        scope_filter=(Walking.auto_generated == False),  # noqa: E712
+    ),
+)

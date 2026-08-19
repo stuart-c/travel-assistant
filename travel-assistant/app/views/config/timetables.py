@@ -3,7 +3,7 @@
 import datetime
 import json
 from typing import Any, Dict, Optional
-from flask import jsonify, render_template, request
+from flask import jsonify
 
 from app.models import (
     Timetable,
@@ -14,7 +14,7 @@ from app.models import (
 )
 from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
-from app.views.config.common import save_changeset_config
+from app.views.config.common import PageConfig, register_html_page
 
 
 def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -190,20 +190,17 @@ def timetables_data() -> Any:
     return jsonify({"data": items, "total": len(items)})
 
 
-@config_bp.route("/timetables", methods=["GET", "POST"])
-def timetables() -> Any:
-    """Manage configured timetable schedules and operating days."""
-    if request.method == "POST":
-        return save_changeset_config(
-            form_key="timetables_json",
-            model_class=Timetable,
-            clean_item_func=clean_timetable_item,
-            entity_label="Timetables",
-            redirect_endpoint="config.timetables",
-            scope_filter=(Timetable.auto_added == False),  # noqa: E712
-        )
-
-    return render_template(
-        "config_timetables.html",
-        active_tab="timetables",
-    )
+register_html_page(
+    config_bp,
+    PageConfig(
+        route="/timetables",
+        endpoint="timetables",
+        template="config_timetables.html",
+        form_key="timetables_json",
+        model_class=Timetable,
+        clean_item_func=clean_timetable_item,
+        entity_label="Timetables",
+        get_template_context=lambda: {},
+        scope_filter=(Timetable.auto_added == False),  # noqa: E712
+    ),
+)
