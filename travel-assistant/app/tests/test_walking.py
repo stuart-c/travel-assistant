@@ -377,3 +377,48 @@ def test_clean_walking_item() -> None:
     assert valid["time_needed_minutes"] == 12
     assert valid["bidirectional"] is True
     assert valid["auto_generated"] is True
+
+
+def test_config_walking_pagination_and_sorting(app: Flask, client: FlaskClient) -> None:
+    """Test server-side pagination and sorting parameters on /config/walking/data."""
+    with app.app_context():
+        Walking.delete().execute()
+        items = [
+            {
+                "start_type": "custom",
+                "start_id": f"start_{i}",
+                "start_name": f"Start Location {chr(65 + i)}",
+                "finish_type": "custom",
+                "finish_id": f"finish_{i}",
+                "finish_name": f"Finish Location {chr(65 + i)}",
+                "time_needed_minutes": i + 1,
+                "bidirectional": True,
+                "auto_generated": False,
+            }
+            for i in range(15)
+        ]
+        Walking.insert_many(items).execute()
+
+    # Test limit and offset pagination
+    resp_page1 = client.get("/config/walking/data?limit=5&offset=0")
+    assert resp_page1.status_code == 200
+    p1_data = resp_page1.get_json()
+    assert p1_data["total"] == 15
+    assert len(p1_data["data"]) == 5
+    assert p1_data["data"][0]["start_name"] == "Start Location A"
+
+    # Test page 2
+    resp_page2 = client.get("/config/walking/data?limit=5&offset=5")
+    assert resp_page2.status_code == 200
+    p2_data = resp_page2.get_json()
+    assert p2_data["total"] == 15
+    assert len(p2_data["data"]) == 5
+    assert p2_data["data"][0]["start_name"] == "Start Location F"
+
+    # Test sorting descending
+    resp_sort_desc = client.get(
+        "/config/walking/data?limit=5&sort_by=start_name&order=desc"
+    )
+    assert resp_sort_desc.status_code == 200
+    desc_data = resp_sort_desc.get_json()
+    assert desc_data["data"][0]["start_name"] == "Start Location O"

@@ -18,9 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const dataUrl =
     configEl.getAttribute('data-data-url') || '/config/walking/data';
 
-  // In-memory staged state (seeded after remote fetch)
-  let stagedWalking = [];
-  let initialSnapshot = '[]';
+  // Staged changeset state manager
+  const changesetManager =
+    window.TransitUI && window.TransitUI.createStagedChangesetManager
+      ? window.TransitUI.createStagedChangesetManager('id')
+      : new window.TransitUI.StagedChangesetManager('id');
+
+  let currentPageItems = [];
 
   // DOM Elements
   const gridWrapper = document.getElementById('walking-grid-wrapper');
@@ -297,24 +301,98 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Actions', width: '100px', sort: false },
   ];
 
-  // Initialise Grid.js instance
+  const columnSortMap = {
+    0: 'start_name',
+    1: 'finish_name',
+    2: 'time_needed_minutes',
+  };
+
+  function syncEmptyState(total) {
+    const effectiveTotal = Math.max(
+      0,
+      (Number(total) || 0) +
+        changesetManager.added.length -
+        changesetManager.deleted.size
+    );
+    if (effectiveTotal === 0) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      if (gridWrapper) gridWrapper.classList.add('hidden');
+    } else {
+      if (emptyState) emptyState.classList.add('hidden');
+      if (gridWrapper) gridWrapper.classList.remove('hidden');
+    }
+  }
+
+  function updateDirtyState() {
+    if (window.ConfigDirtyManager) {
+      if (changesetManager.isDirty()) {
+        window.ConfigDirtyManager.markDirty();
+      } else {
+        window.ConfigDirtyManager.clearDirty();
+      }
+    }
+  }
+
+  // Initialise Grid.js instance with server-side pagination & sorting
   const grid = new gridjs.Grid({
     columns: columnsConfig,
-    data: formatGridData(stagedWalking),
-    sort: true,
-    search: {
-      enabled: true,
-      placeholder: 'Search walking routes...',
+    server: {
+      url: dataUrl,
+      then: (data) => {
+        const rawItems = Array.isArray(data.data) ? data.data : [];
+        currentPageItems = changesetManager.applyOverlay(rawItems);
+        syncEmptyState(data.total);
+        return formatGridData(currentPageItems);
+      },
+      total: (data) => {
+        const serverTotal = Number(data.total) || 0;
+        return Math.max(
+          0,
+          serverTotal +
+            changesetManager.added.length -
+            changesetManager.deleted.size
+        );
+      },
     },
     pagination: {
       enabled: true,
       limit: 10,
       summary: true,
+      server: {
+        url: (prev, page, limit) => {
+          const u = new URL(prev, window.location.origin);
+          u.searchParams.set('limit', limit);
+          u.searchParams.set('offset', page * limit);
+          return u.pathname + u.search;
+        },
+      },
+    },
+    sort: {
+      multiColumn: false,
+      server: {
+        url: (prev, columns) => {
+          const u = new URL(prev, window.location.origin);
+          if (!columns || !columns.length) return u.pathname + u.search;
+          const col = columns[0];
+          const fieldName = columnSortMap[col.index];
+          if (fieldName) {
+            u.searchParams.set('sort_by', fieldName);
+            u.searchParams.set('order', col.direction === 1 ? 'asc' : 'desc');
+          }
+          return u.pathname + u.search;
+        },
+      },
+    },
+    search: {
+      enabled: true,
+      placeholder: 'Search walking routes...',
     },
     className: {
       table: 'w-full text-left border-collapse text-sm',
-      thead: 'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 uppercase text-xs tracking-wider border-b border-slate-200 dark:border-slate-800 font-semibold',
-      tbody: 'divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300',
+      thead:
+        'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 uppercase text-xs tracking-wider border-b border-slate-200 dark:border-slate-800 font-semibold',
+      tbody:
+        'divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300',
       search: 'w-full sm:w-72 mb-4',
     },
     language: {
@@ -333,65 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  let gridRendered = false;
-
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  function loadWalking() {
-    GridLoader.load(dataUrl, gridWrapper, {
-      label: 'walking routes',
-      emptyState,
-      onSuccess(json) {
-        stagedWalking = Array.isArray(json.data) ? json.data : [];
-        initialSnapshot = JSON.stringify(stagedWalking);
-        if (!gridRendered) {
-          grid.render(gridWrapper);
-          gridRendered = true;
-        }
-        syncState();
-      },
-    });
-  }
-
-  function syncState() {
-    if (stagedWalking.length === 0) {
-      if (emptyState) emptyState.classList.remove('hidden');
-      if (gridWrapper) gridWrapper.classList.add('hidden');
-    } else {
-      if (emptyState) emptyState.classList.add('hidden');
-      if (gridWrapper) gridWrapper.classList.remove('hidden');
-    }
-
-    if (gridWrapper && gridWrapper.querySelector('.gridjs-container')) {
-      if (stagedWalking.length <= 10) {
-        gridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
-      } else {
-        gridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
-      }
-    }
-
-    grid.updateConfig({
-      columns: columnsConfig,
-      data: formatGridData(stagedWalking),
-    }).forceRender();
-
-    // Trigger DirtyManager check
-    if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedWalking);
-      if (currentJson !== initialSnapshot) {
-        window.ConfigDirtyManager.markDirty();
-      } else {
-        window.ConfigDirtyManager.clearDirty();
-      }
-    }
-  }
-
-  // Initial sync
-  // Register discard handler
-  if (window.ConfigDirtyManager) {
-    window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedWalking = JSON.parse(initialSnapshot);
-      syncState();
-    });
+  if (gridWrapper) {
+    grid.render(gridWrapper);
   }
 
   // Open modal helper
@@ -399,8 +420,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalError) modalError.classList.add('hidden');
     editIndexInput.value = index;
 
-    if (mode === 'edit' && index >= 0 && index < stagedWalking.length) {
-      const item = stagedWalking[index];
+    if (mode === 'edit' && index >= 0 && index < currentPageItems.length) {
+      const item = currentPageItems[index];
       modalTitle.textContent = 'Edit Walking Route';
       modalIcon.textContent = 'edit';
 
@@ -455,12 +476,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const idx = parseInt(editIndexInput.value, 10);
       const existingId =
-        !isNaN(idx) && idx >= 0 && idx < stagedWalking.length
-          ? stagedWalking[idx].id
+        !isNaN(idx) && idx >= 0 && idx < currentPageItems.length
+          ? currentPageItems[idx].id
           : undefined;
 
       const entry = {
-        ...(existingId !== undefined ? { id: existingId } : {}),
+        ...(existingId !== undefined ? { id: existingId } : { id: -1 * (changesetManager.added.length + 1) }),
         start_type: startType,
         start_id: startId,
         start_name: startName,
@@ -472,13 +493,15 @@ document.addEventListener('DOMContentLoaded', () => {
         auto_generated: false,
       };
 
-      if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
-        stagedWalking[idx] = entry;
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        changesetManager.update(entry.id, entry);
       } else {
-        stagedWalking.push(entry);
+        changesetManager.add(entry);
       }
 
-      syncState();
+      updateDirtyState();
+      syncEmptyState(1);
+      grid.forceRender();
       closeModal();
     });
   }
@@ -495,9 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteBtn = e.target.closest('.delete-walking-btn');
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
-        stagedWalking.splice(idx, 1);
-        syncState();
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (item && item.id !== undefined) {
+          changesetManager.delete(item.id);
+          updateDirtyState();
+          grid.forceRender();
+        }
       }
       return;
     }
@@ -506,8 +533,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedWalking = JSON.parse(initialSnapshot);
-      syncState();
+      changesetManager.reset();
+      updateDirtyState();
+      grid.forceRender();
     });
   }
 
@@ -516,18 +544,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigSave.register({
       endpoint: dataUrl,
       getChangeset: () => {
-        const initialList = JSON.parse(initialSnapshot || '[]');
-        return window.TransitUI.computeChangeset(
-          initialList,
-          stagedWalking,
-          'id'
-        );
+        return changesetManager.getChangeset();
       },
       onSaveSuccess: () => {
-        loadWalking();
+        changesetManager.reset();
+        updateDirtyState();
+        grid.forceRender();
       },
     });
   }
-
-  loadWalking();
 });

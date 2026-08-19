@@ -16,9 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const dataUrl =
     configEl.getAttribute('data-data-url') || '/config/transfers/data';
 
-  // In-memory staged state (seeded after remote fetch)
-  let stagedPlatformTransfers = [];
-  let initialPlatformSnapshot = '[]';
+  // Staged changeset state manager
+  const changesetManager =
+    window.TransitUI && window.TransitUI.createStagedChangesetManager
+      ? window.TransitUI.createStagedChangesetManager('id')
+      : new window.TransitUI.StagedChangesetManager('id');
+
+  let currentPageItems = [];
 
   // Containers
   const platGridWrapper = document.getElementById(
@@ -133,24 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteTitle: 'Delete platform transfer',
               })
             : `<div class="flex items-center gap-1.5">
-                <button 
-                  type="button" 
-                  class="edit-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
-                  data-index="${index}"
-                  title="Edit platform transfer"
-                  aria-label="Edit platform transfer"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-                </button>
-                <button 
-                  type="button" 
-                  class="remove-plat-row-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-                  data-index="${index}"
-                  title="Delete platform transfer"
-                  aria-label="Delete platform transfer"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-                </button>
+                <button type="button" class="edit-plat-row-btn" data-index="${index}">Edit</button>
               </div>`
         )
       ];
@@ -168,81 +155,35 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Actions', width: '90px', sort: false }
   ];
 
-  // --- Initialise Platform Grid.js ---
-  const platformGrid = new gridjs.Grid({
-    columns: platColumnsConfig,
-    data: formatPlatformGridData(stagedPlatformTransfers),
-    search: { placeholder: 'Search platform transfers...' },
-    pagination: { limit: 10, summary: true },
-    sort: true,
-    language: {
-      search: { placeholder: 'Search platform transfers...' },
-      pagination: {
-        previous: 'Previous',
-        next: 'Next',
-        showing: 'Showing',
-        results: () => 'transfers'
-      },
-      noRecordsFound: 'No matching platform transfers found'
+  const columnSortMap = {
+    0: 'location_name',
+    1: 'from_platform',
+    2: 'to_platform',
+    3: 'transfer_time_minutes',
+    4: 'bidirectional',
+    5: 'step_free',
+    6: 'notes',
+  };
+
+  function syncEmptyState(total) {
+    const effectiveTotal = Math.max(
+      0,
+      (Number(total) || 0) +
+        changesetManager.added.length -
+        changesetManager.deleted.size
+    );
+    if (effectiveTotal === 0) {
+      if (platGridWrapper) platGridWrapper.classList.add('hidden');
+      if (platEmptyState) platEmptyState.classList.remove('hidden');
+    } else {
+      if (platGridWrapper) platGridWrapper.classList.remove('hidden');
+      if (platEmptyState) platEmptyState.classList.add('hidden');
     }
-  });
-
-  let gridRendered = false;
-
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  function loadTransfers() {
-    GridLoader.load(dataUrl, platGridWrapper, {
-      label: 'transfers',
-      emptyState: platEmptyState,
-      onSuccess(json) {
-        stagedPlatformTransfers = Array.isArray(json.data) ? json.data : [];
-        initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
-        if (!gridRendered) {
-          platformGrid.render(platGridWrapper);
-          gridRendered = true;
-        }
-        syncState();
-      },
-    });
   }
 
-  // --- Sync State with Dirty Manager ---
-  function syncState() {
-    const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
-
-    // Toggle Empty State vs Grid
-    if (stagedPlatformTransfers.length === 0) {
-      platGridWrapper.classList.add('hidden');
-      platEmptyState.classList.remove('hidden');
-    } else {
-      platGridWrapper.classList.remove('hidden');
-      platEmptyState.classList.add('hidden');
-    }
-
-    // Force Re-render Grid & check pagination display
-    if (platGridWrapper.querySelector('.gridjs-container')) {
-      if (stagedPlatformTransfers.length <= 10) {
-        platGridWrapper
-          .querySelector('.gridjs-container')
-          .setAttribute('data-single-page', 'true');
-      } else {
-        platGridWrapper
-          .querySelector('.gridjs-container')
-          .removeAttribute('data-single-page');
-      }
-    }
-
-    platformGrid
-      .updateConfig({
-        columns: platColumnsConfig,
-        data: formatPlatformGridData(stagedPlatformTransfers),
-      })
-      .forceRender();
-
-    // Check Dirty Status
+  function syncDirtyStatus() {
     if (window.ConfigDirtyManager) {
-      const isDirty = currentPlatJson !== initialPlatformSnapshot;
-      if (isDirty) {
+      if (changesetManager.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -250,15 +191,74 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial Sync
-  syncState();
+  // --- Initialise Platform Grid.js with server configuration ---
+  const platformGrid = new gridjs.Grid({
+    columns: platColumnsConfig,
+    server: {
+      url: dataUrl,
+      then: (data) => {
+        const rawItems = Array.isArray(data.data) ? data.data : [];
+        currentPageItems = changesetManager.applyOverlay(rawItems);
+        syncEmptyState(data.total);
+        return formatPlatformGridData(currentPageItems);
+      },
+      total: (data) => {
+        const serverTotal = Number(data.total) || 0;
+        return Math.max(
+          0,
+          serverTotal +
+            changesetManager.added.length -
+            changesetManager.deleted.size
+        );
+      },
+    },
+    pagination: {
+      enabled: true,
+      limit: 10,
+      summary: true,
+      server: {
+        url: (prev, page, limit) => {
+          const u = new URL(prev, window.location.origin);
+          u.searchParams.set('limit', limit);
+          u.searchParams.set('offset', page * limit);
+          return u.pathname + u.search;
+        },
+      },
+    },
+    sort: {
+      multiColumn: false,
+      server: {
+        url: (prev, columns) => {
+          const u = new URL(prev, window.location.origin);
+          if (!columns || !columns.length) return u.pathname + u.search;
+          const col = columns[0];
+          const fieldName = columnSortMap[col.index];
+          if (fieldName) {
+            u.searchParams.set('sort_by', fieldName);
+            u.searchParams.set('order', col.direction === 1 ? 'asc' : 'desc');
+          }
+          return u.pathname + u.search;
+        },
+      },
+    },
+    search: {
+      enabled: true,
+      placeholder: 'Search platform transfers...',
+    },
+    language: {
+      search: { placeholder: 'Search platform transfers...' },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing',
+        results: () => 'transfers',
+      },
+      noRecordsFound: 'No matching platform transfers found',
+    },
+  });
 
-  // Register Discard Handler with ConfigDirtyManager
-  if (window.ConfigDirtyManager) {
-    window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
-      syncState();
-    });
+  if (platGridWrapper) {
+    platformGrid.render(platGridWrapper);
   }
 
   // --- Platform Autocomplete Setup ---
@@ -286,8 +286,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (editPlatIndexInput) editPlatIndexInput.value = editIndex;
     if (platStationSuggestions) platStationSuggestions.classList.add('hidden');
 
-    if (editIndex >= 0 && editIndex < stagedPlatformTransfers.length) {
-      const item = stagedPlatformTransfers[editIndex];
+    if (editIndex >= 0 && editIndex < currentPageItems.length) {
+      const item = currentPageItems[editIndex];
       if (platModalTitle) platModalTitle.textContent = 'Edit Platform Transfer';
       if (platModalIcon) platModalIcon.textContent = 'edit';
       if (platStationType) platStationType.value = item.location_type || 'rail';
@@ -365,13 +365,20 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       const editIdx = parseInt(editPlatIndexInput.value, 10);
-      if (editIdx >= 0 && editIdx < stagedPlatformTransfers.length) {
-        stagedPlatformTransfers[editIdx] = itemPayload;
+      if (editIdx >= 0 && editIdx < currentPageItems.length) {
+        const existing = currentPageItems[editIdx];
+        if (existing && existing.id !== undefined) {
+          itemPayload.id = existing.id;
+        }
+        changesetManager.update(itemPayload.id, itemPayload);
       } else {
-        stagedPlatformTransfers.push(itemPayload);
+        itemPayload.id = -1 * (changesetManager.added.length + 1);
+        changesetManager.add(itemPayload);
       }
 
-      syncState();
+      syncDirtyStatus();
+      syncEmptyState(1);
+      platformGrid.forceRender();
       closePlatformModal();
     });
   }
@@ -389,9 +396,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const removePlatBtn = e.target.closest('.remove-plat-row-btn');
     if (removePlatBtn) {
       const idx = parseInt(removePlatBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedPlatformTransfers.length) {
-        stagedPlatformTransfers.splice(idx, 1);
-        syncState();
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (item && item.id !== undefined) {
+          changesetManager.delete(item.id);
+          syncDirtyStatus();
+          platformGrid.forceRender();
+        }
       }
       return;
     }
@@ -400,8 +411,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
-      syncState();
+      changesetManager.reset();
+      syncDirtyStatus();
+      platformGrid.forceRender();
     });
   }
 
@@ -410,19 +422,14 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigSave.register({
       endpoint: dataUrl,
       getChangeset: () => {
-        const initialList = JSON.parse(initialPlatformSnapshot || '[]');
-        return window.TransitUI.computeChangeset(
-          initialList,
-          stagedPlatformTransfers,
-          'id'
-        );
+        return changesetManager.getChangeset();
       },
       onSaveSuccess: () => {
-        loadTransfers();
+        changesetManager.reset();
+        syncDirtyStatus();
+        platformGrid.forceRender();
       },
     });
   }
-
-  loadTransfers();
 });
 

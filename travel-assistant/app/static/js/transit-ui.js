@@ -555,6 +555,100 @@ window.TransitUI = (function () {
     }
   }
 
+  class StagedChangesetManager {
+    constructor(keyField = 'id') {
+      this.keyField = keyField;
+      this.added = [];
+      this.updated = new Map();
+      this.deleted = new Set();
+    }
+
+    add(item) {
+      this.added.push(item);
+    }
+
+    update(key, updatedItem) {
+      const keyStr = String(key);
+      const addedIndex = this.added.findIndex(
+        (x) => x && String(x[this.keyField]) === keyStr
+      );
+      if (addedIndex >= 0) {
+        this.added[addedIndex] = updatedItem;
+        return;
+      }
+      this.updated.set(keyStr, updatedItem);
+    }
+
+    delete(key) {
+      const keyStr = String(key);
+      const addedIndex = this.added.findIndex(
+        (x) => x && String(x[this.keyField]) === keyStr
+      );
+      if (addedIndex >= 0) {
+        this.added.splice(addedIndex, 1);
+        return;
+      }
+      this.updated.delete(keyStr);
+      this.deleted.add(keyStr);
+    }
+
+    isDeleted(key) {
+      return this.deleted.has(String(key));
+    }
+
+    getUpdated(key) {
+      return this.updated.get(String(key));
+    }
+
+    applyOverlay(serverItems = []) {
+      const result = [];
+      for (const item of this.added) {
+        result.push(item);
+      }
+      for (const item of serverItems) {
+        const key =
+          item && item[this.keyField] !== undefined && item[this.keyField] !== null
+            ? String(item[this.keyField])
+            : null;
+        if (key && this.deleted.has(key)) {
+          continue;
+        }
+        if (key && this.updated.has(key)) {
+          result.push(this.updated.get(key));
+        } else {
+          result.push(item);
+        }
+      }
+      return result;
+    }
+
+    getChangeset() {
+      return {
+        added: [...this.added],
+        updated: Array.from(this.updated.values()),
+        deleted: Array.from(this.deleted),
+      };
+    }
+
+    isDirty() {
+      return (
+        this.added.length > 0 ||
+        this.updated.size > 0 ||
+        this.deleted.size > 0
+      );
+    }
+
+    reset() {
+      this.added = [];
+      this.updated.clear();
+      this.deleted.clear();
+    }
+  }
+
+  function createStagedChangesetManager(keyField = 'id') {
+    return new StagedChangesetManager(keyField);
+  }
+
   function computeChangeset(initialList = [], currentList = [], keyField = 'id') {
     const initialMap = new Map();
     (initialList || []).forEach((item) => {
@@ -616,6 +710,8 @@ window.TransitUI = (function () {
     showNotification,
     ChangesetTracker,
     createChangesetTracker,
+    StagedChangesetManager,
+    createStagedChangesetManager,
     computeChangeset,
   };
 })();

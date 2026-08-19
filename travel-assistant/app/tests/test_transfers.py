@@ -314,3 +314,50 @@ def test_config_transfers_data_endpoint(app: Flask, client: FlaskClient) -> None
     assert payload["total"] == 1
     assert payload["data"][0]["location_name"] == "London Waterloo"
     assert payload["data"][0]["from_platform"] == "1"
+
+
+def test_config_transfers_pagination_and_sorting(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Test server-side pagination and sorting parameters on /config/transfers/data."""
+    with app.app_context():
+        PlatformTransfer.delete().execute()
+        items = [
+            {
+                "location_type": "rail",
+                "location_id": "PAD",
+                "location_name": f"Station {chr(65 + i)}",
+                "from_platform": str(i + 1),
+                "to_platform": str(i + 2),
+                "transfer_time_minutes": i + 1,
+                "bidirectional": True,
+                "step_free": True,
+                "notes": f"Transfer {i}",
+            }
+            for i in range(15)
+        ]
+        PlatformTransfer.insert_many(items).execute()
+
+    # Test limit and offset pagination
+    resp_page1 = client.get("/config/transfers/data?limit=5&offset=0")
+    assert resp_page1.status_code == 200
+    p1_data = resp_page1.get_json()
+    assert p1_data["total"] == 15
+    assert len(p1_data["data"]) == 5
+    assert p1_data["data"][0]["location_name"] == "Station A"
+
+    # Test page 2
+    resp_page2 = client.get("/config/transfers/data?limit=5&offset=5")
+    assert resp_page2.status_code == 200
+    p2_data = resp_page2.get_json()
+    assert p2_data["total"] == 15
+    assert len(p2_data["data"]) == 5
+    assert p2_data["data"][0]["location_name"] == "Station F"
+
+    # Test sorting descending
+    resp_sort_desc = client.get(
+        "/config/transfers/data?limit=5&sort_by=location_name&order=desc"
+    )
+    assert resp_sort_desc.status_code == 200
+    desc_data = resp_sort_desc.get_json()
+    assert desc_data["data"][0]["location_name"] == "Station O"
