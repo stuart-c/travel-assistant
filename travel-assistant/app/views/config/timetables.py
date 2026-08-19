@@ -183,12 +183,12 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-
 @config_bp.route("/timetables/data", methods=["GET"])
 def timetables_data() -> Any:
     """Return all configured timetables as JSON for Grid.js remote data loading."""
     items = [t.to_dict() for t in Timetable.select()]
     return jsonify({"data": items, "total": len(items)})
+
 
 @config_bp.route("/timetables", methods=["GET", "POST"])
 def timetables() -> Any:
@@ -203,7 +203,6 @@ def timetables() -> Any:
             scope_filter=(Timetable.auto_added == False),  # noqa: E712
         )
 
-    current_timetables = [t.to_dict() for t in Timetable.select()]
     return render_template(
         "config_timetables.html",
         active_tab="timetables",

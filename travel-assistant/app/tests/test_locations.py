@@ -412,13 +412,23 @@ def test_location_save_leave_and_return_persistence(
     assert custom_loc["name"] == "St Pancras International Library"
     assert custom_loc["latitude"] == 51.5310
     assert custom_loc["longitude"] == -0.1260
+
+
 def test_config_locations_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/locations/data returns all locations as JSON."""
     with app.app_context():
         Location.delete().execute()
-        Location.insert_many([
-            {"id": "custom:test1", "name": "Test Location", "latitude": 51.5, "longitude": -0.1, "ha": False},
-        ]).execute()
+        Location.insert_many(
+            [
+                {
+                    "id": "custom:test1",
+                    "name": "Test Location",
+                    "latitude": 51.5,
+                    "longitude": -0.1,
+                    "ha": False,
+                },
+            ]
+        ).execute()
 
     response = client.get("/config/locations/data")
     assert response.status_code == 200

@@ -1200,18 +1200,26 @@ def test_config_timetables_data_endpoint(app: Flask, client: FlaskClient) -> Non
     """Test GET /config/timetables/data returns all timetables as JSON."""
     with app.app_context():
         Timetable.delete().execute()
-        Timetable.insert_many([
-            {
-                "name": "Express Morning Service",
-                "transport_type": "rail",
-                "start_date": None,
-                "end_date": None,
-                "monday": True, "tuesday": True, "wednesday": True,
-                "thursday": True, "friday": True, "saturday": False, "sunday": False,
-                "bank_holiday": False, "auto_added": False,
-                "content": {"stops": [], "trips": []},
-            }
-        ]).execute()
+        Timetable.insert_many(
+            [
+                {
+                    "name": "Express Morning Service",
+                    "transport_type": "rail",
+                    "start_date": None,
+                    "end_date": None,
+                    "monday": True,
+                    "tuesday": True,
+                    "wednesday": True,
+                    "thursday": True,
+                    "friday": True,
+                    "saturday": False,
+                    "sunday": False,
+                    "bank_holiday": False,
+                    "auto_added": False,
+                    "content": {"stops": [], "trips": []},
+                }
+            ]
+        ).execute()
 
     response = client.get("/config/timetables/data")
     assert response.status_code == 200
@@ -1228,19 +1236,21 @@ def test_config_walking_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/walking/data returns all walking routes as JSON."""
     with app.app_context():
         Walking.delete().execute()
-        Walking.insert_many([
-            {
-                "start_type": "custom",
-                "start_id": "custom:home",
-                "start_name": "Home",
-                "finish_type": "rail",
-                "finish_id": "WAT",
-                "finish_name": "London Waterloo",
-                "time_needed_minutes": 12,
-                "bidirectional": True,
-                "auto_generated": False,
-            }
-        ]).execute()
+        Walking.insert_many(
+            [
+                {
+                    "start_type": "custom",
+                    "start_id": "custom:home",
+                    "start_name": "Home",
+                    "finish_type": "rail",
+                    "finish_id": "WAT",
+                    "finish_name": "London Waterloo",
+                    "time_needed_minutes": 12,
+                    "bidirectional": True,
+                    "auto_generated": False,
+                }
+            ]
+        ).execute()
 
     response = client.get("/config/walking/data")
     assert response.status_code == 200

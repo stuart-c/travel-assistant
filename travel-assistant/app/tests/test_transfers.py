@@ -290,23 +290,27 @@ def test_transfers_save_leave_and_return_persistence(client: FlaskClient) -> Non
     assert plat_transfers[0]["from_platform"] == "1"
     assert plat_transfers[0]["to_platform"] == "12"
     assert plat_transfers[0]["transfer_time_minutes"] == 5
+
+
 def test_config_transfers_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/transfers/data returns all platform transfers as JSON."""
     with app.app_context():
         PlatformTransfer.delete().execute()
-        PlatformTransfer.insert_many([
-            {
-                "location_type": "rail",
-                "location_id": "WAT",
-                "location_name": "London Waterloo",
-                "from_platform": "1",
-                "to_platform": "2",
-                "transfer_time_minutes": 3,
-                "bidirectional": True,
-                "step_free": False,
-                "notes": "",
-            }
-        ]).execute()
+        PlatformTransfer.insert_many(
+            [
+                {
+                    "location_type": "rail",
+                    "location_id": "WAT",
+                    "location_name": "London Waterloo",
+                    "from_platform": "1",
+                    "to_platform": "2",
+                    "transfer_time_minutes": 3,
+                    "bidirectional": True,
+                    "step_free": False,
+                    "notes": "",
+                }
+            ]
+        ).execute()
 
     response = client.get("/config/transfers/data")
     assert response.status_code == 200

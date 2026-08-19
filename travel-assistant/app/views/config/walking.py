@@ -60,12 +60,12 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-
 @config_bp.route("/walking/data", methods=["GET"])
 def walking_data() -> Any:
     """Return all walking routes as JSON for Grid.js remote data loading."""
     items = [w.to_dict() for w in Walking.select()]
     return jsonify({"data": items, "total": len(items)})
+
 
 @config_bp.route("/walking", methods=["GET", "POST"])
 def walking() -> Any:
@@ -80,7 +80,6 @@ def walking() -> Any:
             scope_filter=(Walking.auto_generated == False),  # noqa: E712
         )
 
-    current_walking = [w.to_dict() for w in Walking.select()]
     return render_template(
         "config_walking.html",
         active_tab="walking",

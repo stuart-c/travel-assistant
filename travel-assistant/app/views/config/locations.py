@@ -44,12 +44,12 @@ def clean_location_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-
 @config_bp.route("/locations/data", methods=["GET"])
 def locations_data() -> Any:
     """Return all configured locations as JSON for Grid.js remote data loading."""
     items = [loc.to_dict() for loc in Location.select()]
     return jsonify({"data": items, "total": len(items)})
+
 
 @config_bp.route("/locations", methods=["GET", "POST"])
 def locations() -> Any:
@@ -64,7 +64,6 @@ def locations() -> Any:
             scope_filter=(Location.ha == False),  # noqa: E712
         )
 
-    current_locations = [loc.to_dict() for loc in Location.select()]
     return render_template(
         "config_locations.html",
         active_tab="locations",

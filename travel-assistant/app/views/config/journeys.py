@@ -81,12 +81,12 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-
 @config_bp.route("/journeys/data", methods=["GET"])
 def journeys_data() -> Any:
     """Return all configured journeys as JSON for Grid.js remote data loading."""
     items = [j.to_dict() for j in Journey.select()]
     return jsonify({"data": items, "total": len(items)})
+
 
 @config_bp.route("/journeys", methods=["GET", "POST"])
 def journeys() -> Any:
@@ -101,7 +101,6 @@ def journeys() -> Any:
             post_save_hook=_trigger_walking_sync_if_changed,
         )
 
-    current_journeys = [j.to_dict() for j in Journey.select()]
     return render_template(
         "config_journeys.html",
         active_tab="journeys",

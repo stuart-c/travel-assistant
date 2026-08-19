@@ -419,7 +419,7 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     assert save_resp.status_code == 200
 
     # Return to Journeys and verify
-    get_resp = client.get("/config/journeys")
+    client.get("/config/journeys")
     data_resp = client.get("/config/journeys/data")
     assert data_resp.status_code == 200
     persisted = data_resp.get_json()["data"]
@@ -427,23 +427,27 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     assert len(persisted) == 1
     assert persisted[0]["name"] == "Central Library Research Session"
     assert persisted[0]["time_settings"][0]["days"] == ["sat"]
+
+
 def test_config_journeys_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/journeys/data returns all journeys as JSON."""
     # Seed a journey
     with app.app_context():
         Journey.delete().execute()
-        Journey.insert_many([
-            {
-                "name": "Data Endpoint Test Journey",
-                "from_type": "ha",
-                "from_id": "zone.home",
-                "from_name": "Home",
-                "to_type": "rail",
-                "to_id": "WAT",
-                "to_name": "London Waterloo",
-                "time_settings": [],
-            }
-        ]).execute()
+        Journey.insert_many(
+            [
+                {
+                    "name": "Data Endpoint Test Journey",
+                    "from_type": "ha",
+                    "from_id": "zone.home",
+                    "from_name": "Home",
+                    "to_type": "rail",
+                    "to_id": "WAT",
+                    "to_name": "London Waterloo",
+                    "time_settings": [],
+                }
+            ]
+        ).execute()
 
     response = client.get("/config/journeys/data")
     assert response.status_code == 200

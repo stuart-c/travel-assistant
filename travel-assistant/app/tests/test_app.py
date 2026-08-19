@@ -154,6 +154,6 @@ def test_grid_loader_js_included_in_config_pages(client: FlaskClient) -> None:
         assert loader_tag in html, f"grid_loader.js missing from {url}"
         loader_pos = html.find(loader_tag)
         page_pos = html.find(page_tag)
-        assert loader_pos < page_pos, (
-            f"grid_loader.js must appear before {page_js} script tag on {url}"
-        )
+        assert (
+            loader_pos < page_pos
+        ), f"grid_loader.js must appear before {page_js} script tag on {url}"

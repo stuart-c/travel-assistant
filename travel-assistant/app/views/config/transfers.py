@@ -55,12 +55,12 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
     return result
 
 
-
 @config_bp.route("/transfers/data", methods=["GET"])
 def transfers_data() -> Any:
     """Return all platform transfers as JSON for Grid.js remote data loading."""
     items = [t.to_dict() for t in PlatformTransfer.select()]
     return jsonify({"data": items, "total": len(items)})
+
 
 @config_bp.route("/transfers", methods=["GET", "POST"])
 def transfers() -> Any:
@@ -73,8 +73,6 @@ def transfers() -> Any:
             entity_label="Transfers",
             redirect_endpoint="config.transfers",
         )
-
-    platform_transfers = [t.to_dict() for t in PlatformTransfer.select()]
 
     return render_template(
         "config_transfers.html",
