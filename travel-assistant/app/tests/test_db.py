@@ -10,6 +10,7 @@ from app.db import (
     format_file_size,
     get_db_path,
     get_db_stats,
+    get_sync_stats,
     init_app,
     run_migrations,
 )
@@ -515,6 +516,47 @@ def test_get_db_stats(app: Flask) -> None:
             t["name"] == "bus_routes" and t["sync_status"] == "success"
             for t in stats["tables"]
         )
+
+
+def test_get_sync_stats(app: Flask) -> None:
+    """Test get_sync_stats returns all registered datasets and sync metadata records."""
+    with app.app_context():
+        SyncMetadata.delete().execute()
+        SyncMetadata.record_success("bus_routes", 15, 0.42)
+        SyncMetadata.record_error("stops", "API timeout", 1.5)
+        SyncMetadata.record_skipped("train_timetables", "No S3 credentials")
+        # Custom extra sync record outside standard registry
+        SyncMetadata.record_success("custom_feed", 99, 2.0)
+
+        stats = get_sync_stats(app)
+        assert len(stats) == 7
+
+        bus_entry = next((s for s in stats if s["name"] == "bus_routes"), None)
+        assert bus_entry is not None
+        assert bus_entry["sync_status"] == "success"
+        assert bus_entry["records_count"] == 15
+        assert bus_entry["duration_seconds"] == 0.42
+        assert bus_entry["syncable"] is True
+        assert bus_entry["last_updated_at"] is not None
+
+        stops_entry = next((s for s in stats if s["name"] == "stops"), None)
+        assert stops_entry is not None
+        assert stops_entry["sync_status"] == "error"
+        assert stops_entry["error_message"] == "API timeout"
+
+        train_entry = next((s for s in stats if s["name"] == "train_timetables"), None)
+        assert train_entry is not None
+        assert train_entry["sync_status"] == "skipped"
+
+        ha_entry = next((s for s in stats if s["name"] == "ha_locations"), None)
+        assert ha_entry is not None
+        assert ha_entry["sync_status"] == "idle"
+        assert ha_entry["records_count"] == 0
+
+        custom_entry = next((s for s in stats if s["name"] == "custom_feed"), None)
+        assert custom_entry is not None
+        assert custom_entry["sync_status"] == "success"
+        assert custom_entry["records_count"] == 99
 
 
 def test_timetable_schema_migration(tmp_path: pytest.TempPathFactory) -> None:

@@ -492,3 +492,77 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "total_rows": total_rows,
             "tables": tables,
         }
+
+
+def get_sync_stats(app: Optional[Flask] = None) -> List[Dict[str, Any]]:
+    """Inspect and return synchronisation metrics for all registered datasets."""
+    from app.models.transit import SyncMetadata
+    from app.sync.worker import SYNC_REGISTRY
+
+    if db.obj is None:
+        init_db(app)
+
+    database = db.obj
+    results: List[Dict[str, Any]] = []
+
+    with database.connection_context():
+        sync_meta_map: Dict[str, SyncMetadata] = {}
+        try:
+            for meta in SyncMetadata.select():
+                sync_meta_map[meta.table_name] = meta
+        except Exception:
+            pass
+
+        seen_names = set()
+        for entry in SYNC_REGISTRY:
+            table_name = entry.table_name
+            seen_names.add(table_name)
+            meta = sync_meta_map.get(table_name)
+
+            last_updated_at = (
+                meta.last_updated_at.isoformat()
+                if meta and meta.last_updated_at
+                else None
+            )
+            sync_status = meta.status if meta and meta.status else "idle"
+            error_message = meta.error_message if meta else None
+            records_count = meta.records_count if meta and meta.records_count else 0
+            duration_seconds = (
+                meta.duration_seconds if meta and meta.duration_seconds else 0.0
+            )
+            sync_requested = (
+                meta.sync_requested if meta and meta.sync_requested else False
+            )
+
+            results.append(
+                {
+                    "name": table_name,
+                    "syncable": True,
+                    "last_updated_at": last_updated_at,
+                    "sync_status": sync_status,
+                    "error_message": error_message,
+                    "records_count": records_count,
+                    "duration_seconds": duration_seconds,
+                    "sync_requested": sync_requested,
+                }
+            )
+
+        for table_name, meta in sync_meta_map.items():
+            if table_name not in seen_names:
+                last_updated_at = (
+                    meta.last_updated_at.isoformat() if meta.last_updated_at else None
+                )
+                results.append(
+                    {
+                        "name": table_name,
+                        "syncable": True,
+                        "last_updated_at": last_updated_at,
+                        "sync_status": meta.status or "idle",
+                        "error_message": meta.error_message,
+                        "records_count": meta.records_count or 0,
+                        "duration_seconds": meta.duration_seconds or 0.0,
+                        "sync_requested": meta.sync_requested or False,
+                    }
+                )
+
+    return results
