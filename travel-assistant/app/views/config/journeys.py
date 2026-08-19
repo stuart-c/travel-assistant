@@ -1,12 +1,13 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
+from flask import current_app, jsonify
+
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
 from app.sync.walking_sync import trigger_journey_walking_sync_async
 from app.views.config import config_bp
-from app.views.config.common import save_changeset_config
-from flask import current_app, jsonify, render_template, request
+from app.views.config.common import PageConfig, register_html_page
 
 
 def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
@@ -88,20 +89,17 @@ def journeys_data() -> Any:
     return jsonify({"data": items, "total": len(items)})
 
 
-@config_bp.route("/journeys", methods=["GET", "POST"])
-def journeys() -> Any:
-    """Manage configured travel journeys and multi-time-window schedules."""
-    if request.method == "POST":
-        return save_changeset_config(
-            form_key="journeys_json",
-            model_class=Journey,
-            clean_item_func=clean_journey_item,
-            entity_label="Journeys",
-            redirect_endpoint="config.journeys",
-            post_save_hook=_trigger_walking_sync_if_changed,
-        )
-
-    return render_template(
-        "config_journeys.html",
-        active_tab="journeys",
-    )
+register_html_page(
+    config_bp,
+    PageConfig(
+        route="/journeys",
+        endpoint="journeys",
+        template="config_journeys.html",
+        form_key="journeys_json",
+        model_class=Journey,
+        clean_item_func=clean_journey_item,
+        entity_label="Journeys",
+        get_template_context=lambda: {},
+        post_save_hook=_trigger_walking_sync_if_changed,
+    ),
+)

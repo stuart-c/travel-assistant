@@ -1,11 +1,11 @@
 """Locations configuration and Home Assistant synchronisation endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify, render_template, request
+from flask import jsonify
 
 from app.models import Location
 from app.views.config import config_bp
-from app.views.config.common import save_changeset_config
+from app.views.config.common import PageConfig, register_html_page
 
 
 def clean_location_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -51,20 +51,17 @@ def locations_data() -> Any:
     return jsonify({"data": items, "total": len(items)})
 
 
-@config_bp.route("/locations", methods=["GET", "POST"])
-def locations() -> Any:
-    """Manage configured geographic locations."""
-    if request.method == "POST":
-        return save_changeset_config(
-            form_key="locations_json",
-            model_class=Location,
-            clean_item_func=clean_location_item,
-            entity_label="Locations",
-            redirect_endpoint="config.locations",
-            scope_filter=(Location.ha == False),  # noqa: E712
-        )
-
-    return render_template(
-        "config_locations.html",
-        active_tab="locations",
-    )
+register_html_page(
+    config_bp,
+    PageConfig(
+        route="/locations",
+        endpoint="locations",
+        template="config_locations.html",
+        form_key="locations_json",
+        model_class=Location,
+        clean_item_func=clean_location_item,
+        entity_label="Locations",
+        get_template_context=lambda: {},
+        scope_filter=(Location.ha == False),  # noqa: E712
+    ),
+)

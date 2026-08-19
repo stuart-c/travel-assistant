@@ -1,8 +1,9 @@
 """Common utility functions and shared controllers for configuration views."""
 
 import json
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Type
-from flask import flash, redirect, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from peewee import Model
 
 
@@ -190,3 +191,76 @@ def save_changeset_config(
         flash(f"Failed to save {entity_label.lower()}: {str(e)}", "error")
 
     return redirect(url_for(redirect_endpoint), code=303)
+
+
+@dataclass
+class PageConfig:
+    """Configuration descriptor for a standard GET+POST changeset config page.
+
+    Attributes:
+        route: URL path relative to the blueprint prefix, e.g. ``'/locations'``.
+        endpoint: Blueprint endpoint name, e.g. ``'locations'``.
+        template: Jinja2 template name, e.g. ``'config_locations.html'``.
+        form_key: Name of the form field containing the JSON changeset payload.
+        model_class: Peewee model class to read from and persist to.
+        clean_item_func: Callback that validates and sanitises a single raw dict
+            item, returning a cleaned dict or ``None`` to skip the item.
+        entity_label: Human-readable label used in flash messages, e.g. ``'Locations'``.
+        get_template_context: Zero-argument callable returning the keyword
+            arguments to pass to :func:`flask.render_template` on GET requests.
+            The ``active_tab`` key is injected automatically.
+        scope_filter: Optional Peewee boolean expression to constrain which
+            records are updated or deleted (e.g. exclude auto-generated rows).
+        post_save_hook: Optional callback invoked with the changeset stats dict
+            after a successful save (e.g. to trigger background synchronisation).
+    """
+
+    route: str
+    endpoint: str
+    template: str
+    form_key: str
+    model_class: Type[Model]
+    clean_item_func: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
+    entity_label: str
+    get_template_context: Callable[[], Dict[str, Any]]
+    scope_filter: Optional[Any] = field(default=None)
+    post_save_hook: Optional[Callable[[Dict[str, int]], None]] = field(default=None)
+
+
+def register_html_page(bp: Blueprint, cfg: PageConfig) -> None:
+    """Register a standard GET+POST changeset config page on a blueprint.
+
+    Eliminates boilerplate by building a view function from a :class:`PageConfig`
+    descriptor and registering it with :meth:`flask.Blueprint.add_url_rule`.
+
+    On **POST** the view delegates to :func:`save_changeset_config`.
+    On **GET** the view calls ``cfg.get_template_context()`` and passes the
+    result (plus ``active_tab``) to :func:`flask.render_template`.
+
+    Args:
+        bp: The Flask :class:`~flask.Blueprint` to register the route on.
+        cfg: A :class:`PageConfig` instance describing the page.
+    """
+
+    def _view() -> Any:
+        if request.method == "POST":
+            return save_changeset_config(
+                form_key=cfg.form_key,
+                model_class=cfg.model_class,
+                clean_item_func=cfg.clean_item_func,
+                entity_label=cfg.entity_label,
+                redirect_endpoint=f"{bp.name}.{cfg.endpoint}",
+                scope_filter=cfg.scope_filter,
+                post_save_hook=cfg.post_save_hook,
+            )
+        context = cfg.get_template_context()
+        context["active_tab"] = cfg.endpoint
+        return render_template(cfg.template, **context)
+
+    _view.__name__ = cfg.endpoint
+    bp.add_url_rule(
+        cfg.route,
+        endpoint=cfg.endpoint,
+        view_func=_view,
+        methods=["GET", "POST"],
+    )

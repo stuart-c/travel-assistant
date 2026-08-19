@@ -1,12 +1,12 @@
 """Transfers configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify, render_template, request
+from flask import jsonify
 
 from app.models import PlatformTransfer
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import save_changeset_config
+from app.views.config.common import PageConfig, register_html_page
 
 
 def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -62,19 +62,16 @@ def transfers_data() -> Any:
     return jsonify({"data": items, "total": len(items)})
 
 
-@config_bp.route("/transfers", methods=["GET", "POST"])
-def transfers() -> Any:
-    """Manage intra-station platform and stand interchange transfers."""
-    if request.method == "POST":
-        return save_changeset_config(
-            form_key="platform_transfers_json",
-            model_class=PlatformTransfer,
-            clean_item_func=clean_platform_transfer_item,
-            entity_label="Transfers",
-            redirect_endpoint="config.transfers",
-        )
-
-    return render_template(
-        "config_transfers.html",
-        active_tab="transfers",
-    )
+register_html_page(
+    config_bp,
+    PageConfig(
+        route="/transfers",
+        endpoint="transfers",
+        template="config_transfers.html",
+        form_key="platform_transfers_json",
+        model_class=PlatformTransfer,
+        clean_item_func=clean_platform_transfer_item,
+        entity_label="Transfers",
+        get_template_context=lambda: {},
+    ),
+)
