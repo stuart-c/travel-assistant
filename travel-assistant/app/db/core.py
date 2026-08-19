@@ -273,7 +273,8 @@ def run_migrations(database: SqliteDatabase) -> None:
             cols = [col[1] for col in col_cursor.fetchall()]
             if "sync_requested" not in cols:
                 database.execute_sql(
-                    'ALTER TABLE "sync_metadata" ADD COLUMN "sync_requested" INTEGER NOT NULL DEFAULT 0'
+                    'ALTER TABLE "sync_metadata"'
+                    ' ADD COLUMN "sync_requested" INTEGER NOT NULL DEFAULT 0'
                 )
     except Exception:
         pass

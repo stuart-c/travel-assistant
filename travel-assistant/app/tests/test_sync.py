@@ -1,6 +1,5 @@
 """Unit tests for transit dataset synchronisation and background sync worker."""
 
-import datetime
 from unittest.mock import MagicMock, patch
 import requests
 from flask import Flask
@@ -676,8 +675,6 @@ def test_sync_worker_lifecycle(app: Flask) -> None:
 def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
     """Test that the worker executes a sync function when sync_requested flag is set."""
     from app.sync.worker import SYNC_REGISTRY
-
-    call_count = {"n": 0}
 
     def _fake_meta_get(table_name):
         m = MagicMock()
