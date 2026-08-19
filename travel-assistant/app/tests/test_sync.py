@@ -681,7 +681,7 @@ def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
 
     def _fake_meta_get(table_name):
         m = MagicMock()
-        m.sync_requested = (table_name == "bus_routes")
+        m.sync_requested = table_name == "bus_routes"
         return m
 
     def _fake_is_due(table_name, max_age_seconds):
@@ -704,6 +704,7 @@ def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
             worker = SyncWorker(app=app, initial_delay_seconds=0.0)
             worker.start()
             import time
+
             time.sleep(0.2)
             worker.stop(timeout=2.0)
             assert mock_fn.called
@@ -728,6 +729,7 @@ def test_sync_worker_runs_sync_when_overdue(app: Flask) -> None:
             worker = SyncWorker(app=app, initial_delay_seconds=0.0)
             worker.start()
             import time
+
             time.sleep(0.2)
             worker.stop(timeout=2.0)
             assert mock_fn.called
@@ -743,6 +745,7 @@ def test_sync_worker_sleeps_when_idle(app: Flask) -> None:
         worker.start()
 
         import time
+
         time.sleep(0.1)
 
         # The wake event should be cleared (worker is sleeping)
@@ -769,6 +772,7 @@ def test_sync_worker_handles_exception_in_loop(app: Flask) -> None:
             worker = SyncWorker(app=app, initial_delay_seconds=0.0)
             worker.start()
             import time
+
             time.sleep(0.15)
             worker.stop(timeout=2.0)
             assert worker.is_running() is False
@@ -819,10 +823,10 @@ def test_request_sync_sets_flag_and_wakes_worker(app: Flask) -> None:
             worker.start()
 
             import time
+
             time.sleep(0.1)
 
             request_sync("ha_locations")
             mock_meta.request_sync.assert_called_with("ha_locations")
 
             worker.stop(timeout=2.0)
-

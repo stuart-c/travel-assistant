@@ -144,9 +144,7 @@ class SyncWorker:
                             did_work = True
 
                 except Exception as exc:
-                    logger.error(
-                        "Error during sync of '%s': %s", entry.table_name, exc
-                    )
+                    logger.error("Error during sync of '%s': %s", entry.table_name, exc)
 
             if not did_work:
                 # Nothing to do — sleep until woken or the idle timeout expires

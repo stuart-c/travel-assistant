@@ -250,9 +250,7 @@ class SyncMetadata(BaseModel):
     @classmethod
     def clear_sync_requested(cls, table_name: str) -> None:
         """Atomically clear the sync_requested flag before executing a sync run."""
-        cls.update(sync_requested=False).where(
-            cls.table_name == table_name
-        ).execute()
+        cls.update(sync_requested=False).where(cls.table_name == table_name).execute()
 
     @classmethod
     def record_start(cls, table_name: str) -> "SyncMetadata":

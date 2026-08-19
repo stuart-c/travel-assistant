@@ -484,5 +484,3 @@ def sync_walking_routes(
                     "message": err_msg,
                     "duration_seconds": duration,
                 }
-
-

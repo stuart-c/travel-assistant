@@ -18,8 +18,6 @@ SQLITE_PRAGMAS = {
 }
 
 
-
-
 def format_file_size(size_bytes: int) -> str:
     """Format raw byte size into a human-readable British English string."""
     if size_bytes < 1024:
