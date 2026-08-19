@@ -12,6 +12,14 @@ from app.sync import sync_table
 from app.views.config import config_bp
 
 
+@config_bp.route("/db/data", methods=["GET"])
+def db_stats_data() -> Any:
+    """Return database table statistics as JSON for Grid.js remote data loading."""
+    stats = get_db_stats()
+    tables = stats.get("tables", [])
+    return jsonify({"data": tables, "total": len(tables)})
+
+
 @config_bp.route("/db", methods=["GET"])
 def db_stats() -> Any:
     """Display SQLite database storage metrics and table row counts."""
@@ -86,13 +94,19 @@ def download_db() -> Any:
     abort(404, description="Database file not found.")
 
 
+@config_bp.route("/sync/data", methods=["GET"])
+def background_sync_data() -> Any:
+    """Return syncable transit dataset statistics as JSON for Grid.js remote data loading."""
+    stats = get_db_stats()
+    tables = stats.get("tables", [])
+    return jsonify({"data": tables, "total": len(tables)})
+
+
 @config_bp.route("/sync", methods=["GET"])
 def background_sync() -> Any:
     """Display transit dataset background synchronisation status and controls."""
-    stats = get_db_stats()
     return render_template(
         "config_sync.html",
-        stats=stats,
         active_tab="sync",
     )
 

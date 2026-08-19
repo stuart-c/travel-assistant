@@ -106,7 +106,12 @@ def test_get_locations_page(client: FlaskClient, app: Flask) -> None:
 
     response_populated = client.get("/config/locations")
     assert response_populated.status_code == 200
-    assert b"Oxford Town Hall" in response_populated.data
+    assert b"locations-grid-wrapper" in response_populated.data
+
+    data_resp = client.get("/config/locations/data")
+    assert data_resp.status_code == 200
+    names = [loc["name"] for loc in data_resp.get_json()["data"]]
+    assert "Oxford Town Hall" in names
 
 
 def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
@@ -390,13 +395,10 @@ def test_location_save_leave_and_return_persistence(
     return_resp = client.get("/config/locations")
     assert return_resp.status_code == 200
 
-    # 4. Verify rendered JSON data payload
-    page_html = return_resp.get_data(as_text=True)
-    start_tag = '<script id="initial-locations-data" type="application/json">'
-    end_tag = "</script>"
-    json_start = page_html.find(start_tag) + len(start_tag)
-    json_end = page_html.find(end_tag, json_start)
-    persisted = json.loads(page_html[json_start:json_end])
+    # Verify data available via /config/locations/data endpoint
+    data_resp = client.get("/config/locations/data")
+    assert data_resp.status_code == 200
+    persisted = data_resp.get_json()["data"]
 
     assert len(persisted) == 2
     ha_loc = next((loc for loc in persisted if loc.get("ha")), None)
@@ -410,3 +412,29 @@ def test_location_save_leave_and_return_persistence(
     assert custom_loc["name"] == "St Pancras International Library"
     assert custom_loc["latitude"] == 51.5310
     assert custom_loc["longitude"] == -0.1260
+
+
+def test_config_locations_data_endpoint(app: Flask, client: FlaskClient) -> None:
+    """Test GET /config/locations/data returns all locations as JSON."""
+    with app.app_context():
+        Location.delete().execute()
+        Location.insert_many(
+            [
+                {
+                    "id": "custom:test1",
+                    "name": "Test Location",
+                    "latitude": 51.5,
+                    "longitude": -0.1,
+                    "ha": False,
+                },
+            ]
+        ).execute()
+
+    response = client.get("/config/locations/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert payload["total"] == 1
+    assert payload["data"][0]["name"] == "Test Location"

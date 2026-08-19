@@ -55,10 +55,9 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/walking" class="config-main-form hidden" id="walking-form" data-search-url="{{ ingress_path }}/config/search/places">
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/walking" class="config-main-form hidden" id="walking-form" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/walking/data">
   <input type="hidden" name="walking_json" id="walking_json" value="">
-  <script id="initial-walking-data" type="application/json">{{ walking_routes | tojson }}</script>
 </form>
 
 <!-- Add / Edit Walking Modal Dialogue -->
@@ -205,5 +204,6 @@
 
 <!-- Dependencies: Grid.js and Walking Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/walking.js?v={{ cache_bust }}"></script>
 {% endblock %}

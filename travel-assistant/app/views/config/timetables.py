@@ -3,7 +3,7 @@
 import datetime
 import json
 from typing import Any, Dict, Optional
-from flask import render_template, request
+from flask import jsonify, render_template, request
 
 from app.models import (
     Timetable,
@@ -183,6 +183,13 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
+@config_bp.route("/timetables/data", methods=["GET"])
+def timetables_data() -> Any:
+    """Return all configured timetables as JSON for Grid.js remote data loading."""
+    items = [t.to_dict() for t in Timetable.select()]
+    return jsonify({"data": items, "total": len(items)})
+
+
 @config_bp.route("/timetables", methods=["GET", "POST"])
 def timetables() -> Any:
     """Manage configured timetable schedules and operating days."""
@@ -196,9 +203,7 @@ def timetables() -> Any:
             scope_filter=(Timetable.auto_added == False),  # noqa: E712
         )
 
-    current_timetables = [t.to_dict() for t in Timetable.select()]
     return render_template(
         "config_timetables.html",
-        timetables=current_timetables,
         active_tab="timetables",
     )

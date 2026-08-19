@@ -90,6 +90,7 @@ def test_static_assets_served(client: FlaskClient) -> None:
     assets = [
         "/static/js/dirty-manager.js",
         "/static/js/credentials.js",
+        "/static/js/grid_loader.js",
         "/static/js/timetables.js",
         "/static/js/transfers.js",
         "/static/js/locations.js",
@@ -117,3 +118,42 @@ def test_timetables_js_action_button_handlers(client: FlaskClient) -> None:
     assert "edit-timetable-btn" in content
     assert "delete-timetable-btn" in content
     assert "openEditor(idx)" in content
+
+
+def test_grid_loader_js_exposes_window_namespace(client: FlaskClient) -> None:
+    """Test that grid_loader.js defines window.GridLoader with the expected API."""
+    response = client.get("/static/js/grid_loader.js")
+    assert response.status_code == 200
+    content = response.data.decode("utf-8")
+    assert "window.GridLoader" in content
+    assert "showLoading" in content
+    assert "showError" in content
+    assert "async function load" in content
+    assert "progress_activity" in content
+
+
+def test_grid_loader_js_included_in_config_pages(client: FlaskClient) -> None:
+    """Test that grid_loader.js is loaded before each config page controller script."""
+    pages = [
+        ("/config/journeys", "journeys.js"),
+        ("/config/locations", "locations.js"),
+        ("/config/timetables", "timetables.js"),
+        ("/config/transfers", "transfers.js"),
+        ("/config/walking", "walking.js"),
+        ("/config/db", "db.js"),
+        ("/config/sync", "sync.js"),
+    ]
+    for url, page_js in pages:
+        response = client.get(url)
+        assert response.status_code == 200, f"GET {url} failed"
+        html = response.data.decode("utf-8")
+        # Search for the <script src="..."> tags specifically to avoid false positives
+        # from HTML comments that may also reference the JS file name
+        loader_tag = "/static/js/grid_loader.js"
+        page_tag = f"/static/js/{page_js}"
+        assert loader_tag in html, f"grid_loader.js missing from {url}"
+        loader_pos = html.find(loader_tag)
+        page_pos = html.find(page_tag)
+        assert (
+            loader_pos < page_pos
+        ), f"grid_loader.js must appear before {page_js} script tag on {url}"

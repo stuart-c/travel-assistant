@@ -325,18 +325,11 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
     return_resp = client.get("/config/journeys")
     assert return_resp.status_code == 200
 
-    # 4. Verify data payload rendered on the returned page
-    page_html = return_resp.get_data(as_text=True)
-    assert "initial-journeys-data" in page_html
+    # 4. Verify data available via /data endpoint
+    data_resp = client.get("/config/journeys/data")
+    assert data_resp.status_code == 200
 
-    # Extract JSON embedded script
-    start_tag = '<script id="initial-journeys-data" type="application/json">'
-    end_tag = "</script>"
-    json_start = page_html.find(start_tag) + len(start_tag)
-    json_end = page_html.find(end_tag, json_start)
-    raw_json = page_html[json_start:json_end]
-
-    persisted_journeys = json.loads(raw_json)
+    persisted_journeys = data_resp.get_json()["data"]
     assert len(persisted_journeys) == 1
     item = persisted_journeys[0]
     assert item["name"] == "Gym Workout Route"
@@ -426,15 +419,42 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
     assert save_resp.status_code == 200
 
     # Return to Journeys and verify
-    get_resp = client.get("/config/journeys")
-    page_html = get_resp.get_data(as_text=True)
-
-    start_tag = '<script id="initial-journeys-data" type="application/json">'
-    end_tag = "</script>"
-    json_start = page_html.find(start_tag) + len(start_tag)
-    json_end = page_html.find(end_tag, json_start)
-    persisted = json.loads(page_html[json_start:json_end])
+    client.get("/config/journeys")
+    data_resp = client.get("/config/journeys/data")
+    assert data_resp.status_code == 200
+    persisted = data_resp.get_json()["data"]
 
     assert len(persisted) == 1
     assert persisted[0]["name"] == "Central Library Research Session"
     assert persisted[0]["time_settings"][0]["days"] == ["sat"]
+
+
+def test_config_journeys_data_endpoint(app: Flask, client: FlaskClient) -> None:
+    """Test GET /config/journeys/data returns all journeys as JSON."""
+    # Seed a journey
+    with app.app_context():
+        Journey.delete().execute()
+        Journey.insert_many(
+            [
+                {
+                    "name": "Data Endpoint Test Journey",
+                    "from_type": "ha",
+                    "from_id": "zone.home",
+                    "from_name": "Home",
+                    "to_type": "rail",
+                    "to_id": "WAT",
+                    "to_name": "London Waterloo",
+                    "time_settings": [],
+                }
+            ]
+        ).execute()
+
+    response = client.get("/config/journeys/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert payload["total"] == 1
+    assert payload["data"][0]["name"] == "Data Endpoint Test Journey"
+    assert payload["data"][0]["from_id"] == "zone.home"

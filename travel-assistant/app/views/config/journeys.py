@@ -6,7 +6,7 @@ from app.models.base import LOCATION_TYPES
 from app.sync.walking_sync import trigger_journey_walking_sync_async
 from app.views.config import config_bp
 from app.views.config.common import save_changeset_config
-from flask import current_app, render_template, request
+from flask import current_app, jsonify, render_template, request
 
 
 def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
@@ -81,6 +81,13 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
+@config_bp.route("/journeys/data", methods=["GET"])
+def journeys_data() -> Any:
+    """Return all configured journeys as JSON for Grid.js remote data loading."""
+    items = [j.to_dict() for j in Journey.select()]
+    return jsonify({"data": items, "total": len(items)})
+
+
 @config_bp.route("/journeys", methods=["GET", "POST"])
 def journeys() -> Any:
     """Manage configured travel journeys and multi-time-window schedules."""
@@ -94,9 +101,7 @@ def journeys() -> Any:
             post_save_hook=_trigger_walking_sync_if_changed,
         )
 
-    current_journeys = [j.to_dict() for j in Journey.select()]
     return render_template(
         "config_journeys.html",
-        journeys=current_journeys,
         active_tab="journeys",
     )

@@ -1,7 +1,7 @@
 """Locations configuration and Home Assistant synchronisation endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import render_template, request
+from flask import jsonify, render_template, request
 
 from app.models import Location
 from app.views.config import config_bp
@@ -44,6 +44,13 @@ def clean_location_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+@config_bp.route("/locations/data", methods=["GET"])
+def locations_data() -> Any:
+    """Return all configured locations as JSON for Grid.js remote data loading."""
+    items = [loc.to_dict() for loc in Location.select()]
+    return jsonify({"data": items, "total": len(items)})
+
+
 @config_bp.route("/locations", methods=["GET", "POST"])
 def locations() -> Any:
     """Manage configured geographic locations."""
@@ -57,9 +64,7 @@ def locations() -> Any:
             scope_filter=(Location.ha == False),  # noqa: E712
         )
 
-    current_locations = [loc.to_dict() for loc in Location.select()]
     return render_template(
         "config_locations.html",
-        locations=current_locations,
         active_tab="locations",
     )

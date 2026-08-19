@@ -55,10 +55,9 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/search/places">
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/journeys/data">
   <input type="hidden" name="journeys_json" id="journeys_json" value="">
-  <script id="initial-journeys-data" type="application/json">{{ journeys | tojson }}</script>
 </form>
 
 <!-- Add / Edit Journey Modal Dialogue -->
@@ -220,5 +219,6 @@
 
 <!-- Dependencies: Grid.js and Journeys Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/journeys.js?v={{ cache_bust }}"></script>
 {% endblock %}

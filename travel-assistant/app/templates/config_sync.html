@@ -33,7 +33,7 @@
 
     <!-- Grid.js Container Mount Point -->
     <div class="mt-6">
-      <div id="sync-grid-wrapper"></div>
+      <div id="sync-grid-wrapper" data-data-url="{{ ingress_path }}/config/sync/data"></div>
 
       <!-- Empty state container when 0 items -->
       {{ macros.render_empty_state(
@@ -46,10 +46,8 @@
   </section>
 </div>
 
-<!-- Initial Data Payload -->
-<script id="initial-sync-stats" type="application/json">{{ stats | tojson }}</script>
-
 <!-- Grid.js UMD Script (CDN) and Sync Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/sync.js?v={{ cache_bust }}"></script>
 {% endblock %}

@@ -13,25 +13,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
-  // Parse initial data payload
-  const initialScript = document.getElementById('initial-walking-data');
-  let initialWalkingData = [];
-  try {
-    if (initialScript && initialScript.textContent) {
-      initialWalkingData = JSON.parse(initialScript.textContent);
-    }
-  } catch (e) {
-    console.error('Failed to parse initial walking data:', e);
-  }
+form.getAttribute('data-data-url') || '/config/walking/data';
 
-  // Initialise ChangesetTracker
-  const tracker = window.TransitUI.createChangesetTracker(initialWalkingData || []);
-  let stagedWalking = tracker.getItems();
+
+
+  // In-memory staged state (seeded after remote fetch)
+  let stagedWalking = [];
+  let initialSnapshot = '[]';
 
   // DOM Elements
   const hiddenInput = document.getElementById('walking_json');
   const gridWrapper = document.getElementById('walking-grid-wrapper');
   const emptyState = document.getElementById('walking-grid-empty-state');
+
+  const dataUrl = form.getAttribute('data-data-url') || '/config/walking/data';
 
   // Modal Elements
   const modal = document.getElementById('walking-modal');
@@ -340,15 +335,21 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  if (gridWrapper) {
-    grid.render(gridWrapper);
-  }
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridWrapper, {
+    label: 'walking routes',
+    emptyState,
+    onSuccess(json) {
+      stagedWalking = Array.isArray(json.data) ? json.data : [];
+      initialSnapshot = JSON.stringify(stagedWalking);
+      grid.render(gridWrapper);
+      syncState();
+    },
+  });
 
   function syncState() {
-    const changeset = tracker.getChangeset();
-    stagedWalking = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(changeset);
+      hiddenInput.value = JSON.stringify(stagedWalking);
     }
 
     if (stagedWalking.length === 0) {
@@ -374,7 +375,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      if (tracker.isDirty()) {
+      const currentJson = JSON.stringify(stagedWalking);
+      if (currentJson !== initialSnapshot) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -383,12 +385,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Initial sync
-  syncState();
-
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      tracker.discard();
+      stagedWalking = JSON.parse(initialSnapshot);
       syncState();
     });
   }
@@ -471,7 +471,11 @@ document.addEventListener('DOMContentLoaded', () => {
         auto_generated: false,
       };
 
-      tracker.saveModalItem(idx, entry);
+      if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
+        stagedWalking[idx] = entry;
+      } else {
+        stagedWalking.push(entry);
+      }
 
       syncState();
       closeModal();
@@ -491,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedWalking.length) {
-        tracker.deleteItem(idx);
+        stagedWalking.splice(idx, 1);
         syncState();
       }
       return;

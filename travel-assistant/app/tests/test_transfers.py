@@ -280,19 +280,44 @@ def test_transfers_save_leave_and_return_persistence(client: FlaskClient) -> Non
     # Return to Transfers
     return_resp = client.get("/config/transfers")
     assert return_resp.status_code == 200
-    page_html = return_resp.get_data(as_text=True)
-
-    # Verify platform transfer
-    start_tag_plat = (
-        '<script id="initial-platform-transfers-data" type="application/json">'
-    )
-    end_tag = "</script>"
-    start_plat_idx = page_html.find(start_tag_plat) + len(start_tag_plat)
-    end_plat_idx = page_html.find(end_tag, start_plat_idx)
-    plat_transfers = json.loads(page_html[start_plat_idx:end_plat_idx])
+    # Verify data available via /data endpoint
+    data_resp = client.get("/config/transfers/data")
+    assert data_resp.status_code == 200
+    plat_transfers = data_resp.get_json()["data"]
 
     assert len(plat_transfers) == 1
     assert plat_transfers[0]["location_name"] == "London Waterloo"
     assert plat_transfers[0]["from_platform"] == "1"
     assert plat_transfers[0]["to_platform"] == "12"
     assert plat_transfers[0]["transfer_time_minutes"] == 5
+
+
+def test_config_transfers_data_endpoint(app: Flask, client: FlaskClient) -> None:
+    """Test GET /config/transfers/data returns all platform transfers as JSON."""
+    with app.app_context():
+        PlatformTransfer.delete().execute()
+        PlatformTransfer.insert_many(
+            [
+                {
+                    "location_type": "rail",
+                    "location_id": "WAT",
+                    "location_name": "London Waterloo",
+                    "from_platform": "1",
+                    "to_platform": "2",
+                    "transfer_time_minutes": 3,
+                    "bidirectional": True,
+                    "step_free": False,
+                    "notes": "",
+                }
+            ]
+        ).execute()
+
+    response = client.get("/config/transfers/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert payload["total"] == 1
+    assert payload["data"][0]["location_name"] == "London Waterloo"
+    assert payload["data"][0]["from_platform"] == "1"
