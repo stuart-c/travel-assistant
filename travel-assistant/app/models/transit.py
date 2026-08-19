@@ -4,6 +4,7 @@ import datetime
 from typing import Any, Dict, List, Optional
 from peewee import (
     AutoField,
+    BooleanField,
     CharField,
     DateTimeField,
     FloatField,
@@ -209,7 +210,7 @@ class Stop(BaseModel):
 
 
 class SyncMetadata(BaseModel):
-    """Synchronization status and telemetry for transit tables."""
+    """Synchronisation status and telemetry for transit tables."""
 
     table_name = CharField(primary_key=True)
     last_updated_at = DateTimeField(null=True)
@@ -217,13 +218,45 @@ class SyncMetadata(BaseModel):
     error_message = TextField(null=True)
     records_count = IntegerField(default=0)
     duration_seconds = FloatField(default=0.0)
+    sync_requested = BooleanField(default=False)
 
     class Meta:
         table_name = "sync_metadata"
 
     @classmethod
+    def request_sync(cls, table_name: str) -> "SyncMetadata":
+        """Mark a dataset table as requiring synchronisation.
+
+        Sets the sync_requested flag and records a 'pending' status so callers can
+        see the request has been queued before the background loop processes it.
+        """
+        now = datetime.datetime.utcnow()
+        item, _ = cls.get_or_create(
+            table_name=table_name,
+            defaults={
+                "status": "pending",
+                "sync_requested": True,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        item.sync_requested = True
+        if item.status not in ("syncing",):
+            item.status = "pending"
+        item.updated_at = now
+        item.save()
+        return item
+
+    @classmethod
+    def clear_sync_requested(cls, table_name: str) -> None:
+        """Atomically clear the sync_requested flag before executing a sync run."""
+        cls.update(sync_requested=False).where(
+            cls.table_name == table_name
+        ).execute()
+
+    @classmethod
     def record_start(cls, table_name: str) -> "SyncMetadata":
-        """Record the start of a synchronization run."""
+        """Record the start of a synchronisation run."""
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,
@@ -244,7 +277,7 @@ class SyncMetadata(BaseModel):
     def record_success(
         cls, table_name: str, records_count: int, duration_seconds: float
     ) -> "SyncMetadata":
-        """Record a successful synchronization completion."""
+        """Record a successful synchronisation completion."""
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,
@@ -271,7 +304,7 @@ class SyncMetadata(BaseModel):
     def record_error(
         cls, table_name: str, error_message: str, duration_seconds: float
     ) -> "SyncMetadata":
-        """Record a failed synchronization run with error diagnostic."""
+        """Record a failed synchronisation run with error diagnostic."""
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,
@@ -293,7 +326,7 @@ class SyncMetadata(BaseModel):
 
     @classmethod
     def record_skipped(cls, table_name: str, message: str) -> "SyncMetadata":
-        """Record a skipped synchronization run."""
+        """Record a skipped synchronisation run."""
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,
@@ -320,7 +353,7 @@ class SyncMetadata(BaseModel):
 
     @classmethod
     def is_due_for_update(cls, table_name: str, max_age_seconds: int = 86400) -> bool:
-        """Determine if a dataset table is due for a synchronization refresh."""
+        """Determine if a dataset table is due for a synchronisation refresh."""
         meta = cls.get_meta(table_name)
         if not meta or not meta.last_updated_at:
             return True

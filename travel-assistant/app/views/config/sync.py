@@ -8,7 +8,8 @@ import tempfile
 from flask import abort, current_app, jsonify, render_template, send_file
 
 from app.db import db, get_db_path, get_db_stats, init_db
-from app.sync import sync_table
+from app.sync import request_sync
+from app.sync.worker import SYNC_REGISTRY
 from app.views.config import config_bp
 
 
@@ -113,8 +114,10 @@ def background_sync() -> Any:
 
 @config_bp.route("/db/sync/<table_name>", methods=["POST"], strict_slashes=False)
 def sync_db_table(table_name: str) -> Any:
-    """Trigger on-demand synchronisation for a specific transit dataset."""
+    """Queue an on-demand synchronisation request for a specific transit dataset."""
     norm_name = table_name.lower().strip()
+    valid_names = [e.table_name for e in SYNC_REGISTRY]
+
     if not norm_name or norm_name == "all":
         return (
             jsonify(
@@ -130,21 +133,30 @@ def sync_db_table(table_name: str) -> Any:
             400,
         )
 
-    result = sync_table(norm_name, force=True)
-    status_code = 200 if result.get("status") != "error" else 400
-    stats = get_db_stats()
-    return (
-        jsonify(
-            {
-                "success": result.get("status")
-                in ("success", "skipped_no_credentials"),
-                "table": norm_name,
-                "status": result.get("status"),
-                "records": result.get("records", 0),
-                "message": result.get("message", ""),
-                "duration_seconds": result.get("duration_seconds", 0.0),
-                "stats": stats,
-            }
-        ),
-        status_code,
+    if norm_name not in valid_names:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "status": "error",
+                    "message": (
+                        f"Unknown table: '{norm_name}'. "
+                        f"Valid tables are: {', '.join(valid_names)}."
+                    ),
+                }
+            ),
+            400,
+        )
+
+    request_sync(norm_name)
+    return jsonify(
+        {
+            "success": True,
+            "table": norm_name,
+            "status": "queued",
+            "message": (
+                f"Synchronisation of '{norm_name}' has been queued "
+                "and will run shortly."
+            ),
+        }
     )

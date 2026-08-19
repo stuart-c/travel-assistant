@@ -17,14 +17,7 @@ SQLITE_PRAGMAS = {
     "cache_size": -1024 * 64,  # 64MB cache
 }
 
-SYNCABLE_TABLES = (
-    "bus_routes",
-    "stops",
-    "ha_locations",
-    "train_timetables",
-    "bus_timetables",
-    "walking",
-)
+
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -273,6 +266,20 @@ def run_migrations(database: SqliteDatabase) -> None:
     except Exception:
         pass
 
+    try:
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_metadata'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("sync_metadata")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "sync_requested" not in cols:
+                database.execute_sql(
+                    'ALTER TABLE "sync_metadata" ADD COLUMN "sync_requested" INTEGER NOT NULL DEFAULT 0'
+                )
+    except Exception:
+        pass
+
 
 def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
     """Initialise database, configure proxy, and create schema tables."""
@@ -406,7 +413,15 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             columns = [col[1] for col in col_cursor.fetchall()]
 
             # Determine sync status and last updated
-            is_syncable = table_name in SYNCABLE_TABLES or table_name in (
+            _syncable = (
+                "bus_routes",
+                "stops",
+                "ha_locations",
+                "train_timetables",
+                "bus_timetables",
+                "walking",
+            )
+            is_syncable = table_name in _syncable or table_name in (
                 "locations",
                 "timetables",
             )

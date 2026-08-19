@@ -10,7 +10,7 @@ from typing import Any, Dict
 from flask import Flask, render_template, jsonify, request
 
 from app import db
-from app.sync import start_background_worker, sync_all, sync_table
+from app.sync import request_sync, start_background_worker
 from app.views.config import config_bp
 
 STARTUP_CACHE_BUST = uuid.uuid4().hex[:8]
@@ -115,15 +115,51 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
     @app.route("/api/sync", methods=["POST"], strict_slashes=False)
     @app.route("/api/sync/<table_name>", methods=["POST"], strict_slashes=False)
     def api_sync(table_name: str = "all") -> Any:
-        """API endpoint to trigger dataset synchronisation on demand."""
-        norm_name = table_name.lower().strip()
-        if norm_name in ("all", ""):
-            result = sync_all(force=True, app=app)
-            return jsonify(result)
+        """API endpoint to queue dataset synchronisation on demand."""
+        from app.sync.worker import SYNC_REGISTRY
 
-        result = sync_table(norm_name, force=True, app=app)
-        status_code = 200 if result.get("status") != "error" else 400
-        return jsonify(result), status_code
+        norm_name = table_name.lower().strip()
+        valid_names = [e.table_name for e in SYNC_REGISTRY]
+
+        if norm_name in ("all", ""):
+            for entry in SYNC_REGISTRY:
+                request_sync(entry.table_name)
+            return jsonify(
+                {
+                    "success": True,
+                    "status": "queued",
+                    "message": "All sync tables have been queued.",
+                    "tables": valid_names,
+                }
+            )
+
+        if norm_name not in valid_names:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "status": "error",
+                        "message": (
+                            f"Unknown table: '{norm_name}'. "
+                            f"Valid tables are: {', '.join(valid_names)}."
+                        ),
+                    }
+                ),
+                400,
+            )
+
+        request_sync(norm_name)
+        return jsonify(
+            {
+                "success": True,
+                "table": norm_name,
+                "status": "queued",
+                "message": (
+                    f"Synchronisation of '{norm_name}' has been queued "
+                    "and will run shortly."
+                ),
+            }
+        )
 
     @app.errorhandler(404)
     def not_found(error: Any) -> Any:

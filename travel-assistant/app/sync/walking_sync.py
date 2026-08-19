@@ -10,7 +10,7 @@ import math
 import threading
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
-from flask import Flask, current_app
+from flask import Flask
 
 from app.datasources import (
     DataSourceAuthError,
@@ -486,31 +486,3 @@ def sync_walking_routes(
                 }
 
 
-def trigger_journey_walking_sync_async(
-    app: Optional[Flask] = None,
-) -> threading.Thread:
-    """Trigger walking route discovery asynchronously in a background thread."""
-    flask_app = app or (current_app._get_current_object() if current_app else None)
-
-    def _worker() -> None:
-        if flask_app:
-            with flask_app.app_context():
-                try:
-                    sync_walking_routes(app=flask_app)
-                except Exception as exc:
-                    logger.error(
-                        "Error in background walking route synchronisation: %s", exc
-                    )
-        else:
-            try:
-                sync_walking_routes()
-            except Exception as exc:
-                logger.error(
-                    "Error in background walking route synchronisation: %s", exc
-                )
-
-    thread = threading.Thread(
-        target=_worker, name="JourneyWalkingSyncWorker", daemon=True
-    )
-    thread.start()
-    return thread

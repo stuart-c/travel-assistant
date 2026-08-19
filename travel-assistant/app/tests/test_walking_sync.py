@@ -19,7 +19,6 @@ from app.sync.walking_sync import (
     find_candidate_stops_for_location,
     resolve_location_coords,
     sync_walking_routes,
-    trigger_journey_walking_sync_async,
     walking_route_exists,
 )
 
@@ -429,12 +428,19 @@ def test_sync_walking_routes_handles_api_errors(app: Flask) -> None:
             assert meta.status == "error"
 
 
-def test_trigger_journey_walking_sync_async(app: Flask) -> None:
-    """Test launching asynchronous walking route synchronisation background thread."""
+def test_trigger_walking_sync_if_changed_calls_request_sync(app: Flask) -> None:
+    """Test _trigger_walking_sync_if_changed queues a walking sync via request_sync."""
+    from app.views.config.journeys import _trigger_walking_sync_if_changed
+
     with app.app_context():
-        thread = trigger_journey_walking_sync_async(app)
-        assert thread is not None
-        thread.join(timeout=2.0)
+        with patch("app.views.config.journeys.request_sync") as mock_request_sync:
+            # No changes — should not queue anything
+            _trigger_walking_sync_if_changed({"added": 0, "updated": 0, "deleted": 0})
+            mock_request_sync.assert_not_called()
+
+            # With changes — should queue "walking"
+            _trigger_walking_sync_if_changed({"added": 1, "updated": 0, "deleted": 0})
+            mock_request_sync.assert_called_once_with("walking")
 
 
 def test_sync_walking_routes_timetable_stop_resolution(app: Flask) -> None:
