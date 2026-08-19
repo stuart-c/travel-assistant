@@ -174,3 +174,30 @@ def test_transit_ui_js_exports_and_syntax(client: FlaskClient) -> None:
     assert "class StagedChangesetManager" in content
     assert "computeChangeset" in content
     assert "window.TransitUI" in content
+
+
+def test_configure_logging() -> None:
+    """Test configure_logging maps log levels correctly from LOG_LEVEL environment variable."""
+    import logging
+    import os
+    from app.main import configure_logging
+
+    with patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}):
+        configure_logging()
+        assert logging.getLogger().level == logging.DEBUG
+
+    with patch.dict(os.environ, {"LOG_LEVEL": "WARNING"}):
+        configure_logging()
+        assert logging.getLogger().level == logging.WARNING
+
+    with patch.dict(os.environ, {"LOG_LEVEL": "ERROR"}):
+        configure_logging()
+        assert logging.getLogger().level == logging.ERROR
+
+    with patch.dict(os.environ, {"LOG_LEVEL": "TRACE"}):
+        configure_logging()
+        assert logging.getLogger().level == logging.DEBUG
+
+    with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}):
+        configure_logging()
+        assert logging.getLogger().level == logging.INFO

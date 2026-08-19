@@ -1,5 +1,6 @@
 """Unit tests for transit dataset synchronisation and background sync worker."""
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 import requests
 from flask import Flask
@@ -855,3 +856,149 @@ def test_sync_registry_ordering() -> None:
     walking_idx = table_order.index("walking")
     bus_tt_idx = table_order.index("bus_timetables")
     assert walking_idx < bus_tt_idx
+
+
+def test_sync_metadata_record_error_logs_to_system_log(caplog: Any) -> None:
+    """Test SyncMetadata.record_error outputs error to system log."""
+    import logging
+
+    with caplog.at_level(logging.ERROR):
+        SyncMetadata.record_error(
+            "bus_timetables", "Test simulated BODS connection timeout", 1.23
+        )
+        assert any(
+            "Synchronisation error for 'bus_timetables'" in record.message
+            and "Test simulated BODS connection timeout" in record.message
+            for record in caplog.records
+        )
+
+
+def test_sync_metadata_record_skipped_logs_to_system_log(caplog: Any) -> None:
+    """Test SyncMetadata.record_skipped outputs warning to system log."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        SyncMetadata.record_skipped("bus_routes", "Missing API key")
+        assert any(
+            "Synchronisation skipped for 'bus_routes'" in record.message
+            and "Missing API key" in record.message
+            for record in caplog.records
+        )
+
+
+def test_sync_bus_timetables_logs_error(app: Flask, caplog: Any) -> None:
+    """Test sync_bus_timetables logs error to system log when fetch fails."""
+    import logging
+    from app.sync.transit_sync import sync_bus_timetables
+
+    with app.app_context():
+        Setting.set_val("bus_api_key", "test-key")
+
+        with patch("app.models.Walking.select") as mock_walk_select:
+            mock_walk = MagicMock()
+            mock_walk.start_type = "bus"
+            mock_walk.start_id = "atco:490000077E"
+            mock_walk.finish_type = "custom"
+            mock_walk.finish_id = "custom:123"
+            mock_walk_select.return_value = [mock_walk]
+
+            with patch("app.datasources.BodsClient.fetch_timetables") as mock_fetch:
+                mock_fetch.side_effect = RuntimeError("BODS service unavailable")
+                with caplog.at_level(logging.ERROR):
+                    res = sync_bus_timetables(app=app)
+                    assert res["status"] == "error"
+                    assert any(
+                        "Synchronisation error for 'bus_timetables'" in record.message
+                        and "BODS service unavailable" in record.message
+                        for record in caplog.records
+                    )
+
+
+def test_sync_bus_timetables_logs_skipped(app: Flask, caplog: Any) -> None:
+    """Test sync_bus_timetables logs warning to system log when unconfigured."""
+    import logging
+    from app.sync.transit_sync import sync_bus_timetables
+
+    with app.app_context():
+        Setting.set_val("bus_api_key", "")
+        with caplog.at_level(logging.WARNING):
+            res = sync_bus_timetables(app=app)
+            assert res["status"] == "skipped_no_credentials"
+            assert any(
+                "Synchronisation skipped for 'bus_timetables'" in record.message
+                and "Bus API Key not configured" in record.message
+                for record in caplog.records
+            )
+
+
+def test_sync_table_unknown_logs_error(app: Flask, caplog: Any) -> None:
+    """Test sync_table logs error to system log for unknown tables."""
+    import logging
+
+    with app.app_context():
+        with caplog.at_level(logging.ERROR):
+            res = sync_table("invalid_table_name", app=app)
+            assert res["status"] == "error"
+            assert any(
+                "Unknown or non-syncable table: 'invalid_table_name'" in record.message
+                for record in caplog.records
+            )
+
+
+def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> None:
+    """Test SyncWorker logs error when sync_fn returns error status and warning when skipped."""
+    import logging
+    import time
+    from app.sync.worker import SYNC_REGISTRY
+
+    first_entry = SYNC_REGISTRY[0]
+
+    with app.app_context():
+        with patch("app.sync.worker.SyncMetadata") as mock_meta:
+            mock_meta.get_meta.return_value = None
+            mock_meta.is_due_for_update.side_effect = (
+                lambda table_name, max_age_seconds: table_name == "bus_routes"
+            )
+            mock_meta.clear_sync_requested.return_value = None
+
+            # Test error status logging
+            with patch.object(
+                first_entry,
+                "sync_fn",
+                return_value={
+                    "status": "error",
+                    "message": "BODS connection timeout",
+                    "records": 0,
+                },
+            ):
+                with caplog.at_level(logging.ERROR):
+                    worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+                    worker.start()
+                    time.sleep(0.15)
+                    worker.stop(timeout=2.0)
+                    assert any(
+                        "Sync failed for 'bus_routes': BODS connection timeout"
+                        in record.message
+                        for record in caplog.records
+                    )
+
+            # Test skipped status logging
+            with patch.object(
+                first_entry,
+                "sync_fn",
+                return_value={
+                    "status": "skipped_no_credentials",
+                    "message": "Missing API key",
+                    "records": 0,
+                },
+            ):
+                with caplog.at_level(logging.WARNING):
+                    worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+                    worker.start()
+                    time.sleep(0.15)
+                    worker.stop(timeout=2.0)
+                    assert any(
+                        "Sync skipped for 'bus_routes': Missing API key"
+                        in record.message
+                        for record in caplog.records
+                    )

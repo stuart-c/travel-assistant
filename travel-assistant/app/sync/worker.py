@@ -135,12 +135,26 @@ class SyncWorker:
                                 overdue,
                             )
                             result = entry.sync_fn()
-                            logger.debug(
-                                "Sync complete for '%s': status=%s, records=%d.",
-                                entry.table_name,
-                                result.get("status"),
-                                result.get("records", 0),
-                            )
+                            status = result.get("status")
+                            if status == "error":
+                                logger.error(
+                                    "Sync failed for '%s': %s",
+                                    entry.table_name,
+                                    result.get("message", "Unknown error"),
+                                )
+                            elif status == "skipped_no_credentials":
+                                logger.warning(
+                                    "Sync skipped for '%s': %s",
+                                    entry.table_name,
+                                    result.get("message", "Missing credentials"),
+                                )
+                            else:
+                                logger.debug(
+                                    "Sync complete for '%s': status=%s, records=%d.",
+                                    entry.table_name,
+                                    status,
+                                    result.get("records", 0),
+                                )
                             did_work = True
 
                 except Exception as exc:

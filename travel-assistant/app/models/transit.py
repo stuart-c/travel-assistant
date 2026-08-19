@@ -1,6 +1,7 @@
 """Peewee models for public transit entities (routes, stops, stations, sync metadata)."""
 
 import datetime
+import logging
 from typing import Any, Dict, List, Optional
 from peewee import (
     AutoField,
@@ -13,6 +14,8 @@ from peewee import (
 )
 
 from app.models.base import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class BusRoute(BaseModel):
@@ -303,6 +306,12 @@ class SyncMetadata(BaseModel):
         cls, table_name: str, error_message: str, duration_seconds: float
     ) -> "SyncMetadata":
         """Record a failed synchronisation run with error diagnostic."""
+        logger.error(
+            "Synchronisation error for '%s' (duration=%.2fs): %s",
+            table_name,
+            duration_seconds,
+            error_message,
+        )
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,
@@ -325,6 +334,11 @@ class SyncMetadata(BaseModel):
     @classmethod
     def record_skipped(cls, table_name: str, message: str) -> "SyncMetadata":
         """Record a skipped synchronisation run."""
+        logger.warning(
+            "Synchronisation skipped for '%s': %s",
+            table_name,
+            message,
+        )
         now = datetime.datetime.utcnow()
         item, _ = cls.get_or_create(
             table_name=table_name,

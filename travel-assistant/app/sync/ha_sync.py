@@ -4,6 +4,7 @@ Fetches configured Home Assistant zones via Supervisor / Core REST API
 and reconciles them into the SQLite locations table.
 """
 
+import logging
 import time
 from typing import Any, Dict, Optional
 from flask import Flask
@@ -16,6 +17,8 @@ from app.datasources import (
 )
 from app.db import db, init_db
 from app.models import Location, SyncMetadata
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
