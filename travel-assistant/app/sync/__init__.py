@@ -2,21 +2,19 @@
 
 from app.sync.ha_sync import sync_ha_locations
 from app.sync.transit_sync import (
-    check_and_run_background_sync,
-    sync_all,
     sync_bus_routes,
     sync_bus_timetables,
     sync_stops,
     sync_table,
     sync_train_timetables,
 )
-from app.sync.walking_sync import (
-    sync_walking_routes,
-    trigger_journey_walking_sync_async,
-)
+from app.sync.walking_sync import sync_walking_routes
 from app.sync.worker import (
-    TransitBackgroundWorker,
+    SYNC_REGISTRY,
+    SyncEntry,
+    SyncWorker,
     get_background_worker,
+    request_sync,
     start_background_worker,
     stop_background_worker,
 )
@@ -28,12 +26,12 @@ __all__ = [
     "sync_train_timetables",
     "sync_bus_timetables",
     "sync_walking_routes",
-    "trigger_journey_walking_sync_async",
     "sync_table",
-    "sync_all",
-    "check_and_run_background_sync",
-    "TransitBackgroundWorker",
+    "SYNC_REGISTRY",
+    "SyncEntry",
+    "SyncWorker",
     "start_background_worker",
     "stop_background_worker",
     "get_background_worker",
+    "request_sync",
 ]

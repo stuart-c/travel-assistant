@@ -59,26 +59,26 @@ def test_page_404_html_response(client: FlaskClient) -> None:
 
 def test_api_sync_endpoints(client: FlaskClient) -> None:
     """Test POST /api/sync and POST /api/sync/<table_name> endpoints."""
-    # 1. Sync all tables
-    with patch(
-        "app.main.sync_all", return_value={"success": True, "total_records": 10}
-    ):
+    # 1. Queue all tables
+    with patch("app.main.request_sync") as mock_req:
         res_all = client.post("/api/sync")
         assert res_all.status_code == 200
         data_all = res_all.get_json()
-        assert "success" in data_all
+        assert data_all["success"] is True
+        assert data_all["status"] == "queued"
+        assert "tables" in data_all
+        assert mock_req.call_count == 6  # one call per SYNC_REGISTRY entry
 
-    # 2. Sync specific valid table
-    with patch(
-        "app.main.sync_table",
-        return_value={"status": "success", "table": "bus_routes", "records": 5},
-    ):
+    # 2. Queue specific valid table
+    with patch("app.main.request_sync") as mock_req2:
         res_table = client.post("/api/sync/bus_routes")
         assert res_table.status_code == 200
         data_table = res_table.get_json()
         assert data_table["table"] == "bus_routes"
+        assert data_table["status"] == "queued"
+        mock_req2.assert_called_once_with("bus_routes")
 
-    # 3. Sync invalid table
+    # 3. Invalid table returns 400
     res_invalid = client.post("/api/sync/unknown_table_xyz")
     assert res_invalid.status_code == 400
     data_invalid = res_invalid.get_json()

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
 
 ### Changed
+- Refactored background synchronisation worker (`TransitBackgroundWorker` → `SyncWorker`) into a continuously running, flag-driven loop that serialises all sync operations, deduplicates concurrent requests via a `sync_requested` boolean flag persisted in `sync_metadata`, and idles with an interruptible 60-second sleep (`threading.Event`) when no work is pending.
+- Replaced fixed single-interval polling with a per-entry `SYNC_REGISTRY` defining ordered sync operations and individual age thresholds: `ha_locations` (1 hour), `bus_routes` / `train_timetables` / `bus_timetables` / `walking` (24 hours), `stops` (7 days).
+- Replaced `trigger_journey_walking_sync_async` (ad-hoc daemon thread) and `check_and_run_background_sync` / `sync_all` with a single `request_sync(table_name)` function that sets the DB flag and wakes the background loop immediately.
+- Updated `POST /config/db/sync/<table>` and `POST /api/sync/<table>` endpoints to fire-and-forget: they now set the sync flag and return `{"status": "queued"}` immediately rather than blocking until the sync completes.
+- Updated `_trigger_walking_sync_if_changed` in the journeys view to call `request_sync("walking")` instead of spawning a separate thread.
+- Removed `SYNCABLE_TABLES` constant from `app.db`; valid table names are now derived from `SYNC_REGISTRY` in `app.sync.worker`.
 - Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
 - Componentised staged collection and changeset management across all configuration controllers (`locations`, `timetables`, `journeys`, `transfers`, `walking`) with `TransitUI.createChangesetTracker` in `transit-ui.js`, unifying modal adjustment detection, item staging, deletion tracking, and delta payload generation.
 

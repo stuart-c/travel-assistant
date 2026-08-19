@@ -11,7 +11,7 @@ from app.datasources.exceptions import (
 )
 from app.models import Location, SyncMetadata
 from app.sync.ha_sync import sync_ha_locations
-from app.sync.transit_sync import sync_all, sync_table
+from app.sync.transit_sync import sync_table
 
 
 def test_sync_ha_locations_skipped_no_credentials(app: Flask) -> None:
@@ -150,13 +150,13 @@ def test_sync_ha_locations_generic_exception(mock_fetch: MagicMock, app: Flask) 
     "app.sync.transit_sync.sync_stops", return_value={"status": "success", "records": 0}
 )
 @patch("app.sync.ha_sync.HomeAssistantClient.fetch_zones")
-def test_sync_table_and_sync_all_with_ha(
+def test_sync_table_with_ha(
     mock_fetch: MagicMock,
     mock_sync_stops: MagicMock,
     mock_sync_bus: MagicMock,
     app: Flask,
 ) -> None:
-    """Test sync_table and sync_all dispatchers for ha_locations."""
+    """Test sync_table dispatcher for ha_locations."""
     with app.app_context(), patch.dict(os.environ, {"SUPERVISOR_TOKEN": "mock-token"}):
         mock_fetch.return_value = [
             {
@@ -171,15 +171,12 @@ def test_sync_table_and_sync_all_with_ha(
         assert res["status"] == "success"
         assert res["records"] == 1
 
-        all_res = sync_all(app=app)
-        assert "ha_locations" in all_res["tables"]
-
 
 @patch("app.sync.ha_sync.HomeAssistantClient.fetch_zones")
 def test_sync_endpoints_ha_locations(
     mock_fetch: MagicMock, client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/db/sync/ha_locations and POST /api/sync/ha_locations."""
+    """Test POST /config/db/sync/ha_locations and POST /api/sync/ha_locations queue requests."""
     with patch.dict(os.environ, {"SUPERVISOR_TOKEN": "mock-token"}):
         mock_fetch.return_value = [
             {
@@ -190,17 +187,21 @@ def test_sync_endpoints_ha_locations(
             }
         ]
 
-        # Config db sync route
-        resp1 = client.post("/config/db/sync/ha_locations")
-        assert resp1.status_code == 200
-        data1 = resp1.get_json()
-        assert data1["success"] is True
-        assert data1["table"] == "ha_locations"
-        assert data1["records"] == 1
+        # Config db sync route — now fire-and-forget
+        with patch("app.views.config.sync.request_sync") as mock_req:
+            resp1 = client.post("/config/db/sync/ha_locations")
+            assert resp1.status_code == 200
+            data1 = resp1.get_json()
+            assert data1["success"] is True
+            assert data1["table"] == "ha_locations"
+            assert data1["status"] == "queued"
+            mock_req.assert_called_once_with("ha_locations")
 
-        # API sync route
-        resp2 = client.post("/api/sync/ha_locations")
-        assert resp2.status_code == 200
-        data2 = resp2.get_json()
-        assert data2["status"] == "success"
-        assert data2["records"] == 1
+        # API sync route — now fire-and-forget
+        with patch("app.main.request_sync") as mock_req2:
+            resp2 = client.post("/api/sync/ha_locations")
+            assert resp2.status_code == 200
+            data2 = resp2.get_json()
+            assert data2["status"] == "queued"
+            assert data2["table"] == "ha_locations"
+            mock_req2.assert_called_once_with("ha_locations")

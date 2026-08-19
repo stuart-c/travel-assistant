@@ -18,7 +18,7 @@ from app.datasources import (
     NaptanClient,
     TrainS3Client,
 )
-from app.db import SYNCABLE_TABLES, db, init_db
+from app.db import db, init_db
 from app.models import (
     BusRoute,
     Journey,
@@ -27,8 +27,6 @@ from app.models import (
     Timetable,
     Walking,
 )
-from app.sync.ha_sync import sync_ha_locations
-from app.sync.walking_sync import sync_walking_routes
 
 
 def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
@@ -497,8 +495,14 @@ def sync_table(
     force: bool = False,
     app: Optional[Flask] = None,
 ) -> Dict[str, Any]:
-    """Synchronise a specific transit dataset table."""
+    """Synchronise a specific transit dataset table by name."""
+    from app.sync.ha_sync import sync_ha_locations
+    from app.sync.walking_sync import sync_walking_routes
+    from app.sync.worker import SYNC_REGISTRY
+
     norm_name = table_name.lower().strip()
+    valid_names = [e.table_name for e in SYNC_REGISTRY]
+
     if norm_name == "bus_routes":
         return sync_bus_routes(app=app)
     elif norm_name in ("stops", "transit_stops", "naptan"):
@@ -518,51 +522,7 @@ def sync_table(
             "records": 0,
             "message": (
                 f"Unknown or non-syncable table: '{norm_name}'. "
-                f"Syncable tables are: {', '.join(SYNCABLE_TABLES)}."
+                f"Syncable tables are: {', '.join(valid_names)}."
             ),
             "duration_seconds": 0.0,
         }
-
-
-def sync_all(
-    force: bool = False,
-    app: Optional[Flask] = None,
-) -> Dict[str, Any]:
-    """Synchronise all transit dataset tables sequentially."""
-    results: Dict[str, Any] = {}
-    total_records = 0
-    all_success = True
-
-    for tbl in SYNCABLE_TABLES:
-        res = sync_table(tbl, force=force, app=app)
-        results[tbl] = res
-        total_records += res.get("records", 0)
-        if res.get("status") == "error":
-            all_success = False
-
-    return {
-        "success": all_success,
-        "tables": results,
-        "total_records": total_records,
-    }
-
-
-def check_and_run_background_sync(
-    app: Optional[Flask] = None,
-    max_age_seconds: int = 86400,
-) -> Dict[str, Any]:
-    """Check transit tables and trigger synchronisation for any table older than max_age_seconds."""
-    _ensure_db_initialized(app)
-    triggered: Dict[str, Any] = {}
-
-    with db.connection_context():
-        for tbl in SYNCABLE_TABLES:
-            if SyncMetadata.is_due_for_update(tbl, max_age_seconds=max_age_seconds):
-                res = sync_table(tbl, app=app)
-                triggered[tbl] = res
-
-    return {
-        "checked": list(SYNCABLE_TABLES),
-        "triggered_count": len(triggered),
-        "results": triggered,
-    }

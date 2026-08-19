@@ -1,4 +1,4 @@
-"""Unit tests for transit dataset synchronisation and background worker daemon."""
+"""Unit tests for transit dataset synchronisation and background sync worker."""
 
 from unittest.mock import MagicMock, patch
 import requests
@@ -11,12 +11,11 @@ from app.models import (
     SyncMetadata,
 )
 from app.sync import (
-    TransitBackgroundWorker,
-    check_and_run_background_sync,
+    SyncWorker,
     get_background_worker,
+    request_sync,
     start_background_worker,
     stop_background_worker,
-    sync_all,
     sync_bus_routes,
     sync_stops,
     sync_table,
@@ -299,7 +298,7 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
             assert meta is not None
             assert meta.status == "success"
 
-            # Check database: custom_tt should remain, old_auto_tt should be replaced by new one
+            # Check database: custom_tt should remain, old_auto_tt should be replaced
             timetables = list(Timetable.select())
             assert len(timetables) == 2
             custom_recs = [t for t in timetables if not t.auto_added]
@@ -526,7 +525,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
         assert meta.status == "success"
         assert meta.records_count == 1
 
-        # Check database: custom_tt and train_tt should remain; old_auto_bus replaced by new bus 10
+        # Check database: custom_tt and train_tt should remain; old_auto_bus replaced
         all_tt = list(Timetable.select())
         assert len(all_tt) == 3
         names = {t.name for t in all_tt}
@@ -608,82 +607,196 @@ def test_sync_table_bus_timetables(app: Flask) -> None:
             mock_sync.assert_called_once()
 
 
-def test_sync_all(app: Flask) -> None:
-    """Test sync_all runs all registered transit synchronisations."""
+# ---------------------------------------------------------------------------
+# SyncMetadata flag tests
+# ---------------------------------------------------------------------------
+
+
+def test_sync_metadata_request_sync_sets_flag(app: Flask) -> None:
+    """Test SyncMetadata.request_sync sets flag and pending status."""
     with app.app_context():
-        with patch("app.sync.transit_sync.sync_table") as mock_sync:
-            mock_sync.return_value = {"status": "success", "records": 2}
-            res = sync_all(app=app)
-            assert res["success"] is True
-            assert res["total_records"] == 12
-            assert len(res["tables"]) == 6
+        meta = SyncMetadata.request_sync("bus_routes")
+        assert meta.sync_requested is True
+        assert meta.status == "pending"
+
+        # Idempotent — calling again keeps flag set
+        meta2 = SyncMetadata.request_sync("bus_routes")
+        assert meta2.sync_requested is True
 
 
-def test_check_and_run_background_sync(app: Flask) -> None:
-    """Test check_and_run_background_sync only triggers overdue tables."""
+def test_sync_metadata_clear_sync_requested(app: Flask) -> None:
+    """Test SyncMetadata.clear_sync_requested atomically clears the flag."""
     with app.app_context():
-        # bus_routes, ha_locations, train_timetables, bus_timetables, and walking are up to date
-        SyncMetadata.record_success("bus_routes", 10, 1.0)
-        SyncMetadata.record_success("ha_locations", 5, 0.5)
-        SyncMetadata.record_success("train_timetables", 2, 0.8)
-        SyncMetadata.record_success("bus_timetables", 3, 0.9)
-        SyncMetadata.record_success("walking", 3, 0.4)
-        # stops is not synced
+        SyncMetadata.request_sync("stops")
+        meta = SyncMetadata.get_meta("stops")
+        assert meta is not None and meta.sync_requested is True
 
-        with patch("app.sync.transit_sync.sync_table") as mock_sync:
-            mock_sync.return_value = {"status": "success", "records": 1}
-            res = check_and_run_background_sync(app=app, max_age_seconds=86400)
-            assert res["triggered_count"] == 1
-            assert "stops" in res["results"]
-            assert "bus_routes" not in res["results"]
-            assert "ha_locations" not in res["results"]
-            assert "train_timetables" not in res["results"]
-            assert "bus_timetables" not in res["results"]
-            assert "walking" not in res["results"]
+        SyncMetadata.clear_sync_requested("stops")
+        meta = SyncMetadata.get_meta("stops")
+        assert meta is not None and meta.sync_requested is False
 
 
-def test_background_worker_lifecycle(app: Flask) -> None:
-    """Test TransitBackgroundWorker start, loop execution, and stop."""
-    with patch(
-        "app.sync.worker.check_and_run_background_sync",
-        return_value={"triggered_count": 0},
-    ):
-        worker = TransitBackgroundWorker(
-            app=app,
-            check_interval_seconds=1,
-            initial_delay_seconds=0.0,
-            max_age_seconds=86400,
-        )
+def test_sync_metadata_request_sync_does_not_overwrite_syncing(app: Flask) -> None:
+    """Test request_sync does not downgrade a 'syncing' status to 'pending'."""
+    with app.app_context():
+        SyncMetadata.record_start("walking")
+        SyncMetadata.request_sync("walking")
+        meta = SyncMetadata.get_meta("walking")
+        assert meta is not None
+        assert meta.status == "syncing"
+        assert meta.sync_requested is True
+
+
+# ---------------------------------------------------------------------------
+# SyncWorker lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+def test_sync_worker_lifecycle(app: Flask) -> None:
+    """Test SyncWorker start, idle loop, and stop."""
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.return_value = False
+
+        worker = SyncWorker(app=app, initial_delay_seconds=0.0)
         assert worker.is_running() is False
+
         worker.start()
         assert worker.is_running() is True
+
         # Idempotent start
         worker.start()
+        assert worker.is_running() is True
 
-        worker.stop()
+        worker.stop(timeout=2.0)
         assert worker.is_running() is False
+
+
+def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
+    """Test that the worker executes a sync function when sync_requested flag is set."""
+    from app.sync.worker import SYNC_REGISTRY
+
+    def _fake_meta_get(table_name):
+        m = MagicMock()
+        m.sync_requested = table_name == "bus_routes"
+        return m
+
+    def _fake_is_due(table_name, max_age_seconds):
+        return False
+
+    def _fake_clear(table_name):
+        pass
+
+    first_entry = SYNC_REGISTRY[0]
+    assert first_entry.table_name == "bus_routes"
+
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.side_effect = _fake_meta_get
+        mock_meta.is_due_for_update.side_effect = _fake_is_due
+        mock_meta.clear_sync_requested.side_effect = _fake_clear
+
+        result_value = {"status": "success", "records": 1}
+
+        with patch.object(first_entry, "sync_fn", return_value=result_value) as mock_fn:
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            worker.start()
+            import time
+
+            time.sleep(0.2)
+            worker.stop(timeout=2.0)
+            assert mock_fn.called
+
+
+def test_sync_worker_runs_sync_when_overdue(app: Flask) -> None:
+    """Test that the worker executes a sync function when data is overdue."""
+    from app.sync.worker import SYNC_REGISTRY
+
+    first_entry = SYNC_REGISTRY[0]
+
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.side_effect = (
+            lambda table_name, max_age_seconds: table_name == "bus_routes"
+        )
+        mock_meta.clear_sync_requested.return_value = None
+
+        with patch.object(
+            first_entry, "sync_fn", return_value={"status": "success", "records": 0}
+        ) as mock_fn:
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            worker.start()
+            import time
+
+            time.sleep(0.2)
+            worker.stop(timeout=2.0)
+            assert mock_fn.called
+
+
+def test_sync_worker_sleeps_when_idle(app: Flask) -> None:
+    """Test the worker enters idle sleep when no syncs are due."""
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.return_value = False
+
+        worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+        worker.start()
+
+        import time
+
+        time.sleep(0.1)
+
+        # The wake event should be cleared (worker is sleeping)
+        assert not worker._wake_event.is_set()
+
+        worker.stop(timeout=2.0)
+        assert worker.is_running() is False
+
+
+def test_sync_worker_handles_exception_in_loop(app: Flask) -> None:
+    """Test the worker continues after a sync function raises an exception."""
+    from app.sync.worker import SYNC_REGISTRY
+
+    first_entry = SYNC_REGISTRY[0]
+
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.side_effect = (
+            lambda table_name, max_age_seconds: table_name == "bus_routes"
+        )
+        mock_meta.clear_sync_requested.return_value = None
+
+        with patch.object(first_entry, "sync_fn", side_effect=RuntimeError("boom")):
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            worker.start()
+            import time
+
+            time.sleep(0.15)
+            worker.stop(timeout=2.0)
+            assert worker.is_running() is False
+
+
+# ---------------------------------------------------------------------------
+# Module-level worker helpers
+# ---------------------------------------------------------------------------
 
 
 def test_global_background_worker_helpers(app: Flask) -> None:
     """Test start_background_worker, stop_background_worker, get_background_worker."""
     stop_background_worker()
 
-    # Test with TESTING=True should not start by default
+    # TESTING=True should suppress worker start
     w = start_background_worker(app)
     assert w is None
 
-    # Test with non-testing config
+    # Non-testing config should start the worker
     non_test_app = Flask(__name__)
     non_test_app.config["TESTING"] = False
-    with patch(
-        "app.sync.worker.check_and_run_background_sync",
-        return_value={"triggered_count": 0},
-    ):
-        worker = start_background_worker(
-            non_test_app,
-            check_interval_seconds=1,
-            initial_delay_seconds=0.0,
-        )
+
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.return_value = False
+
+        worker = start_background_worker(non_test_app, initial_delay_seconds=0.0)
         assert worker is not None
         assert get_background_worker() is worker
 
@@ -695,34 +808,22 @@ def test_global_background_worker_helpers(app: Flask) -> None:
         assert get_background_worker() is None
 
 
-def test_sync_all_with_table_error(app: Flask) -> None:
-    """Test sync_all correctly reports success=False when one table errors."""
+def test_request_sync_sets_flag_and_wakes_worker(app: Flask) -> None:
+    """Test request_sync sets the DB flag and signals a running worker."""
     with app.app_context():
-        with patch("app.sync.transit_sync.sync_table") as mock_sync:
-            mock_sync.side_effect = [
-                {"status": "success", "records": 5},
-                {"status": "error", "records": 0, "message": "Failed"},
-                {"status": "success", "records": 3},
-                {"status": "success", "records": 2},
-                {"status": "success", "records": 1},
-                {"status": "success", "records": 1},
-            ]
-            res = sync_all(app=app)
-            assert res["success"] is False
-            assert res["total_records"] == 12
+        with patch("app.sync.worker.SyncMetadata") as mock_meta:
+            mock_meta.get_meta.return_value = None
+            mock_meta.is_due_for_update.return_value = False
+            mock_meta.request_sync.return_value = MagicMock()
 
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            worker.start()
 
-def test_background_worker_handles_exception_in_loop(app: Flask) -> None:
-    """Test background worker continues and catches exceptions inside loop."""
-    worker = TransitBackgroundWorker(
-        app=app,
-        check_interval_seconds=1,
-        initial_delay_seconds=0.0,
-    )
-    with patch(
-        "app.sync.worker.check_and_run_background_sync",
-        side_effect=RuntimeError("Loop error"),
-    ):
-        worker.start()
-        worker.stop()
-        assert worker.is_running() is False
+            import time
+
+            time.sleep(0.1)
+
+            request_sync("ha_locations")
+            mock_meta.request_sync.assert_called_with("ha_locations")
+
+            worker.stop(timeout=2.0)

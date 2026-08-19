@@ -966,45 +966,26 @@ def test_sync_db_table_endpoint_all_rejected(client: FlaskClient) -> None:
 def test_sync_db_table_endpoint_specific_success(
     client: FlaskClient, monkeypatch: MonkeyPatch
 ) -> None:
-    """Test POST /config/db/sync/<table_name> triggers specific table sync."""
-    from app.views import config
+    """Test POST /config/db/sync/<table_name> queues a specific table sync."""
+    from app.views.config import sync as sync_view
 
-    mock_sync_table = MagicMock(
-        return_value={
-            "status": "success",
-            "records": 25,
-            "message": "Sync successful",
-            "duration_seconds": 1.5,
-        }
-    )
-    monkeypatch.setattr(config.sync, "sync_table", mock_sync_table)
+    mock_request_sync = MagicMock()
+    monkeypatch.setattr(sync_view, "request_sync", mock_request_sync)
 
     response = client.post("/config/db/sync/bus_routes")
     assert response.status_code == 200
     data = response.get_json()
     assert data["success"] is True
-    assert data["records"] == 25
+    assert data["status"] == "queued"
     assert data["table"] == "bus_routes"
-    mock_sync_table.assert_called_once_with("bus_routes", force=True)
+    mock_request_sync.assert_called_once_with("bus_routes")
 
 
 def test_sync_db_table_endpoint_specific_error(
-    client: FlaskClient, monkeypatch: MonkeyPatch
+    client: FlaskClient,
 ) -> None:
-    """Test POST /config/db/sync/<table_name> with failed sync returns 400."""
-    from app.views import config
-
-    mock_sync_table = MagicMock(
-        return_value={
-            "status": "error",
-            "records": 0,
-            "message": "Invalid API key",
-            "duration_seconds": 0.5,
-        }
-    )
-    monkeypatch.setattr(config.sync, "sync_table", mock_sync_table)
-
-    response = client.post("/config/db/sync/stops")
+    """Test POST /config/db/sync/<table_name> with an unknown table returns 400."""
+    response = client.post("/config/db/sync/not_a_real_table")
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False

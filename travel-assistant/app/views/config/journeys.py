@@ -1,25 +1,24 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import current_app, jsonify
+from flask import jsonify
 
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
-from app.sync.walking_sync import trigger_journey_walking_sync_async
+from app.sync.worker import request_sync
 from app.views.config import config_bp
 from app.views.config.common import PageConfig, register_html_page
 
 
 def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
-    """Trigger background walking route synchronisation when journeys are modified."""
+    """Queue a walking route synchronisation when journeys are modified."""
     if (
         stats.get("added", 0) > 0
         or stats.get("updated", 0) > 0
         or stats.get("deleted", 0) > 0
     ):
         try:
-            app_obj = current_app._get_current_object() if current_app else None
-            trigger_journey_walking_sync_async(app_obj)
+            request_sync("walking")
         except Exception:
             pass
 
