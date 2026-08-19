@@ -156,7 +156,7 @@ class PageConfig:
             the ``GET /data`` endpoint. If omitted, queries all records from ``model_class``.
         scope_filter: Optional Peewee boolean expression to constrain which
             records are updated or deleted (e.g. exclude auto-generated rows).
-        post_save_hook: Optional callback invoked with the changeset stats dict
+        post_save_hook: Optional callback invoked with changeset stats and changeset dicts
             after a successful save (e.g. to trigger background synchronisation).
     """
 
@@ -169,7 +169,9 @@ class PageConfig:
     get_template_context: Callable[[], Dict[str, Any]] = field(default=dict)
     get_data_items: Optional[Callable[[], List[Dict[str, Any]]]] = field(default=None)
     scope_filter: Optional[Any] = field(default=None)
-    post_save_hook: Optional[Callable[[Dict[str, int]], None]] = field(default=None)
+    post_save_hook: Optional[Callable[[Dict[str, int], Dict[str, List[Any]]], None]] = (
+        field(default=None)
+    )
 
 
 def register_config_page(bp: Blueprint, cfg: PageConfig) -> None:
@@ -217,7 +219,7 @@ def register_config_page(bp: Blueprint, cfg: PageConfig) -> None:
                     scope_filter=cfg.scope_filter,
                 )
                 if cfg.post_save_hook is not None:
-                    cfg.post_save_hook(stats)
+                    cfg.post_save_hook(stats, changeset)
 
                 return jsonify(
                     {

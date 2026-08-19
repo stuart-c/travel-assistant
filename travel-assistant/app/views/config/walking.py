@@ -4,8 +4,36 @@ from typing import Any, Dict, Optional
 
 from app.models import Walking
 from app.models.base import LOCATION_TYPES
+from app.sync.worker import request_sync
 from app.views.config import config_bp
 from app.views.config.common import PageConfig, register_config_page
+
+
+def _trigger_bus_sync_if_bus_changed(
+    stats: Dict[str, int], changeset: Dict[str, list[Any]]
+) -> None:
+    """Queue bus timetable synchronisation when walking routes involving bus stops are modified."""
+    modified_entries = changeset.get("added", []) + changeset.get("updated", [])
+    if not modified_entries:
+        return
+
+    has_bus_endpoint = False
+    for entry in modified_entries:
+        if not isinstance(entry, dict):
+            continue
+
+        start_type = str(entry.get("start_type", "")).strip().lower()
+        finish_type = str(entry.get("finish_type", "")).strip().lower()
+
+        if start_type == "bus" or finish_type == "bus":
+            has_bus_endpoint = True
+            break
+
+    if has_bus_endpoint:
+        try:
+            request_sync("bus_timetables")
+        except Exception:
+            pass
 
 
 def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -69,5 +97,6 @@ register_config_page(
         clean_item_func=clean_walking_item,
         entity_label="Walking",
         scope_filter=(Walking.auto_generated == False),  # noqa: E712
+        post_save_hook=_trigger_bus_sync_if_bus_changed,
     ),
 )

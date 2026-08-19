@@ -9,17 +9,37 @@ from app.views.config import config_bp
 from app.views.config.common import PageConfig, register_config_page
 
 
-def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
-    """Queue a walking route synchronisation when journeys are modified."""
-    if (
-        stats.get("added", 0) > 0
-        or stats.get("updated", 0) > 0
-        or stats.get("deleted", 0) > 0
-    ):
-        try:
+def _trigger_syncs_if_changed(
+    stats: Dict[str, int], changeset: Dict[str, list[Any]]
+) -> None:
+    """Queue targeted walking and bus timetable synchronisation when journeys are modified."""
+    modified_entries = changeset.get("added", []) + changeset.get("updated", [])
+    if not modified_entries:
+        return
+
+    has_location_endpoint = False
+    has_bus_endpoint = False
+
+    for entry in modified_entries:
+        if not isinstance(entry, dict):
+            continue
+
+        from_type = str(entry.get("from_type", "")).strip().lower()
+        to_type = str(entry.get("to_type", "")).strip().lower()
+
+        if from_type in ("ha", "custom") or to_type in ("ha", "custom"):
+            has_location_endpoint = True
+
+        if from_type == "bus" or to_type == "bus":
+            has_bus_endpoint = True
+
+    try:
+        if has_location_endpoint:
             request_sync("walking")
-        except Exception:
-            pass
+        if has_bus_endpoint:
+            request_sync("bus_timetables")
+    except Exception:
+        pass
 
 
 def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -89,6 +109,6 @@ register_config_page(
         model_class=Journey,
         clean_item_func=clean_journey_item,
         entity_label="Journeys",
-        post_save_hook=_trigger_walking_sync_if_changed,
+        post_save_hook=_trigger_syncs_if_changed,
     ),
 )
