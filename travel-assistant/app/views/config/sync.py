@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 from flask import abort, current_app, jsonify, render_template, send_file
 
-from app.db import db, get_db_path, get_db_stats, init_db
+from app.db import db, get_db_path, get_db_stats, get_sync_stats, init_db
 from app.sync import request_sync
 from app.sync.worker import SYNC_REGISTRY
 from app.views.config import config_bp
@@ -98,9 +98,8 @@ def download_db() -> Any:
 @config_bp.route("/sync/data", methods=["GET"])
 def background_sync_data() -> Any:
     """Return syncable transit dataset statistics as JSON for Grid.js remote data loading."""
-    stats = get_db_stats()
-    tables = stats.get("tables", [])
-    return jsonify({"data": tables, "total": len(tables)})
+    datasets = get_sync_stats()
+    return jsonify({"data": datasets, "total": len(datasets)})
 
 
 @config_bp.route("/sync", methods=["GET"])

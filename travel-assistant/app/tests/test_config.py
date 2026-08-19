@@ -6,7 +6,7 @@ from pytest import MonkeyPatch
 from flask import Flask
 from flask.testing import FlaskClient
 
-from app.models import Setting, Timetable, Walking
+from app.models import Setting, SyncMetadata, Timetable, Walking
 
 
 def test_config_index_redirect(client: FlaskClient) -> None:
@@ -921,14 +921,25 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert b"/static/js/sync.js" in response.data
     assert b"standard-action-bar" not in response.data
 
-    # Verify locations table is marked as syncable via the data endpoint
+    # Verify sync datasets are returned via the data endpoint from SyncMetadata
     data_resp = client.get("/config/sync/data")
     assert data_resp.status_code == 200
     payload = data_resp.get_json()
     tables = payload.get("data", [])
-    loc_entry = next((t for t in tables if t["name"] == "locations"), None)
-    assert loc_entry is not None
-    assert loc_entry["syncable"] is True
+    assert len(tables) == 6
+    expected_names = {
+        "bus_routes",
+        "stops",
+        "ha_locations",
+        "train_timetables",
+        "walking",
+        "bus_timetables",
+    }
+    returned_names = {t["name"] for t in tables}
+    assert expected_names == returned_names
+    ha_entry = next((t for t in tables if t["name"] == "ha_locations"), None)
+    assert ha_entry is not None
+    assert ha_entry["syncable"] is True
 
 
 def test_sync_db_table_endpoint_all_rejected(client: FlaskClient) -> None:
@@ -1137,8 +1148,12 @@ def test_config_db_data_endpoint(client: FlaskClient) -> None:
     assert payload["total"] == len(payload["data"])
 
 
-def test_config_sync_data_endpoint(client: FlaskClient) -> None:
+def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/sync/data returns all transit dataset statistics as JSON."""
+    with app.app_context():
+        SyncMetadata.record_success("bus_routes", 42, 1.23)
+        SyncMetadata.record_error("stops", "Failed to reach NaPTAN API", 0.5)
+
     response = client.get("/config/sync/data")
     assert response.status_code == 200
     assert response.content_type.startswith("application/json")
@@ -1146,6 +1161,19 @@ def test_config_sync_data_endpoint(client: FlaskClient) -> None:
     assert "data" in payload
     assert "total" in payload
     assert isinstance(payload["data"], list)
+    assert payload["total"] == 6
+
+    bus_routes = next((t for t in payload["data"] if t["name"] == "bus_routes"), None)
+    assert bus_routes is not None
+    assert bus_routes["sync_status"] == "success"
+    assert bus_routes["records_count"] == 42
+    assert bus_routes["duration_seconds"] == 1.23
+    assert bus_routes["last_updated_at"] is not None
+
+    stops = next((t for t in payload["data"] if t["name"] == "stops"), None)
+    assert stops is not None
+    assert stops["sync_status"] == "error"
+    assert stops["error_message"] == "Failed to reach NaPTAN API"
 
 
 def test_config_timetables_data_endpoint(app: Flask, client: FlaskClient) -> None:
