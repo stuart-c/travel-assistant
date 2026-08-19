@@ -645,6 +645,10 @@ window.TransitUI = (function () {
     }
   }
 
+  function createChangesetTracker(initialData = [], options = {}) {
+    return new ChangesetTracker(initialData, options);
+  }
+
   function createStagedChangesetManager(keyField = 'id') {
     return new StagedChangesetManager(keyField);
   }

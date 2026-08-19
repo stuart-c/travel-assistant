@@ -157,3 +157,20 @@ def test_grid_loader_js_included_in_config_pages(client: FlaskClient) -> None:
         assert (
             loader_pos < page_pos
         ), f"grid_loader.js must appear before {page_js} script tag on {url}"
+
+
+def test_transit_ui_js_exports_and_syntax(client: FlaskClient) -> None:
+    """Test that transit-ui.js exports all required helpers without reference errors."""
+    response = client.get("/static/js/transit-ui.js")
+    assert response.status_code == 200
+    content = response.data.decode("utf-8")
+    assert "createChangesetTracker" in content
+    assert "function createChangesetTracker" in content
+    assert "ChangesetTracker" in content
+    assert "class ChangesetTracker" in content
+    assert "createStagedChangesetManager" in content
+    assert "function createStagedChangesetManager" in content
+    assert "StagedChangesetManager" in content
+    assert "class StagedChangesetManager" in content
+    assert "computeChangeset" in content
+    assert "window.TransitUI" in content
