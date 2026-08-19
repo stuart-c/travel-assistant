@@ -434,3 +434,47 @@ def test_config_locations_data_endpoint(app: Flask, client: FlaskClient) -> None
     assert "total" in payload
     assert payload["total"] == 1
     assert payload["data"][0]["name"] == "Test Location"
+
+
+def test_config_locations_pagination_and_sorting(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Test server-side pagination and sorting query parameters on /config/locations/data."""
+    with app.app_context():
+        Location.delete().execute()
+        for i in range(15):
+            Location.create(
+                id=f"custom:loc{i:02d}",
+                name=f"Location {chr(65 + i)}",  # Location A, B, C, ...
+                latitude=50.0 + (i * 0.1),
+                longitude=0.0,
+                ha=False,
+            )
+
+    # Test limit and offset
+    resp_p1 = client.get("/config/locations/data?limit=5&offset=0")
+    assert resp_p1.status_code == 200
+    data_p1 = resp_p1.get_json()
+    assert data_p1["total"] == 15
+    assert len(data_p1["data"]) == 5
+    assert data_p1["data"][0]["name"] == "Location A"
+    assert data_p1["data"][4]["name"] == "Location E"
+
+    # Test page parameter (page 1 with limit 5 -> offset 5)
+    resp_p2 = client.get("/config/locations/data?limit=5&page=1")
+    assert resp_p2.status_code == 200
+    data_p2 = resp_p2.get_json()
+    assert data_p2["total"] == 15
+    assert len(data_p2["data"]) == 5
+    assert data_p2["data"][0]["name"] == "Location F"
+
+    # Test sorting descending
+    resp_desc = client.get("/config/locations/data?limit=5&sort_by=name&order=desc")
+    assert resp_desc.status_code == 200
+    data_desc = resp_desc.get_json()
+    assert data_desc["data"][0]["name"] == "Location O"
+
+    # Test invalid sort field gracefully ignored
+    resp_inv = client.get("/config/locations/data?limit=5&sort_by=invalid_field")
+    assert resp_inv.status_code == 200
+    assert len(resp_inv.get_json()["data"]) == 5

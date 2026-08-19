@@ -241,9 +241,38 @@ def register_config_page(bp: Blueprint, cfg: PageConfig) -> None:
 
         if cfg.get_data_items is not None:
             items = cfg.get_data_items()
-        else:
-            items = [item.to_dict() for item in cfg.model_class.select()]
-        return jsonify({"data": items, "total": len(items)})
+            return jsonify({"data": items, "total": len(items)})
+
+        query = cfg.model_class.select()
+
+        total = query.count()
+
+        sort_by = request.args.get("sort_by") or request.args.get("sort")
+        order = (request.args.get("order") or request.args.get("dir") or "asc").lower()
+
+        if sort_by:
+            field_attr = getattr(cfg.model_class, sort_by, None)
+            if (
+                field_attr is not None
+                and hasattr(field_attr, "asc")
+                and hasattr(field_attr, "desc")
+            ):
+                if order == "desc":
+                    query = query.order_by(field_attr.desc())
+                else:
+                    query = query.order_by(field_attr.asc())
+
+        limit = request.args.get("limit", type=int)
+        offset = request.args.get("offset", default=0, type=int)
+        page = request.args.get("page", type=int)
+        if page is not None and "offset" not in request.args and limit and limit > 0:
+            offset = page * limit
+
+        if limit is not None and limit > 0:
+            query = query.offset(offset).limit(limit)
+
+        items = [item.to_dict() for item in query]
+        return jsonify({"data": items, "total": total})
 
     data_endpoint = f"{cfg.endpoint}_data"
     _data_view.__name__ = data_endpoint

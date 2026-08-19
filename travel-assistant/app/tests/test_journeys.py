@@ -453,3 +453,36 @@ def test_config_journeys_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert payload["total"] == 1
     assert payload["data"][0]["name"] == "Data Endpoint Test Journey"
     assert payload["data"][0]["from_id"] == "zone.home"
+
+
+def test_config_journeys_pagination_and_sorting(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Test server-side pagination and sorting query parameters on /config/journeys/data."""
+    with app.app_context():
+        Journey.delete().execute()
+        for i in range(12):
+            Journey.create(
+                name=f"Journey {chr(65 + i)}",
+                from_type="rail",
+                from_id=f"STN{i}",
+                from_name=f"Station {chr(65 + i)}",
+                to_type="rail",
+                to_id="WAT",
+                to_name="Waterloo",
+                time_settings=[],
+            )
+
+    # Test limit and offset
+    resp_p1 = client.get("/config/journeys/data?limit=4&offset=0")
+    assert resp_p1.status_code == 200
+    data_p1 = resp_p1.get_json()
+    assert data_p1["total"] == 12
+    assert len(data_p1["data"]) == 4
+    assert data_p1["data"][0]["name"] == "Journey A"
+
+    # Test sorting descending
+    resp_desc = client.get("/config/journeys/data?limit=4&sort_by=name&order=desc")
+    assert resp_desc.status_code == 200
+    data_desc = resp_desc.get_json()
+    assert data_desc["data"][0]["name"] == "Journey L"

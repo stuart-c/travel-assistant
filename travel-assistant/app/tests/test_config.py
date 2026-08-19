@@ -1409,3 +1409,54 @@ def test_walking_save_triggers_targeted_bus_sync(client: FlaskClient) -> None:
         )
         assert resp.status_code == 200
         mock_req.assert_not_called()
+
+
+def test_config_timetables_pagination_and_sorting(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Test server-side pagination and sorting parameters on /config/timetables/data."""
+    with app.app_context():
+        Timetable.delete().execute()
+        items = [
+            {
+                "name": f"Timetable Schedule {chr(65 + i)}",
+                "transport_type": "bus" if i % 2 == 0 else "rail",
+                "start_date": f"2026-09-{i + 1:02d}",
+                "end_date": "2026-12-31",
+                "monday": True,
+                "tuesday": True,
+                "wednesday": True,
+                "thursday": True,
+                "friday": True,
+                "saturday": False,
+                "sunday": False,
+                "bank_holiday": False,
+                "content": json.dumps({"stops": [], "trips": []}),
+            }
+            for i in range(15)
+        ]
+        Timetable.insert_many(items).execute()
+
+    # Test limit and offset pagination
+    resp_page1 = client.get("/config/timetables/data?limit=5&offset=0")
+    assert resp_page1.status_code == 200
+    p1_data = resp_page1.get_json()
+    assert p1_data["total"] == 15
+    assert len(p1_data["data"]) == 5
+    assert p1_data["data"][0]["name"] == "Timetable Schedule A"
+
+    # Test page 2
+    resp_page2 = client.get("/config/timetables/data?limit=5&offset=5")
+    assert resp_page2.status_code == 200
+    p2_data = resp_page2.get_json()
+    assert p2_data["total"] == 15
+    assert len(p2_data["data"]) == 5
+    assert p2_data["data"][0]["name"] == "Timetable Schedule F"
+
+    # Test sorting descending
+    resp_sort_desc = client.get(
+        "/config/timetables/data?limit=5&sort_by=name&order=desc"
+    )
+    assert resp_sort_desc.status_code == 200
+    desc_data = resp_sort_desc.get_json()
+    assert desc_data["data"][0]["name"] == "Timetable Schedule O"

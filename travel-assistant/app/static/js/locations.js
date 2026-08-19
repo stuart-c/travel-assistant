@@ -2,7 +2,8 @@
  * Locations Configuration Controller.
  * 
  * Manages client-side staged state for configured geographic locations
- * using Grid.js and Leaflet interactive map with bidirectional coordinate synchronisation.
+ * using Grid.js server-side pagination & sorting and Leaflet interactive map
+ * with bidirectional coordinate synchronisation.
  * Provides read-only viewing protections for Home Assistant synchronised locations.
  */
 
@@ -18,11 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const emptyState = document.getElementById('locations-grid-empty-state');
   const gridContainer = document.getElementById('locations-grid-wrapper');
 
-  // In-memory staged state (seeded after remote fetch)
-  let stagedLocations = [];
-  let initialSnapshot = '[]';
+  // Staged changeset state manager
+  const changesetManager =
+    window.TransitUI && window.TransitUI.createStagedChangesetManager
+      ? window.TransitUI.createStagedChangesetManager('id')
+      : new window.TransitUI.StagedChangesetManager('id');
 
-
+  let currentPageItems = [];
 
   // Modal elements
   const modal = document.getElementById('location-modal');
@@ -48,14 +51,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_LNG = -0.1278;
   const DEFAULT_ZOOM = 13;
 
-  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  };
+  const escapeHtml =
+    (window.TransitUI && window.TransitUI.escapeHtml) ||
+    function (str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    };
 
   function formatCoord(val) {
     const num = parseFloat(val);
@@ -74,11 +79,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapContainer = document.getElementById('location-map');
     if (!mapContainer || typeof L === 'undefined') return;
 
-    leafletMap = L.map('location-map').setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
+    leafletMap = L.map('location-map').setView(
+      [DEFAULT_LAT, DEFAULT_LNG],
+      DEFAULT_ZOOM
+    );
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(leafletMap);
 
     leafletMarker = L.marker([DEFAULT_LAT, DEFAULT_LNG], {
@@ -107,8 +116,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setMarkerPosition(lat, lng, panTo = false) {
-    const validLat = typeof lat === 'number' && !isNaN(lat) ? lat : DEFAULT_LAT;
-    const validLng = typeof lng === 'number' && !isNaN(lng) ? lng : DEFAULT_LNG;
+    const validLat =
+      typeof lat === 'number' && !isNaN(lat) ? lat : DEFAULT_LAT;
+    const validLng =
+      typeof lng === 'number' && !isNaN(lng) ? lng : DEFAULT_LNG;
     const newLatLng = [validLat, validLng];
 
     if (leafletMarker) {
@@ -125,7 +136,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isReadOnlyMode) return;
     const lat = parseFloat(latInput.value);
     const lng = parseFloat(lngInput.value);
-    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+    if (
+      !isNaN(lat) &&
+      !isNaN(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
       if (leafletMarker && leafletMap) {
         leafletMarker.setLatLng([lat, lng]);
         leafletMap.panTo([lat, lng]);
@@ -144,50 +162,28 @@ document.addEventListener('DOMContentLoaded', () => {
       const isHa = Boolean(item.ha);
 
       const sourceIcon = isHa ? 'home' : 'pin_drop';
-      const sourceIconClass = isHa ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500';
-      const sourceTitle = isHa ? 'Home Assistant location (Read-only)' : 'Custom location';
+      const sourceIconClass = isHa
+        ? 'text-sky-600 dark:text-sky-400'
+        : 'text-slate-400 dark:text-slate-500';
+      const sourceTitle = isHa
+        ? 'Home Assistant location (Read-only)'
+        : 'Custom location';
 
-      const actionButtons = window.TransitUI && window.TransitUI.renderActionButtons
-        ? window.TransitUI.renderActionButtons({
-            index,
-            isReadOnly: isHa,
-            editClass: 'edit-location-btn',
-            deleteClass: 'delete-location-btn',
-            viewClass: 'view-location-btn',
-            editTitle: 'Edit location',
-            deleteTitle: 'Delete location',
-            viewTitle: 'View location details',
-          })
-        : isHa
-        ? `<button 
-             type="button" 
-             class="view-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-             data-index="${index}"
-             title="View location details"
-             aria-label="View location details"
-           >
-             <span class="material-symbols-outlined text-[17px] leading-none">visibility</span>
-           </button>`
-        : `<div class="flex items-center gap-1.5">
-             <button 
-               type="button" 
-               class="edit-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer"
-               data-index="${index}"
-               title="Edit location"
-               aria-label="Edit location"
-             >
-               <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-             </button>
-             <button 
-               type="button" 
-               class="delete-location-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-               data-index="${index}"
-               title="Delete location"
-               aria-label="Delete location"
-             >
-               <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-             </button>
-           </div>`;
+      const actionButtons =
+        window.TransitUI && window.TransitUI.renderActionButtons
+          ? window.TransitUI.renderActionButtons({
+              index,
+              isReadOnly: isHa,
+              editClass: 'edit-location-btn',
+              deleteClass: 'delete-location-btn',
+              viewClass: 'view-location-btn',
+              editTitle: 'Edit location',
+              deleteTitle: 'Delete location',
+              viewTitle: 'View location details',
+            })
+          : `<div class="flex items-center gap-1.5">
+               <button type="button" class="edit-location-btn" data-index="${index}">Edit</button>
+             </div>`;
 
       return [
         gridjs.html(`
@@ -214,24 +210,98 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Actions', width: '100px', sort: false },
   ];
 
-  // Initialise Grid.js instance
+  const columnSortMap = {
+    0: 'name',
+    1: 'latitude',
+    2: 'longitude',
+  };
+
+  function syncEmptyState(total) {
+    const effectiveTotal = Math.max(
+      0,
+      (Number(total) || 0) +
+        changesetManager.added.length -
+        changesetManager.deleted.size
+    );
+    if (effectiveTotal === 0) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      if (gridContainer) gridContainer.classList.add('hidden');
+    } else {
+      if (emptyState) emptyState.classList.add('hidden');
+      if (gridContainer) gridContainer.classList.remove('hidden');
+    }
+  }
+
+  function updateDirtyState() {
+    if (window.ConfigDirtyManager) {
+      if (changesetManager.isDirty()) {
+        window.ConfigDirtyManager.markDirty();
+      } else {
+        window.ConfigDirtyManager.clearDirty();
+      }
+    }
+  }
+
+  // Initialise Grid.js instance with server-side pagination & sorting
   const grid = new gridjs.Grid({
     columns: columnsConfig,
-    data: formatGridData(stagedLocations),
-    sort: true,
-    search: {
-      enabled: true,
-      placeholder: 'Search locations...',
+    server: {
+      url: dataUrl,
+      then: (data) => {
+        const rawItems = Array.isArray(data.data) ? data.data : [];
+        currentPageItems = changesetManager.applyOverlay(rawItems);
+        syncEmptyState(data.total);
+        return formatGridData(currentPageItems);
+      },
+      total: (data) => {
+        const serverTotal = Number(data.total) || 0;
+        return Math.max(
+          0,
+          serverTotal +
+            changesetManager.added.length -
+            changesetManager.deleted.size
+        );
+      },
     },
     pagination: {
       enabled: true,
       limit: 10,
       summary: true,
+      server: {
+        url: (prev, page, limit) => {
+          const u = new URL(prev, window.location.origin);
+          u.searchParams.set('limit', limit);
+          u.searchParams.set('offset', page * limit);
+          return u.pathname + u.search;
+        },
+      },
+    },
+    sort: {
+      multiColumn: false,
+      server: {
+        url: (prev, columns) => {
+          const u = new URL(prev, window.location.origin);
+          if (!columns || !columns.length) return u.pathname + u.search;
+          const col = columns[0];
+          const fieldName = columnSortMap[col.index];
+          if (fieldName) {
+            u.searchParams.set('sort_by', fieldName);
+            u.searchParams.set('order', col.direction === 1 ? 'asc' : 'desc');
+          }
+          return u.pathname + u.search;
+        },
+      },
+    },
+    search: {
+      enabled: true,
+      placeholder: 'Search locations...',
     },
     className: {
       table: 'w-full text-left border-collapse text-sm',
-      thead: 'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 uppercase text-xs tracking-wider border-b border-slate-200 dark:border-slate-800 font-semibold',
-      tbody: 'divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300',
+      thead:
+        'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 uppercase text-xs tracking-wider border-b border-slate-200 dark:border-slate-800 font-semibold',
+      tbody:
+        'divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300',
       search: 'w-full sm:w-72 mb-4',
     },
     language: {
@@ -250,63 +320,8 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  let gridRendered = false;
-
-  function loadLocations() {
-    GridLoader.load(dataUrl, gridContainer, {
-      label: 'locations',
-      emptyState,
-      onSuccess(json) {
-        stagedLocations = Array.isArray(json.data) ? json.data : [];
-        initialSnapshot = JSON.stringify(stagedLocations);
-        if (!gridRendered) {
-          grid.render(gridContainer);
-          gridRendered = true;
-        }
-        syncState();
-      },
-    });
-  }
-
-  function syncState() {
-    if (stagedLocations.length === 0) {
-      if (emptyState) emptyState.classList.remove('hidden');
-      if (gridContainer) gridContainer.classList.add('hidden');
-    } else {
-      if (emptyState) emptyState.classList.add('hidden');
-      if (gridContainer) gridContainer.classList.remove('hidden');
-    }
-
-    if (gridContainer && gridContainer.querySelector('.gridjs-container')) {
-      if (stagedLocations.length <= 10) {
-        gridContainer.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
-      } else {
-        gridContainer.querySelector('.gridjs-container').removeAttribute('data-single-page');
-      }
-    }
-
-    grid.updateConfig({
-      columns: columnsConfig,
-      data: formatGridData(stagedLocations),
-    }).forceRender();
-
-    // Trigger DirtyManager check
-    if (window.ConfigDirtyManager) {
-      const currentJson = JSON.stringify(stagedLocations);
-      if (currentJson !== initialSnapshot) {
-        window.ConfigDirtyManager.markDirty();
-      } else {
-        window.ConfigDirtyManager.clearDirty();
-      }
-    }
-  }
-
-  // Register discard handler
-  if (window.ConfigDirtyManager) {
-    window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedLocations = JSON.parse(initialSnapshot);
-      syncState();
-    });
+  if (gridContainer) {
+    grid.render(gridContainer);
   }
 
   const normalInputClass =
@@ -321,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     isReadOnlyMode = mode === 'view';
 
     if (isReadOnlyMode) {
-      const item = stagedLocations[index];
+      const item = currentPageItems[index];
       modalTitle.textContent = 'View Location (Read-Only)';
       modalIcon.textContent = 'home';
       if (haNotice) haNotice.classList.remove('hidden');
@@ -361,8 +376,8 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       }, 100);
-    } else if (mode === 'edit' && index >= 0 && index < stagedLocations.length) {
-      const item = stagedLocations[index];
+    } else if (mode === 'edit' && index >= 0 && index < currentPageItems.length) {
+      const item = currentPageItems[index];
       modalTitle.textContent = 'Edit Location';
       modalIcon.textContent = 'edit';
       if (haNotice) haNotice.classList.add('hidden');
@@ -463,36 +478,46 @@ document.addEventListener('DOMContentLoaded', () => {
       const lat = parseFloat(latInput.value);
       const lng = parseFloat(lngInput.value);
 
-      if (!name || isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      if (
+        !name ||
+        isNaN(lat) ||
+        isNaN(lng) ||
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180
+      ) {
         if (modalError) modalError.classList.remove('hidden');
         return;
       }
 
       const idx = parseInt(editIndexInput.value, 10);
       const isHa =
-        !isNaN(idx) && idx >= 0 && idx < stagedLocations.length
-          ? Boolean(stagedLocations[idx].ha)
+        !isNaN(idx) && idx >= 0 && idx < currentPageItems.length
+          ? Boolean(currentPageItems[idx].ha)
           : false;
       const existingId =
-        !isNaN(idx) && idx >= 0 && idx < stagedLocations.length
-          ? stagedLocations[idx].id
+        !isNaN(idx) && idx >= 0 && idx < currentPageItems.length
+          ? currentPageItems[idx].id
           : undefined;
 
       const entry = {
-        ...(existingId ? { id: existingId } : {}),
+        ...(existingId ? { id: existingId } : { id: 'custom:' + Math.random().toString(36).slice(2, 10) }),
         name,
         latitude: lat,
         longitude: lng,
         ha: isHa,
       };
 
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        stagedLocations[idx] = entry;
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        changesetManager.update(entry.id, entry);
       } else {
-        stagedLocations.push(entry);
+        changesetManager.add(entry);
       }
 
-      syncState();
+      updateDirtyState();
+      syncEmptyState(1);
+      grid.forceRender();
       closeModal();
     });
   }
@@ -516,9 +541,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteBtn = e.target.closest('.delete-location-btn');
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        stagedLocations.splice(idx, 1);
-        syncState();
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (item && item.id) {
+          changesetManager.delete(item.id);
+          updateDirtyState();
+          grid.forceRender();
+        }
       }
       return;
     }
@@ -527,8 +556,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedLocations = JSON.parse(initialSnapshot);
-      syncState();
+      changesetManager.reset();
+      updateDirtyState();
+      grid.forceRender();
     });
   }
 
@@ -537,18 +567,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigSave.register({
       endpoint: dataUrl,
       getChangeset: () => {
-        const initialList = JSON.parse(initialSnapshot || '[]');
-        return window.TransitUI.computeChangeset(
-          initialList,
-          stagedLocations,
-          'id'
-        );
+        return changesetManager.getChangeset();
       },
       onSaveSuccess: () => {
-        loadLocations();
+        changesetManager.reset();
+        updateDirtyState();
+        grid.forceRender();
       },
     });
   }
-
-  loadLocations();
 });

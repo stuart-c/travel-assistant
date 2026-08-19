@@ -154,11 +154,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // In-memory staged state
-  let stagedTimetables = [];
-  let initialSnapshot = '[]';
+  // Staged changeset state manager
+  const changesetManager =
+    window.TransitUI && window.TransitUI.createStagedChangesetManager
+      ? window.TransitUI.createStagedChangesetManager('id')
+      : new window.TransitUI.StagedChangesetManager('id');
+
+  let currentPageItems = [];
   let currentEditIndex = -1;
-  let activeEditorIndex = -1;
+  let activeEditorItem = null;
   let matrixStopAutocomplete = null;
   const selectedTripIndices = new Set();
 
@@ -624,17 +628,95 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Actions', width: '100px', sort: false },
   ];
 
-  // Initialise Grid.js instance
+  const columnSortMap = {
+    0: 'name',
+    1: 'transport_type',
+    2: 'start_date',
+    3: 'end_date',
+  };
+
+  function syncEmptyState(total) {
+    const effectiveTotal = Math.max(
+      0,
+      (Number(total) || 0) +
+        changesetManager.added.length -
+        changesetManager.deleted.size
+    );
+    if (effectiveTotal === 0) {
+      if (gridContainer) gridContainer.classList.add('hidden');
+      if (emptyState) emptyState.classList.remove('hidden');
+    } else {
+      if (gridContainer) gridContainer.classList.remove('hidden');
+      if (emptyState) emptyState.classList.add('hidden');
+    }
+  }
+
+  function syncDirtyState() {
+    if (window.ConfigDirtyManager) {
+      if (changesetManager.isDirty()) {
+        window.ConfigDirtyManager.markDirty();
+      } else {
+        window.ConfigDirtyManager.clearDirty();
+      }
+    }
+  }
+
+  // Initialise Grid.js instance with server-side pagination & sorting
   const grid = new gridjs.Grid({
     columns: columnsConfig,
-    data: formatGridData(stagedTimetables),
-    sort: true,
-    search: {
-      placeholder: 'Search timetables...',
+    server: {
+      url: dataUrl,
+      then: (data) => {
+        const rawItems = (Array.isArray(data.data) ? data.data : []).map(
+          normaliseItem
+        );
+        currentPageItems = changesetManager.applyOverlay(rawItems);
+        syncEmptyState(data.total);
+        setupStopSearchAutocomplete();
+        return formatGridData(currentPageItems);
+      },
+      total: (data) => {
+        const serverTotal = Number(data.total) || 0;
+        return Math.max(
+          0,
+          serverTotal +
+            changesetManager.added.length -
+            changesetManager.deleted.size
+        );
+      },
     },
     pagination: {
+      enabled: true,
       limit: 8,
       summary: true,
+      server: {
+        url: (prev, page, limit) => {
+          const u = new URL(prev, window.location.origin);
+          u.searchParams.set('limit', limit);
+          u.searchParams.set('offset', page * limit);
+          return u.pathname + u.search;
+        },
+      },
+    },
+    sort: {
+      multiColumn: false,
+      server: {
+        url: (prev, columns) => {
+          const u = new URL(prev, window.location.origin);
+          if (!columns || !columns.length) return u.pathname + u.search;
+          const col = columns[0];
+          const fieldName = columnSortMap[col.index];
+          if (fieldName) {
+            u.searchParams.set('sort_by', fieldName);
+            u.searchParams.set('order', col.direction === 1 ? 'asc' : 'desc');
+          }
+          return u.pathname + u.search;
+        },
+      },
+    },
+    search: {
+      enabled: true,
+      placeholder: 'Search timetables...',
     },
     language: {
       search: {
@@ -649,83 +731,20 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  // Sync in-memory changes with dirty manager
-  function syncState() {
-    const currentJson = JSON.stringify(stagedTimetables);
-
-    // Update empty state vs grid visibility in list view
-    if (stagedTimetables.length === 0) {
-      gridContainer.classList.add('hidden');
-      emptyState.classList.remove('hidden');
-    } else {
-      gridContainer.classList.remove('hidden');
-      emptyState.classList.add('hidden');
-    }
-
-    if (gridContainer && gridContainer.querySelector('.gridjs-container')) {
-      if (stagedTimetables.length <= 8) {
-        gridContainer
-          .querySelector('.gridjs-container')
-          .setAttribute('data-single-page', 'true');
-      } else {
-        gridContainer
-          .querySelector('.gridjs-container')
-          .removeAttribute('data-single-page');
-      }
-    }
-
-    // Re-render Grid.js list
-    grid
-      .updateConfig({
-        columns: columnsConfig,
-        data: formatGridData(stagedTimetables),
-      })
-      .forceRender();
-
-    // Check dirty state
-    if (window.ConfigDirtyManager) {
-      if (currentJson !== initialSnapshot) {
-        window.ConfigDirtyManager.markDirty();
-      } else {
-        window.ConfigDirtyManager.clearDirty();
-      }
-    }
-  }
-
-  let gridRendered = false;
-
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  function loadTimetables() {
-    GridLoader.load(dataUrl, gridContainer, {
-      label: 'timetables',
-      emptyState,
-      onSuccess(json) {
-        initialRaw = Array.isArray(json.data) ? json.data : [];
-        stagedTimetables = initialRaw.map(normaliseItem);
-        initialSnapshot = JSON.stringify(stagedTimetables);
-        if (!gridRendered) {
-          grid.render(gridContainer);
-          gridRendered = true;
-        }
-        syncState();
-        setupStopSearchAutocomplete();
-      },
-    });
+  if (gridContainer) {
+    grid.render(gridContainer);
   }
 
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedTimetables = JSON.parse(initialSnapshot);
+      changesetManager.reset();
       selectedTripIndices.clear();
-      if (activeEditorIndex >= 0) {
-        if (activeEditorIndex >= stagedTimetables.length) {
-          closeEditor();
-        } else {
-          renderMatrix();
-        }
+      if (activeEditorItem) {
+        closeEditor();
       }
-      syncState();
+      syncDirtyState();
+      grid.forceRender();
     });
   }
 
@@ -734,20 +753,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigSave.register({
       endpoint: dataUrl,
       getChangeset: () => {
-        const initialList = JSON.parse(initialSnapshot || '[]');
-        return window.TransitUI.computeChangeset(
-          initialList,
-          stagedTimetables,
-          'id'
-        );
+        return changesetManager.getChangeset();
       },
       onSaveSuccess: () => {
-        loadTimetables();
+        changesetManager.reset();
+        syncDirtyState();
+        grid.forceRender();
       },
     });
   }
-
-  loadTimetables();
 
   // Open Add Timetable Modal
   function showAddModal() {
@@ -781,9 +795,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Open Edit Timetable Metadata Modal
   function showEditModal(index) {
-    if (index < 0 || index >= stagedTimetables.length) return;
+    if (index < 0 || index >= currentPageItems.length) return;
     currentEditIndex = index;
-    const item = stagedTimetables[index];
+    const item = currentPageItems[index];
 
     if (modalTitle) modalTitle.textContent = 'Edit Timetable Schedule';
     if (modalIcon) modalIcon.textContent = 'edit_calendar';
@@ -842,9 +856,13 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
-        stagedTimetables.splice(idx, 1);
-        syncState();
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (item && item.id !== undefined) {
+          changesetManager.delete(item.id);
+          syncDirtyState();
+          grid.forceRender();
+        }
       }
     }
   }
@@ -907,16 +925,21 @@ document.addEventListener('DOMContentLoaded', () => {
         ...days,
       };
 
-      if (currentEditIndex >= 0 && currentEditIndex < stagedTimetables.length) {
-        payloadItem.id = stagedTimetables[currentEditIndex].id;
-        payloadItem.content = stagedTimetables[currentEditIndex].content;
-        stagedTimetables[currentEditIndex] = normaliseItem(payloadItem);
+      if (currentEditIndex >= 0 && currentEditIndex < currentPageItems.length) {
+        payloadItem.id = currentPageItems[currentEditIndex].id;
+        payloadItem.content = currentPageItems[currentEditIndex].content;
+        const norm = normaliseItem(payloadItem);
+        changesetManager.update(norm.id, norm);
       } else {
+        payloadItem.id = -1 * (changesetManager.added.length + 1);
         payloadItem.content = { stops: [], trips: [] };
-        stagedTimetables.push(normaliseItem(payloadItem));
+        const norm = normaliseItem(payloadItem);
+        changesetManager.add(norm);
       }
 
-      syncState();
+      syncDirtyState();
+      syncEmptyState(1);
+      grid.forceRender();
       closeModal();
     });
   }
@@ -927,11 +950,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openEditor(index) {
     try {
-      if (index < 0 || index >= stagedTimetables.length) return;
-      activeEditorIndex = index;
+      if (index < 0 || index >= currentPageItems.length) return;
+      activeEditorItem = currentPageItems[index];
       selectedTripIndices.clear();
 
-      const item = stagedTimetables[activeEditorIndex];
+      const item = activeEditorItem;
       if (matrixStopAutocomplete) {
         matrixStopAutocomplete.clear();
         matrixStopAutocomplete.resetFilter(item.transport_type || 'bus');
@@ -973,14 +996,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeEditor() {
-    activeEditorIndex = -1;
+    activeEditorItem = null;
     selectedTripIndices.clear();
     if (matrixStopAutocomplete) {
       matrixStopAutocomplete.clear();
     }
-    editorView.classList.add('hidden');
-    listView.classList.remove('hidden');
+    if (editorView) editorView.classList.add('hidden');
+    if (listView) listView.classList.remove('hidden');
     syncState();
+    grid.forceRender();
   }
 
   if (editorBackBtn) editorBackBtn.addEventListener('click', closeEditor);
@@ -1058,12 +1082,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function syncState() {
+    if (activeEditorItem) {
+      changesetManager.update(activeEditorItem.id, activeEditorItem);
+    }
+    syncDirtyState();
+  }
+
   // Render the Matrix Grid
   function renderMatrix() {
-    if (activeEditorIndex < 0 || activeEditorIndex >= stagedTimetables.length)
+    if (!activeEditorItem)
       return;
 
-    const timetable = stagedTimetables[activeEditorIndex];
+    const timetable = activeEditorItem;
     const stops = timetable.content.stops || [];
     let trips = timetable.content.trips || [];
 
@@ -1092,7 +1123,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateSelectionBar();
 
-    const isAuto = Boolean(stagedTimetables[activeEditorIndex]?.auto_added);
+    const isAuto = Boolean(activeEditorItem?.auto_added);
 
     // Generate Matrix Table HTML
     let tableHtml = `
@@ -1382,8 +1413,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Attach dynamic event listeners for Matrix table inputs and controls
   function attachMatrixEventListeners() {
-    if (activeEditorIndex < 0) return;
-    const timetable = stagedTimetables[activeEditorIndex];
+    if (!activeEditorItem) return;
+    const timetable = activeEditorItem;
     if (timetable.auto_added) return;
 
     // Time cell input listeners (change and dblclick)
@@ -1632,8 +1663,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add stop to active timetable and pad trips
   function addStopToTimetable(place) {
-    if (activeEditorIndex < 0) return;
-    const timetable = stagedTimetables[activeEditorIndex];
+    if (!activeEditorItem) return;
+    const timetable = activeEditorItem;
     if (!timetable.content.stops) timetable.content.stops = [];
     if (!timetable.content.trips) timetable.content.trips = [];
 
@@ -1660,8 +1691,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Add Trip Column Action
   if (addTripBtn) {
     addTripBtn.addEventListener('click', () => {
-      if (activeEditorIndex < 0) return;
-      const timetable = stagedTimetables[activeEditorIndex];
+      if (!activeEditorItem) return;
+      const timetable = activeEditorItem;
       const stopsCount = timetable.content.stops?.length || 0;
 
       // Default empty times for each stop
@@ -1679,8 +1710,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Clear Trips Action
   if (clearTripsBtn) {
     clearTripsBtn.addEventListener('click', () => {
-      if (activeEditorIndex < 0) return;
-      const timetable = stagedTimetables[activeEditorIndex];
+      if (!activeEditorItem) return;
+      const timetable = activeEditorItem;
       timetable.content.trips = [];
       selectedTripIndices.clear();
       renderMatrix();
@@ -1700,8 +1731,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Batch Delete Action
   if (deleteSelectedBtn) {
     deleteSelectedBtn.addEventListener('click', () => {
-      if (activeEditorIndex < 0 || selectedTripIndices.size === 0) return;
-      const timetable = stagedTimetables[activeEditorIndex];
+      if (!activeEditorItem || selectedTripIndices.size === 0) return;
+      const timetable = activeEditorItem;
       timetable.content.trips = timetable.content.trips.filter(
         (_, idx) => !selectedTripIndices.has(idx)
       );
@@ -1724,10 +1755,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
 
   function openRetimeModal(tripIndices) {
-    if (activeEditorIndex < 0 || !tripIndices || tripIndices.length === 0)
+    if (!activeEditorItem || !tripIndices || tripIndices.length === 0)
       return;
     targetRetimeIndices = tripIndices;
-    const timetable = stagedTimetables[activeEditorIndex];
+    const timetable = activeEditorItem;
     if (retimeError) retimeError.classList.add('hidden');
 
     const isSingle = targetRetimeIndices.length === 1;
@@ -1866,8 +1897,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Confirm Duplication & Retime
   if (confirmRetimeBtn) {
     confirmRetimeBtn.addEventListener('click', () => {
-      if (activeEditorIndex < 0 || targetRetimeIndices.length === 0) return;
-      const timetable = stagedTimetables[activeEditorIndex];
+      if (!activeEditorItem || targetRetimeIndices.length === 0) return;
+      const timetable = activeEditorItem;
       const isSingle = targetRetimeIndices.length === 1;
       const isOffset = retimeMethodOffset ? retimeMethodOffset.checked : true;
       const copies = Math.max(
@@ -1945,7 +1976,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.__timetablesController = {
       openEditor,
       closeEditor,
-      getStaged: () => stagedTimetables,
+      getStaged: () => currentPageItems,
     };
   } catch (err) {
     window.__timetablesError = err.stack || err.toString();

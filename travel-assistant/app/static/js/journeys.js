@@ -18,9 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const dataUrl =
     configEl.getAttribute('data-data-url') || '/config/journeys/data';
 
-  // In-memory staged state (seeded after remote fetch)
-  let stagedJourneys = [];
-  let initialSnapshot = '[]';
+  // Staged changeset state manager
+  const changesetManager =
+    window.TransitUI && window.TransitUI.createStagedChangesetManager
+      ? window.TransitUI.createStagedChangesetManager('id')
+      : new window.TransitUI.StagedChangesetManager('id');
+
+  let currentPageItems = [];
 
   // DOM Elements
   const gridWrapper = document.getElementById('journeys-grid-wrapper');
@@ -235,78 +239,123 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Grid Instance ---
-  let gridInstance = null;
+  const columnsConfig = [
+    { name: 'Journey', width: '26%', sort: true },
+    { name: 'Start Location', width: '23%', sort: true },
+    { name: 'End Location', width: '23%', sort: true },
+    { name: 'Schedule', width: '20%', sort: false },
+    { name: 'Actions', width: '90px', sort: false },
+  ];
 
-  function renderGrid() {
-    if (!gridWrapper) return;
+  const columnSortMap = {
+    0: 'name',
+    1: 'from_name',
+    2: 'to_name',
+  };
 
-    if (stagedJourneys.length === 0) {
-      gridWrapper.classList.add('hidden');
+  function syncEmptyState(total) {
+    const effectiveTotal = Math.max(
+      0,
+      (Number(total) || 0) +
+        changesetManager.added.length -
+        changesetManager.deleted.size
+    );
+    if (effectiveTotal === 0) {
       if (emptyState) emptyState.classList.remove('hidden');
+      if (gridWrapper) gridWrapper.classList.add('hidden');
     } else {
-      gridWrapper.classList.remove('hidden');
       if (emptyState) emptyState.classList.add('hidden');
+      if (gridWrapper) gridWrapper.classList.remove('hidden');
     }
+  }
 
-    const gridData = formatGridData(stagedJourneys);
-
-    const columnsConfig = [
-      { name: 'Journey', width: '26%', sort: true },
-      { name: 'Start Location', width: '23%', sort: true },
-      { name: 'End Location', width: '23%', sort: true },
-      { name: 'Schedule', width: '20%', sort: false },
-      { name: 'Actions', width: '90px', sort: false },
-    ];
-
-    if (!gridInstance) {
-      gridInstance = new gridjs.Grid({
-        columns: columnsConfig,
-        data: gridData,
-        sort: true,
-        search: {
-          enabled: true,
-          placeholder: 'Search journeys...',
-        },
-        pagination: {
-          enabled: true,
-          limit: 10,
-          summary: true,
-        },
-        className: {
-          table: 'w-full text-left text-sm',
-          th: 'py-3.5 px-4 font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700',
-          td: 'py-3.5 px-4 border-b border-slate-100 dark:border-slate-800/80 text-slate-600 dark:text-slate-300 align-middle',
-        },
-        language: {
-          search: { placeholder: 'Search journeys...' },
-          pagination: {
-            showing: 'Showing',
-            of: 'of',
-            to: 'to',
-            results: 'journeys',
-          },
-          noRecordsFound: 'No matching journeys found',
-        },
-      }).render(gridWrapper);
-    } else {
-      gridInstance.updateConfig({ columns: columnsConfig, data: gridData }).forceRender();
-    }
-
-    if (gridWrapper && gridWrapper.querySelector('.gridjs-container')) {
-      if (stagedJourneys.length <= 10) {
-        gridWrapper.querySelector('.gridjs-container').setAttribute('data-single-page', 'true');
+  function updateDirtyState() {
+    if (window.ConfigDirtyManager) {
+      if (changesetManager.isDirty()) {
+        window.ConfigDirtyManager.markDirty();
       } else {
-        gridWrapper.querySelector('.gridjs-container').removeAttribute('data-single-page');
+        window.ConfigDirtyManager.clearDirty();
       }
     }
+  }
 
-    syncDirtyState();
+  const gridInstance = new gridjs.Grid({
+    columns: columnsConfig,
+    server: {
+      url: dataUrl,
+      then: (data) => {
+        const rawItems = Array.isArray(data.data) ? data.data : [];
+        currentPageItems = changesetManager.applyOverlay(rawItems);
+        syncEmptyState(data.total);
+        return formatGridData(currentPageItems);
+      },
+      total: (data) => {
+        const serverTotal = Number(data.total) || 0;
+        return Math.max(
+          0,
+          serverTotal +
+            changesetManager.added.length -
+            changesetManager.deleted.size
+        );
+      },
+    },
+    pagination: {
+      enabled: true,
+      limit: 10,
+      summary: true,
+      server: {
+        url: (prev, page, limit) => {
+          const u = new URL(prev, window.location.origin);
+          u.searchParams.set('limit', limit);
+          u.searchParams.set('offset', page * limit);
+          return u.pathname + u.search;
+        },
+      },
+    },
+    sort: {
+      multiColumn: false,
+      server: {
+        url: (prev, columns) => {
+          const u = new URL(prev, window.location.origin);
+          if (!columns || !columns.length) return u.pathname + u.search;
+          const col = columns[0];
+          const fieldName = columnSortMap[col.index];
+          if (fieldName) {
+            u.searchParams.set('sort_by', fieldName);
+            u.searchParams.set('order', col.direction === 1 ? 'asc' : 'desc');
+          }
+          return u.pathname + u.search;
+        },
+      },
+    },
+    search: {
+      enabled: true,
+      placeholder: 'Search journeys...',
+    },
+    className: {
+      table: 'w-full text-left text-sm',
+      th: 'py-3.5 px-4 font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700',
+      td: 'py-3.5 px-4 border-b border-slate-100 dark:border-slate-800/80 text-slate-600 dark:text-slate-300 align-middle',
+    },
+    language: {
+      search: { placeholder: 'Search journeys...' },
+      pagination: {
+        showing: 'Showing',
+        of: 'of',
+        to: 'to',
+        results: 'journeys',
+      },
+      noRecordsFound: 'No matching journeys found',
+    },
+  });
+
+  if (gridWrapper) {
+    gridInstance.render(gridWrapper);
   }
 
   function syncDirtyState() {
-    const currentSnapshot = JSON.stringify(stagedJourneys);
     if (window.ConfigDirtyManager) {
-      if (currentSnapshot !== initialSnapshot) {
+      if (changesetManager.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -632,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function openEditModal(index) {
-    const item = stagedJourneys[index];
+    const item = currentPageItems[index];
     if (!item) return;
 
     editIndexInput.value = String(index);
@@ -716,13 +765,20 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       const editIndex = parseInt(editIndexInput.value, 10);
-      if (editIndex >= 0 && editIndex < stagedJourneys.length) {
-        stagedJourneys[editIndex] = journeyItem;
+      if (editIndex >= 0 && editIndex < currentPageItems.length) {
+        const existing = currentPageItems[editIndex];
+        if (existing && existing.id !== undefined) {
+          journeyItem.id = existing.id;
+        }
+        changesetManager.update(journeyItem.id, journeyItem);
       } else {
-        stagedJourneys.push(journeyItem);
+        journeyItem.id = -1 * (changesetManager.added.length + 1);
+        changesetManager.add(journeyItem);
       }
 
-      renderGrid();
+      syncDirtyState();
+      syncEmptyState(1);
+      gridInstance.forceRender();
       closeModal();
     });
   }
@@ -739,9 +795,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const delBtn = e.target.closest('.delete-journey-btn');
     if (delBtn) {
       const idx = parseInt(delBtn.getAttribute('data-index'), 10);
-      if (!isNaN(idx) && idx >= 0 && idx < stagedJourneys.length) {
-        stagedJourneys.splice(idx, 1);
-        renderGrid();
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (item && item.id !== undefined) {
+          changesetManager.delete(item.id);
+          syncDirtyState();
+          gridInstance.forceRender();
+        }
       }
     }
   });
@@ -749,20 +809,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      stagedJourneys = JSON.parse(initialSnapshot);
-      renderGrid();
-    });
-  }
-
-  function loadJourneys() {
-    GridLoader.load(dataUrl, gridWrapper, {
-      label: 'journeys',
-      emptyState,
-      onSuccess(json) {
-        stagedJourneys = Array.isArray(json.data) ? json.data : [];
-        initialSnapshot = JSON.stringify(stagedJourneys);
-        renderGrid();
-      },
+      changesetManager.reset();
+      syncDirtyState();
+      gridInstance.forceRender();
     });
   }
 
@@ -770,18 +819,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ConfigSave.register({
       endpoint: dataUrl,
       getChangeset: () => {
-        const initialList = JSON.parse(initialSnapshot || '[]');
-        return window.TransitUI.computeChangeset(
-          initialList,
-          stagedJourneys,
-          'id'
-        );
+        return changesetManager.getChangeset();
       },
       onSaveSuccess: () => {
-        loadJourneys();
+        changesetManager.reset();
+        syncDirtyState();
+        gridInstance.forceRender();
       },
     });
   }
-
-  loadJourneys();
 });
