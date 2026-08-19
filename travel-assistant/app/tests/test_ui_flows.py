@@ -157,10 +157,9 @@ def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
     _seed_sample_data()
     get_resp = client.get("/config/locations")
     assert get_resp.status_code == 200
-    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    data_script = soup.find("script", id="initial-locations-data")
-    assert data_script is not None
-    locations = json.loads(data_script.string)
+    data_resp = client.get("/config/locations/data")
+    assert data_resp.status_code == 200
+    locations = data_resp.get_json()["data"]
     assert len(locations) >= 2
 
     # Save new location list
@@ -182,9 +181,9 @@ def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
-    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_script = soup_post.find("script", id="initial-locations-data")
-    updated_data = json.loads(updated_script.string)
+    data_resp2 = client.get("/config/locations/data")
+    assert data_resp2.status_code == 200
+    updated_data = data_resp2.get_json()["data"]
     assert any(loc.get("name") == "Central Library" for loc in updated_data)
 
 
@@ -193,10 +192,9 @@ def test_timetables_grid_data_binding_and_save(client: FlaskClient) -> None:
     _seed_sample_data()
     get_resp = client.get("/config/timetables")
     assert get_resp.status_code == 200
-    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    data_script = soup.find("script", id="initial-timetables-data")
-    assert data_script is not None
-    timetables = json.loads(data_script.string)
+    data_resp = client.get("/config/timetables/data")
+    assert data_resp.status_code == 200
+    timetables = data_resp.get_json()["data"]
     assert len(timetables) >= 1
 
     new_timetables = {
@@ -226,9 +224,9 @@ def test_timetables_grid_data_binding_and_save(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
-    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_script = soup_post.find("script", id="initial-timetables-data")
-    updated_data = json.loads(updated_script.string)
+    data_resp2 = client.get("/config/timetables/data")
+    assert data_resp2.status_code == 200
+    updated_data = data_resp2.get_json()["data"]
     assert any(tt.get("name") == "Evening Commute" for tt in updated_data)
 
 
@@ -237,9 +235,8 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
     _seed_sample_data()
     get_resp = client.get("/config/transfers")
     assert get_resp.status_code == 200
-    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    plat_script = soup.find("script", id="initial-platform-transfers-data")
-    assert plat_script is not None
+    plat_resp = client.get("/config/transfers/data")
+    assert plat_resp.status_code == 200
 
     plat_payload = [
         {
@@ -264,10 +261,9 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
-    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_plat = json.loads(
-        soup_post.find("script", id="initial-platform-transfers-data").string
-    )
+    plat_resp2 = client.get("/config/transfers/data")
+    assert plat_resp2.status_code == 200
+    updated_plat = plat_resp2.get_json()["data"]
     assert any(t.get("location_id") == "9100KNGX" for t in updated_plat)
 
 
@@ -276,9 +272,8 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     _seed_sample_data()
     get_resp = client.get("/config/journeys")
     assert get_resp.status_code == 200
-    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    j_script = soup.find("script", id="initial-journeys-data")
-    assert j_script is not None
+    j_resp = client.get("/config/journeys/data")
+    assert j_resp.status_code == 200
 
     journeys_payload = [
         {
@@ -309,8 +304,9 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
-    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_j = json.loads(soup_post.find("script", id="initial-journeys-data").string)
+    j_resp2 = client.get("/config/journeys/data")
+    assert j_resp2.status_code == 200
+    updated_j = j_resp2.get_json()["data"]
     assert any(j.get("name") == "Library Study Session" for j in updated_j)
 
 
@@ -319,9 +315,8 @@ def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
     _seed_sample_data()
     get_resp = client.get("/config/walking")
     assert get_resp.status_code == 200
-    soup = BeautifulSoup(get_resp.get_data(as_text=True), "html.parser")
-    w_script = soup.find("script", id="initial-walking-data")
-    assert w_script is not None
+    w_resp = client.get("/config/walking/data")
+    assert w_resp.status_code == 200
 
     walking_payload = [
         {
@@ -345,8 +340,9 @@ def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
         follow_redirects=True,
     )
     assert post_resp.status_code == 200
-    soup_post = BeautifulSoup(post_resp.get_data(as_text=True), "html.parser")
-    updated_w = json.loads(soup_post.find("script", id="initial-walking-data").string)
+    w_resp2 = client.get("/config/walking/data")
+    assert w_resp2.status_code == 200
+    updated_w = w_resp2.get_json()["data"]
     assert any(w.get("time_needed_minutes") == 18 for w in updated_w)
 
 
@@ -398,10 +394,9 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
     # Step 4: User returns to Journeys page
     return_resp = client.get("/config/journeys")
     assert return_resp.status_code == 200
-    soup = BeautifulSoup(return_resp.get_data(as_text=True), "html.parser")
-    data_script = soup.find("script", id="initial-journeys-data")
-    assert data_script is not None
-    loaded_journeys = json.loads(data_script.string)
+    data_resp = client.get("/config/journeys/data")
+    assert data_resp.status_code == 200
+    loaded_journeys = data_resp.get_json()["data"]
 
     assert len(loaded_journeys) == 2
     j = next(item for item in loaded_journeys if item["name"] == "Gym Workout Route")
@@ -567,51 +562,41 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
     # B. Verify Locations
     loc_get = client.get("/config/locations")
     assert loc_get.status_code == 200
-    loc_data = json.loads(
-        BeautifulSoup(loc_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-locations-data")
-        .string
-    )
+    loc_data_resp = client.get("/config/locations/data")
+    assert loc_data_resp.status_code == 200
+    loc_data = loc_data_resp.get_json()["data"]
     assert any(loc_item["name"] == "Community Centre" for loc_item in loc_data)
 
     # C. Verify Timetables
     tt_get = client.get("/config/timetables")
     assert tt_get.status_code == 200
-    tt_data = json.loads(
-        BeautifulSoup(tt_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-timetables-data")
-        .string
-    )
+    tt_data_resp = client.get("/config/timetables/data")
+    assert tt_data_resp.status_code == 200
+    tt_data = tt_data_resp.get_json()["data"]
     assert any(t["name"] == "Saturday Market Shuttle" for t in tt_data)
 
     # D. Verify Transfers
     tr_get = client.get("/config/transfers")
     assert tr_get.status_code == 200
-    tr_data = json.loads(
-        BeautifulSoup(tr_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-platform-transfers-data")
-        .string
-    )
+    tr_data_resp = client.get("/config/transfers/data")
+    assert tr_data_resp.status_code == 200
+    tr_data = tr_data_resp.get_json()["data"]
     assert any(t["notes"] == "Footbridge" for t in tr_data)
 
     # E. Verify Journeys
     j_get = client.get("/config/journeys")
     assert j_get.status_code == 200
-    j_data = json.loads(
-        BeautifulSoup(j_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-journeys-data")
-        .string
-    )
+    j_data_resp = client.get("/config/journeys/data")
+    assert j_data_resp.status_code == 200
+    j_data = j_data_resp.get_json()["data"]
     assert any(j["name"] == "Market Visit Route" for j in j_data)
 
     # F. Verify Walking
     w_get = client.get("/config/walking")
     assert w_get.status_code == 200
-    w_data = json.loads(
-        BeautifulSoup(w_get.get_data(as_text=True), "html.parser")
-        .find("script", id="initial-walking-data")
-        .string
-    )
+    w_data_resp = client.get("/config/walking/data")
+    assert w_data_resp.status_code == 200
+    w_data = w_data_resp.get_json()["data"]
     assert any(w["start_name"] == "Home Zone" for w in w_data)
 
     # G. Verify Database and Sync views
