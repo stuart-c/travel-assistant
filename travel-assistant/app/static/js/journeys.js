@@ -13,25 +13,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
-  // Parse initial data payload
-  const initialScript = document.getElementById('initial-journeys-data');
-  let initialJourneysData = [];
-  try {
-    if (initialScript && initialScript.textContent) {
-      initialJourneysData = JSON.parse(initialScript.textContent);
-    }
-  } catch (e) {
-    console.error('Failed to parse initial journeys data:', e);
-  }
+form.getAttribute('data-data-url') || '/config/journeys/data';
 
-  // Initialise ChangesetTracker
-  const tracker = window.TransitUI.createChangesetTracker(initialJourneysData || []);
-  let stagedJourneys = tracker.getItems();
+
+
+  // In-memory staged state (seeded after remote fetch)
+  let stagedJourneys = [];
+  let initialSnapshot = '[]';
 
   // DOM Elements
   const hiddenInput = document.getElementById('journeys_json');
   const gridWrapper = document.getElementById('journeys-grid-wrapper');
   const emptyState = document.getElementById('journeys-grid-empty-state');
+
+  const dataUrl = form.getAttribute('data-data-url') || '/config/journeys/data';
 
   // Modal Elements
   const modal = document.getElementById('journey-modal');
@@ -311,14 +306,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateHiddenInput() {
-    const changeset = tracker.getChangeset();
-    stagedJourneys = tracker.getItems();
+    const currentSnapshot = JSON.stringify(stagedJourneys);
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(changeset);
+      hiddenInput.value = currentSnapshot;
     }
     // Check dirty state with ConfigDirtyManager
     if (window.ConfigDirtyManager) {
-      if (tracker.isDirty()) {
+      if (currentSnapshot !== initialSnapshot) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -716,14 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      const editIndex = parseInt(editIndexInput.value, 10);
-      const existingId =
-        editIndex >= 0 && editIndex < stagedJourneys.length
-          ? stagedJourneys[editIndex].id
-          : undefined;
-
       const journeyItem = {
-        ...(existingId !== undefined ? { id: existingId } : {}),
         name,
         from_type: fromType,
         from_id: fromId,
@@ -734,7 +721,12 @@ document.addEventListener('DOMContentLoaded', () => {
         time_settings: timeSettings,
       };
 
-      tracker.saveModalItem(editIndex, journeyItem);
+      const editIndex = parseInt(editIndexInput.value, 10);
+      if (editIndex >= 0 && editIndex < stagedJourneys.length) {
+        stagedJourneys[editIndex] = journeyItem;
+      } else {
+        stagedJourneys.push(journeyItem);
+      }
 
       renderGrid();
       closeModal();
@@ -754,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (delBtn) {
       const idx = parseInt(delBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedJourneys.length) {
-        tracker.deleteItem(idx);
+        stagedJourneys.splice(idx, 1);
         renderGrid();
       }
     }
@@ -763,11 +755,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      tracker.discard();
+      stagedJourneys = JSON.parse(initialSnapshot);
       renderGrid();
     });
   }
 
-  // Initial Render
-  renderGrid();
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridWrapper, {
+    label: 'journeys',
+    emptyState,
+    onSuccess(json) {
+      stagedJourneys = Array.isArray(json.data) ? json.data : [];
+      initialSnapshot = JSON.stringify(stagedJourneys);
+      renderGrid();
+    },
+  });
 });

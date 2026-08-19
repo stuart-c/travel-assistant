@@ -131,8 +131,15 @@ def test_get_walking_page(client: FlaskClient, app: Flask) -> None:
 
     response_populated = client.get("/config/walking")
     assert response_populated.status_code == 200
-    assert b"Home Sweet Home" in response_populated.data
-    assert b"Local Bus Stop" in response_populated.data
+    assert b"walking-grid-wrapper" in response_populated.data
+
+    data_resp = client.get("/config/walking/data")
+    assert data_resp.status_code == 200
+    walking_data = data_resp.get_json()["data"]
+    start_names = [w["start_name"] for w in walking_data]
+    finish_names = [w["finish_name"] for w in walking_data]
+    assert "Home Sweet Home" in start_names
+    assert "Local Bus Stop" in finish_names
 
 
 def test_post_walking_success(client: FlaskClient, app: Flask) -> None:

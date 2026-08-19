@@ -59,10 +59,9 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/transfers" data-search-url="{{ ingress_path }}/config/search/places" class="config-main-form hidden" id="transfers-form">
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/transfers" data-search-url="{{ ingress_path }}/config/search/places" class="config-main-form hidden" id="transfers-form" data-data-url="{{ ingress_path }}/config/transfers/data">
   <input type="hidden" name="platform_transfers_json" id="platform_transfers_json" value="">
-  <script id="initial-platform-transfers-data" type="application/json">{{ platform_transfers | tojson }}</script>
 </form>
 
 <!-- Add / Edit Platform & Stand Transfer Modal -->
@@ -204,5 +203,6 @@
 
 <!-- Grid.js UMD Script (CDN) and Transfers Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/transfers.js?v={{ cache_bust }}"></script>
 {% endblock %}

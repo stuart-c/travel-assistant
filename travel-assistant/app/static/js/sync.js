@@ -7,14 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('sync-page-container');
   if (!container) return;
 
-  const dataEl = document.getElementById('initial-sync-stats');
-  let currentStats = null;
-  try {
-    currentStats = dataEl ? JSON.parse(dataEl.textContent || '{}') : {};
-  } catch (e) {
-    console.error('Failed to parse initial sync stats:', e);
-  }
-
   const gridContainer = document.getElementById('sync-grid-wrapper');
   const emptyState = document.getElementById('grid-empty-state');
   const ingressPath = container.dataset.ingressPath || '';
@@ -23,14 +15,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncAllIcon = document.getElementById('sync-all-icon');
   const syncAllText = document.getElementById('sync-all-text');
 
+  const dataUrl = (gridContainer && gridContainer.getAttribute('data-data-url')) || '/config/sync/data';
+
   const SYNCABLE_NAMES = ['bus_routes', 'stops', 'ha_locations', 'locations', 'train_timetables', 'bus_timetables', 'walking'];
 
-  function extractSyncableTables(stats) {
-    const allTables = (stats && Array.isArray(stats.tables)) ? stats.tables : [];
-    return allTables.filter(t => t.syncable || SYNCABLE_NAMES.includes(t.name));
+  function extractSyncableTables(tablesList) {
+    return (Array.isArray(tablesList) ? tablesList : []).filter(t => t.syncable || SYNCABLE_NAMES.includes(t.name));
   }
 
-  let stagedTables = extractSyncableTables(currentStats);
+  let stagedTables = [];
 
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
@@ -195,14 +188,16 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Actions', width: '90px', sort: false },
   ];
 
-  // Initialise Grid.js instance
+
+
+  // Initialise Grid.js instance (renders after loadData populates stagedTables)
   const grid = new gridjs.Grid({
     columns: columnsConfig,
     data: formatGridData(stagedTables),
     sort: true,
     search: false,
     pagination: false,
-  }).render(gridContainer);
+  });
 
   function syncGridDisplay() {
     if (stagedTables.length === 0) {
@@ -219,7 +214,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }).forceRender();
   }
 
-  syncGridDisplay();
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridContainer, {
+    label: 'sync status',
+    emptyState,
+    onSuccess(json) {
+      stagedTables = extractSyncableTables(Array.isArray(json.data) ? json.data : []);
+      grid.render(gridContainer);
+      syncGridDisplay();
+    },
+  });
 
   // Periodic interval to refresh relative timestamp displays every 30 seconds
   setInterval(() => {

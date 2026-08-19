@@ -11,21 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
 
-  // Parse initial data payload
-  const platScript = document.getElementById('initial-platform-transfers-data');
-  let initialPlatformData = [];
+  const dataUrl = form.getAttribute('data-data-url') || '/config/transfers/data';
 
-  try {
-    if (platScript && platScript.textContent) {
-      initialPlatformData = JSON.parse(platScript.textContent);
-    }
-  } catch (e) {
-    console.error('Failed to parse initial platform transfers data:', e);
-  }
 
-  // Initialise ChangesetTracker
-  const tracker = window.TransitUI.createChangesetTracker(initialPlatformData || []);
-  let stagedPlatformTransfers = tracker.getItems();
+
+  // In-memory staged state (seeded after remote fetch)
+  let stagedPlatformTransfers = [];
+  let initialPlatformSnapshot = '[]';
 
   // Hidden form input
   const platHiddenInput = document.getElementById('platform_transfers_json');
@@ -193,14 +185,25 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       noRecordsFound: 'No matching platform transfers found'
     }
-  }).render(platGridWrapper);
+  });
+
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, platGridWrapper, {
+    label: 'transfers',
+    emptyState: platEmptyState,
+    onSuccess(json) {
+      stagedPlatformTransfers = Array.isArray(json.data) ? json.data : [];
+      initialPlatformSnapshot = JSON.stringify(stagedPlatformTransfers);
+      platformGrid.render(platGridWrapper);
+      syncState();
+    },
+  });
 
   // --- Sync State with Dirty Manager & Hidden Inputs ---
   function syncState() {
-    const platChangeset = tracker.getChangeset();
-    stagedPlatformTransfers = tracker.getItems();
+    const currentPlatJson = JSON.stringify(stagedPlatformTransfers);
 
-    if (platHiddenInput) platHiddenInput.value = JSON.stringify(platChangeset);
+    if (platHiddenInput) platHiddenInput.value = currentPlatJson;
 
     // Toggle Empty State vs Grid
     if (stagedPlatformTransfers.length === 0) {
@@ -227,7 +230,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check Dirty Status
     if (window.ConfigDirtyManager) {
-      if (tracker.isDirty()) {
+      const isDirty = (currentPlatJson !== initialPlatformSnapshot);
+      if (isDirty) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -241,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Register Discard Handler with ConfigDirtyManager
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      tracker.discard();
+      stagedPlatformTransfers = JSON.parse(initialPlatformSnapshot);
       syncState();
     });
   }
@@ -337,14 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const editIdx = parseInt(editPlatIndexInput.value, 10);
-      const existingId =
-        editIdx >= 0 && editIdx < stagedPlatformTransfers.length
-          ? stagedPlatformTransfers[editIdx].id
-          : undefined;
-
       const itemPayload = {
-        ...(existingId !== undefined ? { id: existingId } : {}),
         location_type,
         location_name,
         location_id,
@@ -356,7 +353,12 @@ document.addEventListener('DOMContentLoaded', () => {
         notes
       };
 
-      tracker.saveModalItem(editIdx, itemPayload);
+      const editIdx = parseInt(editPlatIndexInput.value, 10);
+      if (editIdx >= 0 && editIdx < stagedPlatformTransfers.length) {
+        stagedPlatformTransfers[editIdx] = itemPayload;
+      } else {
+        stagedPlatformTransfers.push(itemPayload);
+      }
 
       syncState();
       closePlatformModal();
@@ -377,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removePlatBtn) {
       const idx = parseInt(removePlatBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedPlatformTransfers.length) {
-        tracker.deleteItem(idx);
+        stagedPlatformTransfers.splice(idx, 1);
         syncState();
       }
       return;

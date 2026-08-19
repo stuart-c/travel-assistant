@@ -181,10 +181,9 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/timetables" class="config-main-form hidden" id="timetables-form">
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/timetables" class="config-main-form hidden" id="timetables-form" data-data-url="{{ ingress_path }}/config/timetables/data">
   <input type="hidden" name="timetables_json" id="timetables_json" value="">
-  <script id="initial-timetables-data" type="application/json">{{ timetables | tojson }}</script>
 </form>
 
 <!-- Add/Edit Timetable Modal Dialog -->
@@ -358,5 +357,6 @@
 
 <!-- Grid.js UMD Script (CDN) and Timetables Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/timetables.js?v={{ cache_bust }}"></script>
 {% endblock %}

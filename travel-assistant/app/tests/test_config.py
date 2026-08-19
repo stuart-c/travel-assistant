@@ -3,9 +3,10 @@
 import json
 from unittest.mock import MagicMock
 from pytest import MonkeyPatch
+from flask import Flask
 from flask.testing import FlaskClient
 
-from app.models import Setting, Timetable
+from app.models import Setting, Timetable, Walking
 
 
 def test_config_index_redirect(client: FlaskClient) -> None:
@@ -814,7 +815,7 @@ def test_get_db_page_initial_render(client: FlaskClient) -> None:
     assert b"Download Database" in response.data
     assert b"Database Tables" in response.data
     assert b"db-grid-wrapper" in response.data
-    assert b"initial-db-stats" in response.data
+    assert b"db-grid-wrapper" in response.data
     assert b"/static/js/db.js" in response.data
     assert b"nav-link-db" in response.data
     assert b"standard-action-bar" not in response.data
@@ -938,20 +939,15 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert b"Transit Datasets" in response.data
     assert b"sync-all-btn" not in response.data
     assert b"sync-grid-wrapper" in response.data
-    assert b"initial-sync-stats" in response.data
+    assert b"sync-grid-wrapper" in response.data
     assert b"/static/js/sync.js" in response.data
     assert b"standard-action-bar" not in response.data
 
-    # Verify locations table is marked as syncable in payload
-    html = response.get_data(as_text=True)
-    import re
-
-    match = re.search(
-        r'<script id="initial-sync-stats"[^>]*>(.*?)</script>', html, re.DOTALL
-    )
-    assert match is not None
-    payload = json.loads(match.group(1))
-    tables = payload.get("tables", [])
+    # Verify locations table is marked as syncable via the data endpoint
+    data_resp = client.get("/config/sync/data")
+    assert data_resp.status_code == 200
+    payload = data_resp.get_json()
+    tables = payload.get("data", [])
     loc_entry = next((t for t in tables if t["name"] == "locations"), None)
     assert loc_entry is not None
     assert loc_entry["syncable"] is True
@@ -1134,13 +1130,9 @@ def test_timetables_save_leave_and_return_persistence(client: FlaskClient) -> No
     # Return to Timetables
     return_resp = client.get("/config/timetables")
     assert return_resp.status_code == 200
-    page_html = return_resp.get_data(as_text=True)
-
-    start_tag = '<script id="initial-timetables-data" type="application/json">'
-    end_tag = "</script>"
-    json_start = page_html.find(start_tag) + len(start_tag)
-    json_end = page_html.find(end_tag, json_start)
-    persisted = json.loads(page_html[json_start:json_end])
+    data_resp = client.get("/config/timetables/data")
+    assert data_resp.status_code == 200
+    persisted = data_resp.get_json()["data"]
 
     assert len(persisted) == 1
     tt = persisted[0]
@@ -1179,3 +1171,84 @@ def test_credentials_save_leave_and_return_persistence(client: FlaskClient) -> N
     assert 'value="sk-test-live-key"' in html
     assert 'value="gpt-4o"' in html
     assert 'value="uk"' in html
+
+
+def test_config_db_data_endpoint(client: FlaskClient) -> None:
+    """Test GET /config/db/data returns all database table statistics as JSON."""
+    response = client.get("/config/db/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert isinstance(payload["data"], list)
+    assert payload["total"] == len(payload["data"])
+
+
+def test_config_sync_data_endpoint(client: FlaskClient) -> None:
+    """Test GET /config/sync/data returns all transit dataset statistics as JSON."""
+    response = client.get("/config/sync/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert isinstance(payload["data"], list)
+
+
+def test_config_timetables_data_endpoint(app: Flask, client: FlaskClient) -> None:
+    """Test GET /config/timetables/data returns all timetables as JSON."""
+    with app.app_context():
+        Timetable.delete().execute()
+        Timetable.insert_many([
+            {
+                "name": "Express Morning Service",
+                "transport_type": "rail",
+                "start_date": None,
+                "end_date": None,
+                "monday": True, "tuesday": True, "wednesday": True,
+                "thursday": True, "friday": True, "saturday": False, "sunday": False,
+                "bank_holiday": False, "auto_added": False,
+                "content": {"stops": [], "trips": []},
+            }
+        ]).execute()
+
+    response = client.get("/config/timetables/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert payload["total"] == 1
+    assert payload["data"][0]["name"] == "Express Morning Service"
+    assert payload["data"][0]["transport_type"] == "rail"
+
+
+def test_config_walking_data_endpoint(app: Flask, client: FlaskClient) -> None:
+    """Test GET /config/walking/data returns all walking routes as JSON."""
+    with app.app_context():
+        Walking.delete().execute()
+        Walking.insert_many([
+            {
+                "start_type": "custom",
+                "start_id": "custom:home",
+                "start_name": "Home",
+                "finish_type": "rail",
+                "finish_id": "WAT",
+                "finish_name": "London Waterloo",
+                "time_needed_minutes": 12,
+                "bidirectional": True,
+                "auto_generated": False,
+            }
+        ]).execute()
+
+    response = client.get("/config/walking/data")
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    payload = response.get_json()
+    assert "data" in payload
+    assert "total" in payload
+    assert payload["total"] == 1
+    assert payload["data"][0]["start_name"] == "Home"
+    assert payload["data"][0]["finish_name"] == "London Waterloo"
+    assert payload["data"][0]["time_needed_minutes"] == 12

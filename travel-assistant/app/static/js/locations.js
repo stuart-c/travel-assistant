@@ -10,26 +10,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('locations-form');
   if (!form) return;
 
-  const dataEl = document.getElementById('initial-locations-data');
-  let initialRaw = [];
-  try {
-    initialRaw = dataEl && dataEl.textContent ? JSON.parse(dataEl.textContent) : [];
-  } catch (e) {
-    console.error('Failed to parse initial locations data:', e);
-  }
-
-  // Initialise ChangesetTracker
-  const tracker = window.TransitUI.createChangesetTracker(initialRaw || [], {
-    compareFunc: (a, b) =>
-      a.name !== b.name ||
-      parseFloat(a.latitude) !== parseFloat(b.latitude) ||
-      parseFloat(a.longitude) !== parseFloat(b.longitude),
-  });
-  let stagedLocations = tracker.getItems();
+  const dataUrl = form.getAttribute('data-data-url') || '/config/locations/data';
 
   const hiddenInput = document.getElementById('locations_json');
   const emptyState = document.getElementById('locations-grid-empty-state');
   const gridContainer = document.getElementById('locations-grid-wrapper');
+
+
+
+  // In-memory staged state (seeded after remote fetch)
+  let stagedLocations = [];
+  let initialSnapshot = '[]';
+
+
 
   // Modal elements
   const modal = document.getElementById('location-modal');
@@ -257,15 +250,21 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  if (gridContainer) {
-    grid.render(gridContainer);
-  }
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridContainer, {
+    label: 'locations',
+    emptyState,
+    onSuccess(json) {
+      stagedLocations = Array.isArray(json.data) ? json.data : [];
+      initialSnapshot = JSON.stringify(stagedLocations);
+      grid.render(gridContainer);
+      syncState();
+    },
+  });
 
   function syncState() {
-    const changeset = tracker.getChangeset();
-    stagedLocations = tracker.getItems();
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(changeset);
+      hiddenInput.value = JSON.stringify(stagedLocations);
     }
 
     if (stagedLocations.length === 0) {
@@ -291,7 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Trigger DirtyManager check
     if (window.ConfigDirtyManager) {
-      if (tracker.isDirty()) {
+      const currentJson = JSON.stringify(stagedLocations);
+      if (currentJson !== initialSnapshot) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -299,13 +299,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial sync
-  syncState();
-
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      tracker.discard();
+      stagedLocations = JSON.parse(initialSnapshot);
       syncState();
     });
   }
@@ -487,7 +484,11 @@ document.addEventListener('DOMContentLoaded', () => {
         ha: isHa,
       };
 
-      tracker.saveModalItem(idx, entry);
+      if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
+        stagedLocations[idx] = entry;
+      } else {
+        stagedLocations.push(entry);
+      }
 
       syncState();
       closeModal();
@@ -514,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
       const idx = parseInt(deleteBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedLocations.length) {
-        tracker.deleteItem(idx);
+        stagedLocations.splice(idx, 1);
         syncState();
       }
       return;

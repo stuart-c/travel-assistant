@@ -9,13 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('timetables-form');
     if (!form) return;
 
-  const dataEl = document.getElementById('initial-timetables-data');
+  const dataUrl = form.getAttribute('data-data-url') || '/config/timetables/data';
   let initialRaw = [];
-  try {
-    initialRaw = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
-  } catch (e) {
-    console.error('Failed to parse initial timetables data:', e);
-  }
 
   // Transport mode definitions
   const TRANSPORT_MODES = {
@@ -156,11 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // Initialise ChangesetTracker
-  const tracker = window.TransitUI.createChangesetTracker(
-    (initialRaw || []).map(normaliseItem)
-  );
-  let stagedTimetables = tracker.getItems();
+  // In-memory staged state
+  let stagedTimetables = [];
+  let initialSnapshot = '[]';
   let currentEditIndex = -1;
   let activeEditorIndex = -1;
   let matrixStopAutocomplete = null;
@@ -656,13 +649,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sync in-memory changes with hidden form input and dirty manager
   function syncState() {
-    if (activeEditorIndex >= 0) {
-      tracker.markUpdated(activeEditorIndex);
-    }
-    const changeset = tracker.getChangeset();
-    stagedTimetables = tracker.getItems();
+    const currentJson = JSON.stringify(stagedTimetables);
     if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(changeset);
+      hiddenInput.value = currentJson;
     }
 
     // Update empty state vs grid visibility in list view
@@ -696,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check dirty state
     if (window.ConfigDirtyManager) {
-      if (tracker.isDirty()) {
+      if (currentJson !== initialSnapshot) {
         window.ConfigDirtyManager.markDirty();
       } else {
         window.ConfigDirtyManager.clearDirty();
@@ -704,14 +693,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial sync & stop search setup
-  syncState();
-  setupStopSearchAutocomplete();
+
+
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridContainer, {
+    label: 'timetables',
+    emptyState,
+    onSuccess(json) {
+      initialRaw = Array.isArray(json.data) ? json.data : [];
+      stagedTimetables = initialRaw.map(normaliseItem);
+      initialSnapshot = JSON.stringify(stagedTimetables);
+      grid.render(gridContainer);
+      syncState();
+      setupStopSearchAutocomplete();
+    },
+  });
 
   // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
-      tracker.discard();
+      stagedTimetables = JSON.parse(initialSnapshot);
       selectedTripIndices.clear();
       if (activeEditorIndex >= 0) {
         if (activeEditorIndex >= stagedTimetables.length) {
@@ -818,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (removeBtn) {
       const idx = parseInt(removeBtn.getAttribute('data-index'), 10);
       if (!isNaN(idx) && idx >= 0 && idx < stagedTimetables.length) {
-        tracker.deleteItem(idx);
+        stagedTimetables.splice(idx, 1);
         syncState();
       }
     }
@@ -885,10 +886,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentEditIndex >= 0 && currentEditIndex < stagedTimetables.length) {
         payloadItem.id = stagedTimetables[currentEditIndex].id;
         payloadItem.content = stagedTimetables[currentEditIndex].content;
-        tracker.saveModalItem(currentEditIndex, normaliseItem(payloadItem));
+        stagedTimetables[currentEditIndex] = normaliseItem(payloadItem);
       } else {
         payloadItem.content = { stops: [], trips: [] };
-        tracker.saveModalItem(-1, normaliseItem(payloadItem));
+        stagedTimetables.push(normaliseItem(payloadItem));
       }
 
       syncState();

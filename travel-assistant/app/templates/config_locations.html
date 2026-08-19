@@ -57,10 +57,9 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) & Initial Data Payload -->
-<form method="POST" action="{{ ingress_path }}/config/locations" class="config-main-form hidden" id="locations-form">
+<!-- Hidden Persistence Form (POST on Save Changes) -->
+<form method="POST" action="{{ ingress_path }}/config/locations" class="config-main-form hidden" id="locations-form" data-data-url="{{ ingress_path }}/config/locations/data">
   <input type="hidden" name="locations_json" id="locations_json" value="">
-  <script id="initial-locations-data" type="application/json">{{ locations | tojson }}</script>
 </form>
 
 <!-- Add / Edit Location Modal Dialog -->
@@ -147,5 +146,6 @@
 <!-- Dependencies: Grid.js, Leaflet, and Locations Controller -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/locations.js?v={{ cache_bust }}"></script>
 {% endblock %}

@@ -6,15 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const gridContainer = document.getElementById('db-grid-wrapper');
   if (!gridContainer) return;
 
-  const dataEl = document.getElementById('initial-db-stats');
-  let currentStats = null;
-  try {
-    currentStats = dataEl ? JSON.parse(dataEl.textContent || '{}') : {};
-  } catch (e) {
-    console.error('Failed to parse initial db stats:', e);
-  }
+  const dataUrl = gridContainer.getAttribute('data-data-url') || '/config/db/data';
 
-  const tables = (currentStats && Array.isArray(currentStats.tables)) ? currentStats.tables : [];
+
+
+  let tables = [];
 
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
     if (!str) return '';
@@ -46,16 +42,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initialise Grid.js table for Database Tables
-  new gridjs.Grid({
-    columns: [
-      { name: 'Table Name', width: '65%' },
-      { name: 'Rows', width: '35%' },
-    ],
-    data: formatDbGridData(tables),
-    search: false,
-    pagination: false,
-    sort: true,
-  }).render(gridContainer);
+  // Fetch remote data then render — loading/error UI managed by GridLoader
+  GridLoader.load(dataUrl, gridContainer, {
+    label: 'database statistics',
+    onSuccess(json) {
+      tables = Array.isArray(json.data) ? json.data : [];
+      new gridjs.Grid({
+        columns: [
+          { name: 'Table Name', width: '65%' },
+          { name: 'Rows', width: '35%' },
+        ],
+        data: formatDbGridData(tables),
+        search: false,
+        pagination: false,
+        sort: true,
+      }).render(gridContainer);
+    },
+  });
 });
 
