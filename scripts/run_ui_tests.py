@@ -28,11 +28,10 @@ class UITester:
                 TOP_DIR, "instance", "sample_travel_assistant.db"
             )
 
-        # If sample DB doesn't exist, generate it
-        if not os.path.exists(sample_db_path):
-            from scripts.seed_sample_db import seed_database
+        # Always initialise clean sample DB for UI test run
+        from scripts.seed_sample_db import seed_database
 
-            seed_database(sample_db_path)
+        seed_database(sample_db_path)
 
         self.app = create_app(
             {
@@ -187,16 +186,19 @@ class UITester:
             "deleted": [],
         }
         r_loc_post = self.client.post(
-            "/config/locations",
-            data={"locations_json": json.dumps(locations_payload)},
-            follow_redirects=True,
+            "/config/locations/data",
+            json=locations_payload,
         )
-        soup_loc = BeautifulSoup(r_loc_post.get_data(as_text=True), "html.parser")
-        loc_script = soup_loc.find("script", id="initial-locations-data")
-        loc_data = json.loads(loc_script.string) if loc_script else []
+        r_loc_get = self.client.get("/config/locations/data")
+        loc_data = (
+            r_loc_get.get_json().get("data", [])
+            if r_loc_get.status_code == 200
+            else []
+        )
         self.record(
             "Locations Grid.js Data Persistence",
-            any(loc.get("name") == "Innovation Lab" for loc in loc_data),
+            r_loc_post.status_code == 200
+            and any(loc.get("name") == "Innovation Lab" for loc in loc_data),
             f"Verified {len(loc_data)} locations in payload",
         )
 
@@ -223,16 +225,19 @@ class UITester:
             "deleted": [],
         }
         r_tt_post = self.client.post(
-            "/config/timetables",
-            data={"timetables_json": json.dumps(tt_payload)},
-            follow_redirects=True,
+            "/config/timetables/data",
+            json=tt_payload,
         )
-        soup_tt = BeautifulSoup(r_tt_post.get_data(as_text=True), "html.parser")
-        tt_script = soup_tt.find("script", id="initial-timetables-data")
-        tt_data = json.loads(tt_script.string) if tt_script else []
+        r_tt_get = self.client.get("/config/timetables/data")
+        tt_data = (
+            r_tt_get.get_json().get("data", [])
+            if r_tt_get.status_code == 200
+            else []
+        )
         self.record(
             "Timetables Grid.js Data Persistence",
-            any(t.get("name") == "Automated Express Schedule" for t in tt_data),
+            r_tt_post.status_code == 200
+            and any(t.get("name") == "Automated Express Schedule" for t in tt_data),
             f"Verified {len(tt_data)} timetables in payload",
         )
 
@@ -255,18 +260,18 @@ class UITester:
             "deleted": [],
         }
         r_tr_post = self.client.post(
-            "/config/transfers",
-            data={
-                "platform_transfers_json": json.dumps(plat_trans_payload),
-            },
-            follow_redirects=True,
+            "/config/transfers/data",
+            json=plat_trans_payload,
         )
-        soup_tr = BeautifulSoup(r_tr_post.get_data(as_text=True), "html.parser")
-        plat_tr_script = soup_tr.find("script", id="initial-platform-transfers-data")
-        plat_tr = json.loads(plat_tr_script.string) if plat_tr_script else []
+        r_tr_get = self.client.get("/config/transfers/data")
+        plat_tr = (
+            r_tr_get.get_json().get("data", [])
+            if r_tr_get.status_code == 200
+            else []
+        )
         self.record(
             "Transfers Grid.js Data Persistence",
-            len(plat_tr) > 0,
+            r_tr_post.status_code == 200 and len(plat_tr) > 0,
             f"Verified {len(plat_tr)} platform transfers in payload",
         )
 
@@ -281,23 +286,26 @@ class UITester:
                     "to_type": "custom",
                     "to_id": "custom:lab",
                     "to_name": "Innovation Lab",
-                    "time_settings": [{"target_arrival": "09:30"}],
+                    "time_settings": [],
                 }
             ],
             "updated": [],
             "deleted": [],
         }
         r_j_post = self.client.post(
-            "/config/journeys",
-            data={"journeys_json": json.dumps(j_payload)},
-            follow_redirects=True,
+            "/config/journeys/data",
+            json=j_payload,
         )
-        soup_j = BeautifulSoup(r_j_post.get_data(as_text=True), "html.parser")
-        j_script = soup_j.find("script", id="initial-journeys-data")
-        j_data = json.loads(j_script.string) if j_script else []
+        r_j_get = self.client.get("/config/journeys/data")
+        j_data = (
+            r_j_get.get_json().get("data", [])
+            if r_j_get.status_code == 200
+            else []
+        )
         self.record(
             "Journeys Grid.js Data Persistence",
-            any(j.get("name") == "Lab Commute" for j in j_data),
+            r_j_post.status_code == 200
+            and any(j.get("name") == "Lab Commute" for j in j_data),
             f"Verified {len(j_data)} journeys in payload",
         )
 
@@ -319,16 +327,19 @@ class UITester:
             "deleted": [],
         }
         r_w_post = self.client.post(
-            "/config/walking",
-            data={"walking_json": json.dumps(w_payload)},
-            follow_redirects=True,
+            "/config/walking/data",
+            json=w_payload,
         )
-        soup_w = BeautifulSoup(r_w_post.get_data(as_text=True), "html.parser")
-        w_script = soup_w.find("script", id="initial-walking-data")
-        w_data = json.loads(w_script.string) if w_script else []
+        r_w_get = self.client.get("/config/walking/data")
+        w_data = (
+            r_w_get.get_json().get("data", [])
+            if r_w_get.status_code == 200
+            else []
+        )
         self.record(
             "Walking Grid.js Data Persistence",
-            any(w.get("time_needed_minutes") == 15 for w in w_data),
+            r_w_post.status_code == 200
+            and any(w.get("time_needed_minutes") == 15 for w in w_data),
             f"Verified {len(w_data)} walking routes in payload",
         )
 

@@ -55,10 +55,8 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) -->
-<form method="POST" action="{{ ingress_path }}/config/walking" class="config-main-form hidden" id="walking-form" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/walking/data">
-  <input type="hidden" name="walking_json" id="walking_json" value="">
-</form>
+<!-- Configuration Metadata Container -->
+<div class="hidden" id="walking-config" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/walking/data"></div>
 
 <!-- Add / Edit Walking Modal Dialogue -->
 {% call macros.render_modal(

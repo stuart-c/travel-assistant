@@ -3,7 +3,6 @@
 import datetime
 import json
 from typing import Any, Dict, Optional
-from flask import jsonify
 
 from app.models import (
     Timetable,
@@ -14,7 +13,7 @@ from app.models import (
 )
 from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_html_page
+from app.views.config.common import PageConfig, register_config_page
 
 
 def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -183,24 +182,15 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-@config_bp.route("/timetables/data", methods=["GET"])
-def timetables_data() -> Any:
-    """Return all configured timetables as JSON for Grid.js remote data loading."""
-    items = [t.to_dict() for t in Timetable.select()]
-    return jsonify({"data": items, "total": len(items)})
-
-
-register_html_page(
+register_config_page(
     config_bp,
     PageConfig(
         route="/timetables",
         endpoint="timetables",
         template="config_timetables.html",
-        form_key="timetables_json",
         model_class=Timetable,
         clean_item_func=clean_timetable_item,
         entity_label="Timetables",
-        get_template_context=lambda: {},
         scope_filter=(Timetable.auto_added == False),  # noqa: E712
     ),
 )

@@ -181,10 +181,8 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) -->
-<form method="POST" action="{{ ingress_path }}/config/timetables" class="config-main-form hidden" id="timetables-form" data-data-url="{{ ingress_path }}/config/timetables/data">
-  <input type="hidden" name="timetables_json" id="timetables_json" value="">
-</form>
+<!-- Configuration Metadata Container -->
+<div class="hidden" id="timetables-config" data-data-url="{{ ingress_path }}/config/timetables/data"></div>
 
 <!-- Add/Edit Timetable Modal Dialog -->
 {% call macros.render_modal(

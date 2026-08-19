@@ -1,13 +1,12 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify
 
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
 from app.sync.worker import request_sync
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_html_page
+from app.views.config.common import PageConfig, register_config_page
 
 
 def _trigger_walking_sync_if_changed(stats: Dict[str, int]) -> None:
@@ -81,24 +80,15 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-@config_bp.route("/journeys/data", methods=["GET"])
-def journeys_data() -> Any:
-    """Return all configured journeys as JSON for Grid.js remote data loading."""
-    items = [j.to_dict() for j in Journey.select()]
-    return jsonify({"data": items, "total": len(items)})
-
-
-register_html_page(
+register_config_page(
     config_bp,
     PageConfig(
         route="/journeys",
         endpoint="journeys",
         template="config_journeys.html",
-        form_key="journeys_json",
         model_class=Journey,
         clean_item_func=clean_journey_item,
         entity_label="Journeys",
-        get_template_context=lambda: {},
         post_save_hook=_trigger_walking_sync_if_changed,
     ),
 )

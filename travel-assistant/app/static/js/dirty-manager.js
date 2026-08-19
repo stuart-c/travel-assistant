@@ -6,6 +6,7 @@ window.ConfigDirtyManager = (function () {
   let dirty = false;
   let pendingNavigationUrl = null;
   let onDiscardCallback = null;
+  let onSaveCallback = null;
   let isSubmitting = false;
 
   function getElements() {
@@ -74,6 +75,10 @@ window.ConfigDirtyManager = (function () {
 
   function registerDiscardHandler(fn) {
     onDiscardCallback = fn;
+  }
+
+  function registerSaveHandler(fn) {
+    onSaveCallback = fn;
   }
 
   // Intercept internal navigation when unsaved changes exist
@@ -145,10 +150,21 @@ window.ConfigDirtyManager = (function () {
       });
     }
 
-    // Save button delegates to active config form submission
+    // Save button delegates to registered save handler, ConfigSave, or active config form submission
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
         if (!dirty) return;
+
+        if (typeof onSaveCallback === 'function') {
+          onSaveCallback();
+          return;
+        }
+
+        if (window.ConfigSave && typeof window.ConfigSave.save === 'function') {
+          window.ConfigSave.save();
+          return;
+        }
+
         const form =
           document.querySelector('form.config-main-form') ||
           document.querySelector('form');
@@ -200,6 +216,7 @@ window.ConfigDirtyManager = (function () {
     clearDirty,
     isDirty: () => dirty,
     registerDiscardHandler,
+    registerSaveHandler,
     markSubmitting: () => {
       isSubmitting = true;
       dirty = false;

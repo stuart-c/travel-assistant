@@ -1,6 +1,5 @@
 """Unit tests for Transfers configuration page, Peewee models, and location search."""
 
-import json
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -94,15 +93,15 @@ def test_transfers_post_save_valid(client: FlaskClient, app: Flask) -> None:
     ]
 
     response = client.post(
-        "/config/transfers",
-        data={
-            "platform_transfers_json": json.dumps(
-                {"added": platform_payload, "updated": [], "deleted": []}
-            ),
-        },
-        follow_redirects=True,
+        "/config/transfers/data",
+        json={"added": platform_payload, "updated": [], "deleted": []},
     )
     assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    # Verify POST to HTML page URL returns 405 Method Not Allowed
+    page_post_resp = client.post("/config/transfers")
+    assert page_post_resp.status_code == 405
 
     with app.app_context():
         plat_transfers = list(PlatformTransfer.select())
@@ -112,15 +111,14 @@ def test_transfers_post_save_valid(client: FlaskClient, app: Flask) -> None:
 
 
 def test_transfers_post_invalid_json(client: FlaskClient) -> None:
-    """Test POST /config/transfers handles malformed JSON gracefully."""
+    """Test POST /config/transfers/data handles malformed JSON gracefully."""
     response = client.post(
-        "/config/transfers",
-        data={
-            "platform_transfers_json": "INVALID_JSON",
-        },
-        follow_redirects=True,
+        "/config/transfers/data",
+        data="INVALID_JSON",
+        content_type="application/json",
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_search_transfers_locations_all(client: FlaskClient, app: Flask) -> None:
@@ -261,16 +259,11 @@ def test_transfers_save_leave_and_return_persistence(client: FlaskClient) -> Non
     ]
 
     post_resp = client.post(
-        "/config/transfers",
-        data={
-            "platform_transfers_json": json.dumps(
-                {"added": plat_payload, "updated": [], "deleted": []}
-            ),
-        },
-        follow_redirects=True,
+        "/config/transfers/data",
+        json={"added": plat_payload, "updated": [], "deleted": []},
     )
     assert post_resp.status_code == 200
-    assert b"Transfers saved successfully." in post_resp.data
+    assert post_resp.get_json()["success"] is True
 
     # Leave page
     assert client.get("/").status_code == 200

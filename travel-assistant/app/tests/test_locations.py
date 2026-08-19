@@ -1,6 +1,5 @@
 """Unit tests for Locations configuration page, Peewee model, and map integration."""
 
-import json
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -130,13 +129,18 @@ def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
     }
 
     response = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=payload,
     )
 
     assert response.status_code == 200
-    assert b"Locations saved successfully." in response.data
+    res_data = response.get_json()
+    assert res_data["success"] is True
+    assert res_data["stats"]["added"] == 2
+
+    # Verify POST to HTML page URL returns 405 Method Not Allowed
+    page_post_resp = client.post("/config/locations")
+    assert page_post_resp.status_code == 405
 
     with app.app_context():
         saved = list(Location.select())
@@ -150,28 +154,25 @@ def test_post_locations_success(client: FlaskClient, app: Flask) -> None:
 def test_post_locations_empty_changeset_leaves_records(
     client: FlaskClient, app: Flask
 ) -> None:
-    """Test POST /config/locations with empty changeset preserves existing records."""
+    """Test POST /config/locations/data with empty changeset preserves existing records."""
     with app.app_context():
         Location.create(name="Temporary Place", latitude=51.5, longitude=-0.1, ha=False)
         assert Location.select().count() == 1
 
     response = client.post(
-        "/config/locations",
-        data={
-            "locations_json": json.dumps({"added": [], "updated": [], "deleted": []})
-        },
-        follow_redirects=True,
+        "/config/locations/data",
+        json={"added": [], "updated": [], "deleted": []},
     )
 
     assert response.status_code == 200
-    assert b"Locations saved successfully." in response.data
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         assert Location.select().count() == 1
 
 
 def test_post_locations_differential_updates(client: FlaskClient, app: Flask) -> None:
-    """Test POST /config/locations updates only changed rows and preserves timestamps."""
+    """Test POST /config/locations/data updates only changed rows and preserves timestamps."""
     with app.app_context():
         loc1 = Location.create(
             name="Unchanged Loc", latitude=51.1, longitude=0.1, ha=False
@@ -188,11 +189,11 @@ def test_post_locations_differential_updates(client: FlaskClient, app: Flask) ->
     }
 
     response = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=payload,
     )
     assert response.status_code == 200
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         saved = {loc_item.id: loc_item for loc_item in Location.select()}
@@ -231,13 +232,12 @@ def test_post_locations_preserves_ha_records(client: FlaskClient, app: Flask) ->
     }
 
     response = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=payload,
     )
 
     assert response.status_code == 200
-    assert b"Locations saved successfully." in response.data
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         saved = list(Location.select())
@@ -252,30 +252,28 @@ def test_post_locations_preserves_ha_records(client: FlaskClient, app: Flask) ->
 
 
 def test_post_locations_invalid_json(client: FlaskClient) -> None:
-    """Test POST /config/locations with invalid JSON displays error message."""
+    """Test POST /config/locations/data with invalid JSON returns 400 error."""
     response = client.post(
-        "/config/locations",
-        data={"locations_json": "invalid-json-{"},
-        follow_redirects=True,
+        "/config/locations/data",
+        data="invalid-json-{",
+        content_type="application/json",
     )
-    assert response.status_code == 200
-    assert b"Failed to save locations:" in response.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_locations_invalid_payload_shape(client: FlaskClient) -> None:
-    """Test POST /config/locations with a non-changeset JSON payload."""
+    """Test POST /config/locations/data with a non-changeset JSON payload returns 400 error."""
     response = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps({"name": "Solo Object"})},
-        follow_redirects=True,
+        "/config/locations/data",
+        json={"name": "Solo Object"},
     )
-    assert response.status_code == 200
-    assert b"Failed to save locations:" in response.data
-    assert b"must contain" in response.data
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
 
 
 def test_post_locations_skips_invalid_entries(client: FlaskClient, app: Flask) -> None:
-    """Test POST /config/locations skips entries with missing name or invalid coordinates."""
+    """Test POST /config/locations/data skips entries with missing name or invalid coordinates."""
     payload = {
         "added": [
             "not-a-dict",
@@ -319,13 +317,12 @@ def test_post_locations_skips_invalid_entries(client: FlaskClient, app: Flask) -
     }
 
     response = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(payload)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=payload,
     )
 
     assert response.status_code == 200
-    assert b"Locations saved successfully." in response.data
+    assert response.get_json()["success"] is True
 
     with app.app_context():
         saved = list(Location.select())
@@ -379,12 +376,11 @@ def test_location_save_leave_and_return_persistence(
         "deleted": [],
     }
     post_resp = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(new_locations)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=new_locations,
     )
     assert post_resp.status_code == 200
-    assert b"Locations saved successfully." in post_resp.data
+    assert post_resp.get_json()["success"] is True
 
     # 2. Leave the page (visit Overview, Journeys, Credentials)
     assert client.get("/").status_code == 200

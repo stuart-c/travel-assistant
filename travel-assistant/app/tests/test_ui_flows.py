@@ -176,9 +176,8 @@ def test_locations_grid_data_binding_and_save(client: FlaskClient) -> None:
         "deleted": [],
     }
     post_resp = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(new_locations)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=new_locations,
     )
     assert post_resp.status_code == 200
     data_resp2 = client.get("/config/locations/data")
@@ -219,9 +218,8 @@ def test_timetables_grid_data_binding_and_save(client: FlaskClient) -> None:
         "deleted": [],
     }
     post_resp = client.post(
-        "/config/timetables",
-        data={"timetables_json": json.dumps(new_timetables)},
-        follow_redirects=True,
+        "/config/timetables/data",
+        json=new_timetables,
     )
     assert post_resp.status_code == 200
     data_resp2 = client.get("/config/timetables/data")
@@ -252,13 +250,8 @@ def test_transfers_grid_data_binding_and_save(client: FlaskClient) -> None:
         }
     ]
     post_resp = client.post(
-        "/config/transfers",
-        data={
-            "platform_transfers_json": json.dumps(
-                {"added": plat_payload, "updated": [], "deleted": []}
-            ),
-        },
-        follow_redirects=True,
+        "/config/transfers/data",
+        json={"added": plat_payload, "updated": [], "deleted": []},
     )
     assert post_resp.status_code == 200
     plat_resp2 = client.get("/config/transfers/data")
@@ -295,13 +288,8 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
         }
     ]
     post_resp = client.post(
-        "/config/journeys",
-        data={
-            "journeys_json": json.dumps(
-                {"added": journeys_payload, "updated": [], "deleted": []}
-            )
-        },
-        follow_redirects=True,
+        "/config/journeys/data",
+        json={"added": journeys_payload, "updated": [], "deleted": []},
     )
     assert post_resp.status_code == 200
     j_resp2 = client.get("/config/journeys/data")
@@ -331,13 +319,8 @@ def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
         }
     ]
     post_resp = client.post(
-        "/config/walking",
-        data={
-            "walking_json": json.dumps(
-                {"added": walking_payload, "updated": [], "deleted": []}
-            )
-        },
-        follow_redirects=True,
+        "/config/walking/data",
+        json={"added": walking_payload, "updated": [], "deleted": []},
     )
     assert post_resp.status_code == 200
     w_resp2 = client.get("/config/walking/data")
@@ -374,16 +357,11 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
         ],
     }
     save_resp = client.post(
-        "/config/journeys",
-        data={
-            "journeys_json": json.dumps(
-                {"added": [new_journey], "updated": [], "deleted": []}
-            )
-        },
-        follow_redirects=True,
+        "/config/journeys/data",
+        json={"added": [new_journey], "updated": [], "deleted": []},
     )
     assert save_resp.status_code == 200
-    assert "Journeys saved successfully." in save_resp.get_data(as_text=True)
+    assert save_resp.get_json()["success"] is True
 
     # Step 3: User leaves page to Overview / other config section
     overview_resp = client.get("/")
@@ -436,9 +414,8 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "deleted": [],
     }
     resp = client.post(
-        "/config/locations",
-        data={"locations_json": json.dumps(loc_payload)},
-        follow_redirects=True,
+        "/config/locations/data",
+        json=loc_payload,
     )
     assert resp.status_code == 200
 
@@ -465,9 +442,8 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "deleted": [],
     }
     resp = client.post(
-        "/config/timetables",
-        data={"timetables_json": json.dumps(tt_payload)},
-        follow_redirects=True,
+        "/config/timetables/data",
+        json=tt_payload,
     )
     assert resp.status_code == 200
 
@@ -490,11 +466,8 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "deleted": [],
     }
     resp = client.post(
-        "/config/transfers",
-        data={
-            "platform_transfers_json": json.dumps(transfer_payload),
-        },
-        follow_redirects=True,
+        "/config/transfers/data",
+        json=transfer_payload,
     )
     assert resp.status_code == 200
 
@@ -523,9 +496,8 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "deleted": [],
     }
     resp = client.post(
-        "/config/journeys",
-        data={"journeys_json": json.dumps(journey_payload)},
-        follow_redirects=True,
+        "/config/journeys/data",
+        json=journey_payload,
     )
     assert resp.status_code == 200
 
@@ -547,9 +519,8 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "deleted": [],
     }
     resp = client.post(
-        "/config/walking",
-        data={"walking_json": json.dumps(walking_payload)},
-        follow_redirects=True,
+        "/config/walking/data",
+        json=walking_payload,
     )
     assert resp.status_code == 200
 

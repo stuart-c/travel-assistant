@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
 
 ### Changed
+- Migrated configuration pages (`journeys`, `locations`, `timetables`, `transfers`, `walking`) from full-page HTML form POST submissions to asynchronous AJAX JSON POST persistence (`POST /config/xxx/data`), with inline toast notifications, button loading spinners, shared `ConfigSave` module, and automatic Grid.js table data reloading.
 - Refactored background synchronisation worker (`TransitBackgroundWorker` → `SyncWorker`) into a continuously running, flag-driven loop that serialises all sync operations, deduplicates concurrent requests via a `sync_requested` boolean flag persisted in `sync_metadata`, and idles with an interruptible 60-second sleep (`threading.Event`) when no work is pending.
 - Replaced fixed single-interval polling with a per-entry `SYNC_REGISTRY` defining ordered sync operations and individual age thresholds: `ha_locations` (1 hour), `bus_routes` / `train_timetables` / `bus_timetables` / `walking` (24 hours), `stops` (7 days).
 - Replaced `trigger_journey_walking_sync_async` (ad-hoc daemon thread) and `check_and_run_background_sync` / `sync_all` with a single `request_sync(table_name)` function that sets the DB flag and wakes the background loop immediately.

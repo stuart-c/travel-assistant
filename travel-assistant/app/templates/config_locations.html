@@ -57,10 +57,8 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) -->
-<form method="POST" action="{{ ingress_path }}/config/locations" class="config-main-form hidden" id="locations-form" data-data-url="{{ ingress_path }}/config/locations/data">
-  <input type="hidden" name="locations_json" id="locations_json" value="">
-</form>
+<!-- Configuration Metadata Container -->
+<div class="hidden" id="locations-config" data-data-url="{{ ingress_path }}/config/locations/data"></div>
 
 <!-- Add / Edit Location Modal Dialog -->
 {% call macros.render_modal(

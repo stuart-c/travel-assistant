@@ -7,16 +7,16 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('locations-form');
-  if (!form) return;
+  const configEl =
+    document.getElementById('locations-config') ||
+    document.getElementById('locations-form');
+  if (!configEl) return;
 
-  const dataUrl = form.getAttribute('data-data-url') || '/config/locations/data';
+  const dataUrl =
+    configEl.getAttribute('data-data-url') || '/config/locations/data';
 
-  const hiddenInput = document.getElementById('locations_json');
   const emptyState = document.getElementById('locations-grid-empty-state');
   const gridContainer = document.getElementById('locations-grid-wrapper');
-
-
 
   // In-memory staged state (seeded after remote fetch)
   let stagedLocations = [];
@@ -250,23 +250,25 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  // Fetch remote data then render — loading/error UI managed by GridLoader
-  GridLoader.load(dataUrl, gridContainer, {
-    label: 'locations',
-    emptyState,
-    onSuccess(json) {
-      stagedLocations = Array.isArray(json.data) ? json.data : [];
-      initialSnapshot = JSON.stringify(stagedLocations);
-      grid.render(gridContainer);
-      syncState();
-    },
-  });
+  let gridRendered = false;
+
+  function loadLocations() {
+    GridLoader.load(dataUrl, gridContainer, {
+      label: 'locations',
+      emptyState,
+      onSuccess(json) {
+        stagedLocations = Array.isArray(json.data) ? json.data : [];
+        initialSnapshot = JSON.stringify(stagedLocations);
+        if (!gridRendered) {
+          grid.render(gridContainer);
+          gridRendered = true;
+        }
+        syncState();
+      },
+    });
+  }
 
   function syncState() {
-    if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedLocations);
-    }
-
     if (stagedLocations.length === 0) {
       if (emptyState) emptyState.classList.remove('hidden');
       if (gridContainer) gridContainer.classList.add('hidden');
@@ -521,4 +523,32 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
   });
+
+  // Register discard handler
+  if (window.ConfigDirtyManager) {
+    window.ConfigDirtyManager.registerDiscardHandler(() => {
+      stagedLocations = JSON.parse(initialSnapshot);
+      syncState();
+    });
+  }
+
+  // Register with ConfigSave
+  if (window.ConfigSave) {
+    window.ConfigSave.register({
+      endpoint: dataUrl,
+      getChangeset: () => {
+        const initialList = JSON.parse(initialSnapshot || '[]');
+        return window.TransitUI.computeChangeset(
+          initialList,
+          stagedLocations,
+          'id'
+        );
+      },
+      onSaveSuccess: () => {
+        loadLocations();
+      },
+    });
+  }
+
+  loadLocations();
 });

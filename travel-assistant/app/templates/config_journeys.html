@@ -55,10 +55,8 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) -->
-<form method="POST" action="{{ ingress_path }}/config/journeys" class="config-main-form hidden" id="journeys-form" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/journeys/data">
-  <input type="hidden" name="journeys_json" id="journeys_json" value="">
-</form>
+<!-- Configuration Metadata Container -->
+<div class="hidden" id="journeys-config" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/journeys/data"></div>
 
 <!-- Add / Edit Journey Modal Dialogue -->
 {% call macros.render_modal(

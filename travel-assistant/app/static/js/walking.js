@@ -8,25 +8,23 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('walking-form');
-  if (!form) return;
+  const configEl =
+    document.getElementById('walking-config') ||
+    document.getElementById('walking-form');
+  if (!configEl) return;
 
-  const searchBaseUrl = form.getAttribute('data-search-url') || '/config/search/places';
-
-form.getAttribute('data-data-url') || '/config/walking/data';
-
-
+  const searchBaseUrl =
+    configEl.getAttribute('data-search-url') || '/config/search/places';
+  const dataUrl =
+    configEl.getAttribute('data-data-url') || '/config/walking/data';
 
   // In-memory staged state (seeded after remote fetch)
   let stagedWalking = [];
   let initialSnapshot = '[]';
 
   // DOM Elements
-  const hiddenInput = document.getElementById('walking_json');
   const gridWrapper = document.getElementById('walking-grid-wrapper');
   const emptyState = document.getElementById('walking-grid-empty-state');
-
-  const dataUrl = form.getAttribute('data-data-url') || '/config/walking/data';
 
   // Modal Elements
   const modal = document.getElementById('walking-modal');
@@ -335,23 +333,26 @@ form.getAttribute('data-data-url') || '/config/walking/data';
     },
   });
 
+  let gridRendered = false;
+
   // Fetch remote data then render — loading/error UI managed by GridLoader
-  GridLoader.load(dataUrl, gridWrapper, {
-    label: 'walking routes',
-    emptyState,
-    onSuccess(json) {
-      stagedWalking = Array.isArray(json.data) ? json.data : [];
-      initialSnapshot = JSON.stringify(stagedWalking);
-      grid.render(gridWrapper);
-      syncState();
-    },
-  });
+  function loadWalking() {
+    GridLoader.load(dataUrl, gridWrapper, {
+      label: 'walking routes',
+      emptyState,
+      onSuccess(json) {
+        stagedWalking = Array.isArray(json.data) ? json.data : [];
+        initialSnapshot = JSON.stringify(stagedWalking);
+        if (!gridRendered) {
+          grid.render(gridWrapper);
+          gridRendered = true;
+        }
+        syncState();
+      },
+    });
+  }
 
   function syncState() {
-    if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(stagedWalking);
-    }
-
     if (stagedWalking.length === 0) {
       if (emptyState) emptyState.classList.remove('hidden');
       if (gridWrapper) gridWrapper.classList.add('hidden');
@@ -501,4 +502,32 @@ form.getAttribute('data-data-url') || '/config/walking/data';
       return;
     }
   });
+
+  // Register discard handler
+  if (window.ConfigDirtyManager) {
+    window.ConfigDirtyManager.registerDiscardHandler(() => {
+      stagedWalking = JSON.parse(initialSnapshot);
+      syncState();
+    });
+  }
+
+  // Register with ConfigSave
+  if (window.ConfigSave) {
+    window.ConfigSave.register({
+      endpoint: dataUrl,
+      getChangeset: () => {
+        const initialList = JSON.parse(initialSnapshot || '[]');
+        return window.TransitUI.computeChangeset(
+          initialList,
+          stagedWalking,
+          'id'
+        );
+      },
+      onSaveSuccess: () => {
+        loadWalking();
+      },
+    });
+  }
+
+  loadWalking();
 });

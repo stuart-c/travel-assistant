@@ -1,12 +1,11 @@
 """Walking connections configuration endpoints."""
 
 from typing import Any, Dict, Optional
-from flask import jsonify
 
 from app.models import Walking
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_html_page
+from app.views.config.common import PageConfig, register_config_page
 
 
 def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -60,24 +59,15 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
-@config_bp.route("/walking/data", methods=["GET"])
-def walking_data() -> Any:
-    """Return all walking routes as JSON for Grid.js remote data loading."""
-    items = [w.to_dict() for w in Walking.select()]
-    return jsonify({"data": items, "total": len(items)})
-
-
-register_html_page(
+register_config_page(
     config_bp,
     PageConfig(
         route="/walking",
         endpoint="walking",
         template="config_walking.html",
-        form_key="walking_json",
         model_class=Walking,
         clean_item_func=clean_walking_item,
         entity_label="Walking",
-        get_template_context=lambda: {},
         scope_filter=(Walking.auto_generated == False),  # noqa: E712
     ),
 )

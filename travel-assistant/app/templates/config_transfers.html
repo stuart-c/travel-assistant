@@ -59,10 +59,8 @@
   </section>
 </div>
 
-<!-- Hidden Persistence Form (POST on Save Changes) -->
-<form method="POST" action="{{ ingress_path }}/config/transfers" data-search-url="{{ ingress_path }}/config/search/places" class="config-main-form hidden" id="transfers-form" data-data-url="{{ ingress_path }}/config/transfers/data">
-  <input type="hidden" name="platform_transfers_json" id="platform_transfers_json" value="">
-</form>
+<!-- Configuration Metadata Container -->
+<div class="hidden" id="transfers-config" data-search-url="{{ ingress_path }}/config/search/places" data-data-url="{{ ingress_path }}/config/transfers/data"></div>
 
 <!-- Add / Edit Platform & Stand Transfer Modal -->
 {% call macros.render_modal(
