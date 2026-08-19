@@ -1214,3 +1214,170 @@ def test_config_walking_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert payload["data"][0]["start_name"] == "Home"
     assert payload["data"][0]["finish_name"] == "London Waterloo"
     assert payload["data"][0]["time_needed_minutes"] == 12
+
+
+def test_journeys_save_triggers_targeted_syncs(client: FlaskClient) -> None:
+    """Verify journey saves trigger targeted syncs based on endpoint types."""
+    from unittest.mock import call, patch
+
+    # 1. Location-only endpoints (custom/ha to rail) -> triggers walking sync only
+    payload_location_only = {
+        "added": [
+            {
+                "name": "Commute",
+                "from_type": "ha",
+                "from_id": "ha:home",
+                "from_name": "Home Residence",
+                "to_type": "rail",
+                "to_id": "9100WAT",
+                "to_name": "London Waterloo",
+                "time_settings": [],
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.journeys.request_sync") as mock_req:
+        resp = client.post(
+            "/config/journeys/data",
+            json=payload_location_only,
+        )
+        assert resp.status_code == 200
+        mock_req.assert_called_once_with("walking")
+
+    # 2. Bus-only endpoints (bus to rail) -> triggers bus_timetables sync only
+    payload_bus_only = {
+        "added": [
+            {
+                "name": "Bus Leg",
+                "from_type": "bus",
+                "from_id": "490000077E",
+                "from_name": "King's Cross Stop E",
+                "to_type": "rail",
+                "to_id": "9100KGX",
+                "to_name": "London King's Cross",
+                "time_settings": [],
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.journeys.request_sync") as mock_req:
+        resp = client.post(
+            "/config/journeys/data",
+            json=payload_bus_only,
+        )
+        assert resp.status_code == 200
+        mock_req.assert_called_once_with("bus_timetables")
+
+    # 3. Location and Bus endpoints (ha to bus) -> triggers both walking and bus_timetables syncs
+    payload_mixed = {
+        "added": [
+            {
+                "name": "Home to Bus Stop",
+                "from_type": "ha",
+                "from_id": "ha:home",
+                "from_name": "Home Residence",
+                "to_type": "bus",
+                "to_id": "490000077E",
+                "to_name": "King's Cross Stop E",
+                "time_settings": [],
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.journeys.request_sync") as mock_req:
+        resp = client.post(
+            "/config/journeys/data",
+            json=payload_mixed,
+        )
+        assert resp.status_code == 200
+        assert mock_req.call_count == 2
+        mock_req.assert_has_calls([call("walking"), call("bus_timetables")])
+
+    # 4. Pure rail endpoints -> triggers neither
+    payload_rail_only = {
+        "added": [
+            {
+                "name": "Train Trip",
+                "from_type": "rail",
+                "from_id": "9100KGX",
+                "from_name": "King's Cross",
+                "to_type": "rail",
+                "to_id": "9100CBG",
+                "to_name": "Cambridge",
+                "time_settings": [],
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.journeys.request_sync") as mock_req:
+        resp = client.post(
+            "/config/journeys/data",
+            json=payload_rail_only,
+        )
+        assert resp.status_code == 200
+        mock_req.assert_not_called()
+
+
+def test_walking_save_triggers_targeted_bus_sync(client: FlaskClient) -> None:
+    """Verify walking saves trigger bus timetable sync when bus endpoints are present."""
+    from unittest.mock import patch
+
+    # 1. Walking route with bus stop endpoint -> triggers bus_timetables sync
+    payload_bus_walk = {
+        "added": [
+            {
+                "start_type": "custom",
+                "start_id": "custom:home",
+                "start_name": "Home",
+                "finish_type": "bus",
+                "finish_id": "490000077E",
+                "finish_name": "Stop E",
+                "time_needed_minutes": 3,
+                "bidirectional": True,
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.walking.request_sync") as mock_req:
+        resp = client.post(
+            "/config/walking/data",
+            json=payload_bus_walk,
+        )
+        assert resp.status_code == 200
+        mock_req.assert_called_once_with("bus_timetables")
+
+    # 2. Walking route between non-bus endpoints (custom to rail) -> triggers neither
+    payload_non_bus_walk = {
+        "added": [
+            {
+                "start_type": "custom",
+                "start_id": "custom:home",
+                "start_name": "Home",
+                "finish_type": "rail",
+                "finish_id": "9100WAT",
+                "finish_name": "Waterloo Station",
+                "time_needed_minutes": 10,
+                "bidirectional": True,
+            }
+        ],
+        "updated": [],
+        "deleted": [],
+    }
+
+    with patch("app.views.config.walking.request_sync") as mock_req:
+        resp = client.post(
+            "/config/walking/data",
+            json=payload_non_bus_walk,
+        )
+        assert resp.status_code == 200
+        mock_req.assert_not_called()

@@ -827,3 +827,21 @@ def test_request_sync_sets_flag_and_wakes_worker(app: Flask) -> None:
             mock_meta.request_sync.assert_called_with("ha_locations")
 
             worker.stop(timeout=2.0)
+
+
+def test_sync_registry_ordering() -> None:
+    """Test SYNC_REGISTRY defines expected dependency order: walking before bus_timetables."""
+    from app.sync.worker import SYNC_REGISTRY
+
+    table_order = [entry.table_name for entry in SYNC_REGISTRY]
+    assert table_order == [
+        "bus_routes",
+        "stops",
+        "ha_locations",
+        "train_timetables",
+        "walking",
+        "bus_timetables",
+    ]
+    walking_idx = table_order.index("walking")
+    bus_tt_idx = table_order.index("bus_timetables")
+    assert walking_idx < bus_tt_idx

@@ -429,17 +429,33 @@ def test_sync_walking_routes_handles_api_errors(app: Flask) -> None:
 
 
 def test_trigger_walking_sync_if_changed_calls_request_sync(app: Flask) -> None:
-    """Test _trigger_walking_sync_if_changed queues a walking sync via request_sync."""
-    from app.views.config.journeys import _trigger_walking_sync_if_changed
+    """Test _trigger_syncs_if_changed queues walking sync for location changes."""
+    from app.views.config.journeys import _trigger_syncs_if_changed
 
     with app.app_context():
         with patch("app.views.config.journeys.request_sync") as mock_request_sync:
             # No changes — should not queue anything
-            _trigger_walking_sync_if_changed({"added": 0, "updated": 0, "deleted": 0})
+            _trigger_syncs_if_changed(
+                {"added": 0, "updated": 0, "deleted": 0},
+                {"added": [], "updated": []},
+            )
             mock_request_sync.assert_not_called()
 
-            # With changes — should queue "walking"
-            _trigger_walking_sync_if_changed({"added": 1, "updated": 0, "deleted": 0})
+            # With location changes — should queue "walking"
+            _trigger_syncs_if_changed(
+                {"added": 1, "updated": 0, "deleted": 0},
+                {
+                    "added": [
+                        {
+                            "from_type": "ha",
+                            "from_id": "ha:home",
+                            "to_type": "rail",
+                            "to_id": "9100WAT",
+                        }
+                    ],
+                    "updated": [],
+                },
+            )
             mock_request_sync.assert_called_once_with("walking")
 
 
@@ -648,3 +664,95 @@ def test_sync_walking_routes_concurrency_lock(app: Flask) -> None:
                 res2["records"] == 1 and res1["records"] == 0
             )
             assert Walking.select().count() == 1
+
+
+def test_sync_walking_routes_bus_stops_added_triggers_bus_sync(app: Flask) -> None:
+    """Test discovering bus stops reports bus_stops_added and triggers bus sync."""
+    with app.app_context():
+        Setting.set_val("google_maps_api_key", "test-api-key")
+
+        Location.create(
+            id="ha:home_bus_test",
+            name="Home Bus Test",
+            latitude=51.5308,
+            longitude=-0.1238,
+            ha=True,
+        )
+
+        Stop.create(
+            atco_code="490000077Z",
+            naptan_code="KGXZ",
+            stop_type="bus",
+            name="King's Cross Stop Z",
+            latitude=51.5314,
+            longitude=-0.1262,
+        )
+
+        Journey.create(
+            name="Home to Cambridge via Bus",
+            from_type="ha",
+            from_id="ha:home_bus_test",
+            from_name="Home Bus Test",
+            to_type="rail",
+            to_id="9100CBG",
+            to_name="Cambridge",
+        )
+
+        mock_directions_resp = [
+            {"legs": [{"duration": {"value": 180, "text": "3 mins"}}]}
+        ]
+
+        with patch("app.sync.walking_sync.GoogleMapsClient.directions") as mock_dir:
+            mock_dir.return_value = mock_directions_resp
+            with patch("app.sync.worker.request_sync") as mock_req:
+                res = sync_walking_routes()
+                assert res["status"] == "success"
+                assert res["records"] == 1
+                assert res["bus_stops_added"] == 1
+                mock_req.assert_called_once_with("bus_timetables")
+
+
+def test_sync_walking_routes_rail_stops_does_not_trigger_bus_sync(app: Flask) -> None:
+    """Test that discovering walking routes to non-bus stops does not trigger bus timetable sync."""
+    with app.app_context():
+        Setting.set_val("google_maps_api_key", "test-api-key")
+
+        Location.create(
+            id="ha:home_rail_test",
+            name="Home Rail Test",
+            latitude=51.5308,
+            longitude=-0.1238,
+            ha=True,
+        )
+
+        Stop.create(
+            atco_code="9100KGX",
+            naptan_code="KGX",
+            stop_type="rail",
+            name="King's Cross Rail Station",
+            latitude=51.5314,
+            longitude=-0.1262,
+        )
+
+        Journey.create(
+            name="Home to York",
+            from_type="ha",
+            from_id="ha:home_rail_test",
+            from_name="Home Rail Test",
+            to_type="rail",
+            to_id="9100YRK",
+            to_name="York",
+        )
+
+        mock_directions_resp = [
+            {"legs": [{"duration": {"value": 240, "text": "4 mins"}}]}
+        ]
+
+        with patch("app.sync.walking_sync.GoogleMapsClient.directions") as mock_dir:
+            mock_dir.return_value = mock_directions_resp
+            with patch("app.sync.worker.request_sync") as mock_req:
+                res = sync_walking_routes()
+                assert res["status"] == "success"
+                assert res["records"] == 1
+                assert res["bus_stops_added"] == 0
+                mock_req.assert_not_called()

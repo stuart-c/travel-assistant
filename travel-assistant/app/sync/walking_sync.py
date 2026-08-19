@@ -338,12 +338,14 @@ def sync_walking_routes(
                         "table": "walking",
                         "status": "success",
                         "records": 0,
+                        "bus_stops_added": 0,
                         "message": msg,
                         "duration_seconds": duration,
                     }
 
                 # 2. For each target place, find candidate stops within 500m
                 added_records = 0
+                bus_stops_added = 0
                 for place_info in target_places.values():
                     loc_type = place_info["type"]
                     loc_id = place_info["id"]
@@ -398,6 +400,8 @@ def sync_walking_routes(
                             )
                             continue
 
+                        is_bus_stop = st_type == "bus"
+
                         # Insert records: single bidirectional if equal, otherwise 2 directional
                         if fwd_min == rev_min:
                             Walking.create(
@@ -412,6 +416,8 @@ def sync_walking_routes(
                                 auto_generated=True,
                             )
                             added_records += 1
+                            if is_bus_stop:
+                                bus_stops_added += 1
                         else:
                             Walking.create(
                                 start_type=loc_type,
@@ -436,6 +442,19 @@ def sync_walking_routes(
                                 auto_generated=True,
                             )
                             added_records += 2
+                            if is_bus_stop:
+                                bus_stops_added += 2
+
+                if bus_stops_added > 0:
+                    try:
+                        from app.sync.worker import request_sync
+
+                        request_sync("bus_timetables")
+                    except Exception as sync_exc:
+                        logger.warning(
+                            "Failed to queue bus timetable sync after walking discovery: %s",
+                            sync_exc,
+                        )
 
                 duration = round(time.time() - start_time, 2)
                 SyncMetadata.record_success("walking", added_records, duration)
@@ -443,6 +462,7 @@ def sync_walking_routes(
                     "table": "walking",
                     "status": "success",
                     "records": added_records,
+                    "bus_stops_added": bus_stops_added,
                     "message": f"Successfully synchronised {added_records} walking route(s).",
                     "duration_seconds": duration,
                 }
