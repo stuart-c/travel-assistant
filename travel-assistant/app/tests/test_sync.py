@@ -515,6 +515,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
 
         with patch(
             "app.datasources.bods.BodsClient.fetch_timetables",
+            autospec=True,
             return_value=mock_bods_timetables,
         ) as mock_fetch:
             res = sync_bus_timetables(app=app)
