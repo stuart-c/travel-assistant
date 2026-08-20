@@ -431,22 +431,22 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
             ]
         )
 
-        # Create a Walking record referencing bus stop
+        # Create a Walking record referencing bus stop via naptan SMS code prefix
         Walking.create(
             start_type="custom",
             start_id="custom:1",
             start_name="Home",
             finish_type="bus",
-            finish_id="naptan:049000001",
+            finish_id="naptan:hrtaaaa",
             finish_name="Stevenage Bus Station",
             time_needed_minutes=5,
         )
 
-        # Create a Journey record referencing bus stop
+        # Create a Journey record referencing bus stop via atco prefix
         Journey.create(
             name="Daily Commute",
             from_type="bus",
-            from_id="049000002",
+            from_id="atco:049000002",
             from_name="Hitchin High Street",
             to_type="custom",
             to_id="custom:2",

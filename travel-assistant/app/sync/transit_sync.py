@@ -140,60 +140,56 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
     def _perform_sync() -> int:
         # 1. Collect all bus stop IDs/codes referenced in Walking and Journey tables
-        target_stop_codes: Set[str] = set()
+        target_naptan_codes: Set[str] = set()
+        target_atco_codes: Set[str] = set()
+        target_generic_codes: Set[str] = set()
+
+        def _add_candidate(stop_id: Optional[str], stop_type: Optional[str]) -> None:
+            if not stop_id:
+                return
+            s_id = str(stop_id).strip()
+            if s_id.startswith("naptan:"):
+                code = s_id.split(":", 1)[1].strip()
+                if code:
+                    target_naptan_codes.add(code)
+            elif s_id.startswith("atco:"):
+                code = s_id.split(":", 1)[1].strip()
+                if code:
+                    target_atco_codes.add(code)
+            elif stop_type == "bus" or s_id.startswith("bus:"):
+                code = s_id.split(":", 1)[1].strip() if ":" in s_id else s_id
+                if code:
+                    target_generic_codes.add(code)
 
         # From Walking table
         for w in Walking.select():
-            if w.start_type == "bus" or (
-                w.start_id
-                and (w.start_id.startswith("naptan:") or w.start_id.startswith("atco:"))
-            ):
-                raw_id = (
-                    w.start_id.split(":", 1)[1] if ":" in w.start_id else w.start_id
-                )
-                if raw_id:
-                    target_stop_codes.add(raw_id.strip())
-            if w.finish_type == "bus" or (
-                w.finish_id
-                and (
-                    w.finish_id.startswith("naptan:") or w.finish_id.startswith("atco:")
-                )
-            ):
-                raw_id = (
-                    w.finish_id.split(":", 1)[1] if ":" in w.finish_id else w.finish_id
-                )
-                if raw_id:
-                    target_stop_codes.add(raw_id.strip())
+            _add_candidate(w.start_id, w.start_type)
+            _add_candidate(w.finish_id, w.finish_type)
 
         # From Journey table
         for j in Journey.select():
-            if j.from_type == "bus" or (
-                j.from_id
-                and (j.from_id.startswith("naptan:") or j.from_id.startswith("atco:"))
-            ):
-                raw_id = j.from_id.split(":", 1)[1] if ":" in j.from_id else j.from_id
-                if raw_id:
-                    target_stop_codes.add(raw_id.strip())
-            if j.to_type == "bus" or (
-                j.to_id
-                and (j.to_id.startswith("naptan:") or j.to_id.startswith("atco:"))
-            ):
-                raw_id = j.to_id.split(":", 1)[1] if ":" in j.to_id else j.to_id
-                if raw_id:
-                    target_stop_codes.add(raw_id.strip())
+            _add_candidate(j.from_id, j.from_type)
+            _add_candidate(j.to_id, j.to_type)
 
-        if not target_stop_codes:
+        if not (target_naptan_codes or target_atco_codes or target_generic_codes):
             return 0
 
-        # 2. Build stop lookup dictionary, admin areas, and bounding box from cached bus stops
+        # 2. Build stop lookup dictionary, target ATCO codes, and admin areas
+        # from cached bus stops
         stop_lookup: Dict[str, Dict[str, Any]] = {}
         admin_areas: Set[str] = set()
+        resolved_atco_codes: Set[str] = set()
         lats: List[float] = []
         lons: List[float] = []
-        target_upper = {c.upper() for c in target_stop_codes}
 
-        for c in target_stop_codes:
+        upper_naptan = {c.upper() for c in target_naptan_codes}
+        upper_atco = {c.upper() for c in target_atco_codes}
+        upper_generic = {c.upper() for c in target_generic_codes}
+
+        # Direct ATCO codes requested are added to target ATCO set
+        for c in target_atco_codes:
             c_clean = c.upper().strip()
+            resolved_atco_codes.add(c_clean)
             if len(c_clean) >= 3 and c_clean[:3].isdigit():
                 admin_areas.add(c_clean[:3])
 
@@ -207,24 +203,31 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                 "latitude": stp.latitude,
                 "longitude": stp.longitude,
             }
-            if stp.atco_code:
-                code_clean = stp.atco_code.upper().strip()
-                stop_lookup[code_clean] = meta
-            if stp.naptan_code:
-                stop_lookup[stp.naptan_code.upper().strip()] = meta
-            if stp.name:
-                stop_lookup[stp.name.upper().strip()] = meta
+            atco_clean = stp.atco_code.upper().strip() if stp.atco_code else ""
+            naptan_clean = stp.naptan_code.upper().strip() if stp.naptan_code else ""
+            name_clean = stp.name.upper().strip() if stp.name else ""
+
+            if atco_clean:
+                stop_lookup[atco_clean] = meta
+            if naptan_clean:
+                stop_lookup[naptan_clean] = meta
+            if name_clean:
+                stop_lookup[name_clean] = meta
 
             is_target = (
-                (stp.atco_code and stp.atco_code.upper().strip() in target_upper)
-                or (stp.naptan_code and stp.naptan_code.upper().strip() in target_upper)
-                or (stp.name and stp.name.upper().strip() in target_upper)
+                (naptan_clean and naptan_clean in upper_naptan)
+                or (atco_clean and atco_clean in upper_atco)
+                or (naptan_clean and naptan_clean in upper_generic)
+                or (atco_clean and atco_clean in upper_generic)
+                or (name_clean and name_clean in upper_generic)
             )
             if is_target:
-                if stp.atco_code:
-                    code_clean = stp.atco_code.upper().strip()
-                    if len(code_clean) >= 3 and code_clean[:3].isdigit():
-                        admin_areas.add(code_clean[:3])
+                if atco_clean:
+                    resolved_atco_codes.add(atco_clean)
+                    if len(atco_clean) >= 3 and atco_clean[:3].isdigit():
+                        admin_areas.add(atco_clean[:3])
+                if naptan_clean:
+                    resolved_atco_codes.add(naptan_clean)
                 if stp.latitude is not None and stp.longitude is not None:
                     try:
                         lats.append(float(stp.latitude))
@@ -243,7 +246,7 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
         # 3. Fetch matching timetables from BODS
         parsed_timetables = client.fetch_timetables(
-            target_stop_codes=target_stop_codes,
+            target_stop_codes=resolved_atco_codes if resolved_atco_codes else None,
             admin_areas=sorted(list(admin_areas)) if admin_areas else None,
             bounding_box=bounding_box,
             stop_lookup=stop_lookup,

@@ -139,8 +139,12 @@ class BodsClient(BaseDataSource):
         except Exception as e:
             return False, f"Unexpected error during Bus API validation: {str(e)}"
 
-    def fetch_routes(self, limit: int = 25) -> List[Dict[str, Any]]:
-        """Fetch active bus routes from BODS datasets."""
+    def fetch_routes(
+        self,
+        limit: Optional[int] = 25,
+        page_size: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Fetch active bus routes from BODS datasets with pagination support."""
         if not self.api_key:
             raise DataSourceConfigError(
                 "Bus API key is not configured.", provider=self.provider_name
@@ -151,26 +155,47 @@ class BodsClient(BaseDataSource):
             if "/dataset" in self.base_url
             else f"{self.base_url}/dataset/"
         )
-        params = {"api_key": self.api_key, "limit": limit, "status": "published"}
+        offset = 0
+        batch_limit = min(limit, page_size) if limit is not None else page_size
+        results: List[Dict[str, Any]] = []
 
         try:
-            response = requests.get(url, params=params, timeout=self.timeout)
-            if response.status_code in (401, 403):
-                raise DataSourceAuthError(
-                    f"BODS authentication failed (HTTP {response.status_code}): "
-                    "Invalid Bus API key.",
-                    provider=self.provider_name,
-                )
-            elif response.status_code == 429:
-                raise DataSourceRateLimitError(
-                    "BODS rate limit exceeded.", provider=self.provider_name
-                )
-            response.raise_for_status()
+            while True:
+                params: Dict[str, Any] = {
+                    "api_key": self.api_key,
+                    "status": "published",
+                    "limit": batch_limit,
+                    "offset": offset,
+                }
+                response = requests.get(url, params=params, timeout=self.timeout)
+                if response.status_code in (401, 403):
+                    raise DataSourceAuthError(
+                        f"BODS authentication failed (HTTP {response.status_code}): "
+                        "Invalid Bus API key.",
+                        provider=self.provider_name,
+                    )
+                elif response.status_code == 429:
+                    raise DataSourceRateLimitError(
+                        "BODS rate limit exceeded.", provider=self.provider_name
+                    )
+                response.raise_for_status()
 
-            data = response.json()
-            results = data.get("results", [])
+                data = response.json()
+                page_results = data.get("results", [])
+                if not page_results:
+                    break
+
+                results.extend(page_results)
+                offset += len(page_results)
+
+                if limit is not None and len(results) >= limit:
+                    results = results[:limit]
+                    break
+
+                if not data.get("next"):
+                    break
+
             routes: List[Dict[str, Any]] = []
-
             for item in results:
                 name = item.get("name", "").strip()
                 nocs = item.get("noc", [])
@@ -721,9 +746,13 @@ class BodsClient(BaseDataSource):
         target_stop_codes: Optional[Set[str]] = None,
         admin_areas: Optional[List[str]] = None,
         stop_lookup: Optional[Dict[str, Dict[str, Any]]] = None,
-        limit: int = 25,
+        limit: Optional[int] = None,
+        page_size: int = 50,
     ) -> List[Dict[str, Any]]:
-        """Fetch and parse published bus timetables covering target stops from BODS."""
+        """Fetch and parse published bus timetables covering target stops from BODS.
+
+        Supports multi-page pagination across all available datasets.
+        """
         if not self.api_key:
             raise DataSourceConfigError(
                 "Bus API key is not configured.", provider=self.provider_name
@@ -734,33 +763,52 @@ class BodsClient(BaseDataSource):
             if "/dataset" in self.base_url
             else f"{self.base_url}/dataset/"
         )
-        params: Dict[str, Any] = {
-            "api_key": self.api_key,
-            "status": "published",
-            "limit": limit,
-        }
-
-        if admin_areas:
-            clean_areas = [str(a).strip() for a in admin_areas if str(a).strip()]
-            if clean_areas:
-                params["adminArea"] = ",".join(clean_areas)
+        offset = 0
+        batch_limit = min(limit, page_size) if limit is not None else page_size
+        results: List[Dict[str, Any]] = []
 
         try:
-            response = requests.get(url, params=params, timeout=self.timeout)
-            if response.status_code in (401, 403):
-                raise DataSourceAuthError(
-                    f"BODS authentication failed (HTTP {response.status_code}): "
-                    "Invalid Bus API key.",
-                    provider=self.provider_name,
-                )
-            elif response.status_code == 429:
-                raise DataSourceRateLimitError(
-                    "BODS rate limit exceeded.", provider=self.provider_name
-                )
-            response.raise_for_status()
+            while True:
+                params: Dict[str, Any] = {
+                    "api_key": self.api_key,
+                    "status": "published",
+                    "limit": batch_limit,
+                    "offset": offset,
+                }
+                if admin_areas:
+                    clean_areas = [
+                        str(a).strip() for a in admin_areas if str(a).strip()
+                    ]
+                    if clean_areas:
+                        params["adminArea"] = ",".join(clean_areas)
 
-            data = response.json()
-            results = data.get("results", [])
+                response = requests.get(url, params=params, timeout=self.timeout)
+                if response.status_code in (401, 403):
+                    raise DataSourceAuthError(
+                        f"BODS authentication failed (HTTP {response.status_code}): "
+                        "Invalid Bus API key.",
+                        provider=self.provider_name,
+                    )
+                elif response.status_code == 429:
+                    raise DataSourceRateLimitError(
+                        "BODS rate limit exceeded.", provider=self.provider_name
+                    )
+                response.raise_for_status()
+
+                data = response.json()
+                page_results = data.get("results", [])
+                if not page_results:
+                    break
+
+                results.extend(page_results)
+                offset += len(page_results)
+
+                if limit is not None and len(results) >= limit:
+                    results = results[:limit]
+                    break
+
+                if not data.get("next"):
+                    break
 
             all_timetables: List[Dict[str, Any]] = []
             seen_names: Set[str] = set()

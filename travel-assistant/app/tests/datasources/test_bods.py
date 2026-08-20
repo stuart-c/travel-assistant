@@ -424,9 +424,10 @@ def test_bods_fetch_timetables_success(
     mock_get.return_value = MagicMock(
         status_code=200,
         json=lambda: {
+            "next": None,
             "results": [
                 {"id": 1, "url": "https://data.bus-data.dft.gov.uk/dataset/1.zip"}
-            ]
+            ],
         },
     )
     mock_download.return_value = SAMPLE_TRANSXCHANGE_XML.encode("utf-8")
@@ -443,11 +444,78 @@ def test_bods_fetch_timetables_success(
         params={
             "api_key": "test-key",
             "status": "published",
-            "limit": 25,
+            "limit": 50,
+            "offset": 0,
             "adminArea": "049",
         },
         timeout=5.0,
     )
+
+
+@patch.object(BodsClient, "download_dataset_file")
+@patch("app.datasources.bods.requests.get")
+def test_bods_fetch_timetables_pagination(
+    mock_get: MagicMock, mock_download: MagicMock
+) -> None:
+    """Test fetch_timetables handles multiple paginated pages."""
+    resp1 = MagicMock(status_code=200)
+    resp1.json.return_value = {
+        "next": "https://data.bus-data.dft.gov.uk/api/v1/dataset?offset=1",
+        "results": [{"id": 1, "url": "https://data.bus-data.dft.gov.uk/dataset/1.zip"}],
+    }
+    resp2 = MagicMock(status_code=200)
+    resp2.json.return_value = {
+        "next": None,
+        "results": [{"id": 2, "url": "https://data.bus-data.dft.gov.uk/dataset/2.zip"}],
+    }
+    mock_get.side_effect = [resp1, resp2]
+    mock_download.return_value = SAMPLE_TRANSXCHANGE_XML.encode("utf-8")
+
+    client = BodsClient(api_key="test-key")
+    tts = client.fetch_timetables(
+        target_stop_codes={"049000001"},
+        admin_areas=["049"],
+    )
+    assert len(tts) == 1  # De-duplicated by name
+    assert mock_get.call_count == 2
+
+
+@patch("app.datasources.bods.requests.get")
+def test_bods_fetch_routes_pagination(mock_get: MagicMock) -> None:
+    """Test fetch_routes handles multiple paginated pages."""
+    resp1 = MagicMock(status_code=200)
+    resp1.json.return_value = {
+        "next": "https://example.com/page2",
+        "results": [
+            {
+                "id": 1,
+                "name": "Route 1",
+                "operator_name": "Arriva",
+                "noc": ["ARRI"],
+                "lines": ["1"],
+            }
+        ],
+    }
+    resp2 = MagicMock(status_code=200)
+    resp2.json.return_value = {
+        "next": None,
+        "results": [
+            {
+                "id": 2,
+                "name": "Route 2",
+                "operator_name": "Arriva",
+                "noc": ["ARRI"],
+                "lines": ["2"],
+            }
+        ],
+    }
+    mock_get.side_effect = [resp1, resp2]
+
+    client = BodsClient(api_key="valid-key")
+    routes = client.fetch_routes(limit=None, page_size=1)
+    assert len(routes) == 2
+    assert routes[0]["route_number"] == "1"
+    assert routes[1]["route_number"] == "2"
 
 
 @patch("app.datasources.bods.requests.get")
