@@ -175,19 +175,10 @@ def test_bus_route_model(app: Flask) -> None:
         inserted = BusRoute.bulk_upsert(routes)
         assert inserted == 2
 
-        # Get by route number
-        res = BusRoute.get_by_route_number("1")
-        assert len(res) == 1
-        assert res[0].operator_name == "Oxford Bus"
-
         # Search
         search_res = BusRoute.search("Rail")
         assert len(search_res) == 1
         assert search_res[0].route_number == "5"
-
-        # Get all
-        all_res = BusRoute.get_all(limit=10)
-        assert len(all_res) == 2
 
 
 def test_stop_model(app: Flask) -> None:

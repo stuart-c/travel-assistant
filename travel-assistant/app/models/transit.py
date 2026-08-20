@@ -65,11 +65,6 @@ class BusRoute(BaseModel):
         return total
 
     @classmethod
-    def get_by_route_number(cls, route_number: str) -> List["BusRoute"]:
-        """Retrieve bus routes matching route number."""
-        return list(cls.select().where(cls.route_number == route_number.strip()))
-
-    @classmethod
     def search(cls, query: str, limit: int = 50) -> List["BusRoute"]:
         """Search bus routes by route number, operator, or description."""
         q = f"%{query.strip()}%"
@@ -80,11 +75,6 @@ class BusRoute(BaseModel):
             )
             .limit(limit)
         )
-
-    @classmethod
-    def get_all(cls, limit: int = 100, offset: int = 0) -> List["BusRoute"]:
-        """Retrieve paginated bus routes."""
-        return list(cls.select().offset(offset).limit(limit))
 
 
 class Stop(BaseModel):
