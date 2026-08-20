@@ -266,6 +266,22 @@ def run_migrations(database: SqliteDatabase) -> None:
 
     try:
         cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='stops'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("stops")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "easting" not in cols:
+                database.execute_sql('ALTER TABLE "stops" ADD COLUMN "easting" INTEGER')
+            if "northing" not in cols:
+                database.execute_sql(
+                    'ALTER TABLE "stops" ADD COLUMN "northing" INTEGER'
+                )
+    except Exception:
+        pass
+
+    try:
+        cursor = database.execute_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_metadata'"
         )
         if cursor.fetchone():
