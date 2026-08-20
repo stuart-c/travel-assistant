@@ -6,7 +6,7 @@ bus stops, and rail station datasets using modular datasource clients.
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 from flask import Flask
 import requests
 
@@ -364,11 +364,9 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                     "duration_seconds": duration,
                 }
 
-            # 2. Build stop lookup dictionary, admin areas, and bounding box from cached bus stops
+            # 2. Build stop lookup dictionary and admin areas from cached bus stops
             stop_lookup: Dict[str, Dict[str, Any]] = {}
             admin_areas: Set[str] = set()
-            lats: List[float] = []
-            lons: List[float] = []
             target_upper = {c.upper() for c in target_stop_codes}
 
             for c in target_stop_codes:
@@ -407,27 +405,11 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                         code_clean = stp.atco_code.upper().strip()
                         if len(code_clean) >= 3 and code_clean[:3].isdigit():
                             admin_areas.add(code_clean[:3])
-                    if stp.latitude is not None and stp.longitude is not None:
-                        try:
-                            lats.append(float(stp.latitude))
-                            lons.append(float(stp.longitude))
-                        except (ValueError, TypeError):
-                            pass
-
-            bounding_box = None
-            if lats and lons:
-                bounding_box = (
-                    round(min(lons) - 0.05, 4),
-                    round(min(lats) - 0.05, 4),
-                    round(max(lons) + 0.05, 4),
-                    round(max(lats) + 0.05, 4),
-                )
 
             # 3. Fetch matching timetables from BODS
             parsed_timetables = client.fetch_timetables(
                 target_stop_codes=target_stop_codes,
                 admin_areas=sorted(list(admin_areas)) if admin_areas else None,
-                bounding_box=bounding_box,
                 stop_lookup=stop_lookup,
             )
             count = len(parsed_timetables)
