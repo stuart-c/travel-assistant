@@ -53,14 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const escapeHtml =
     (window.TransitUI && window.TransitUI.escapeHtml) ||
-    function (str) {
-      if (str === null || str === undefined) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    };
+    ((str) => (str ? String(str) : ''));
+
 
   function formatCoord(val) {
     const num = parseFloat(val);

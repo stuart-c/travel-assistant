@@ -72,69 +72,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const timeWindowsEmptyNotice = document.getElementById('time-windows-empty-notice');
   const addTimeWindowBtn = document.getElementById('add-time-window-btn');
 
-  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  };
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
+  const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
+  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || (() => 'pin_drop');
+  const formatDaysSummary = (window.TransitUI && window.TransitUI.formatDaysSummary) || ((days) => (days || []).join(', '));
 
-  const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || function (type) {
-    const t = String(type || '').toLowerCase();
-    if (t === 'rail') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
-    } else if (t === 'bus') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
-    } else if (t === 'tram') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">tram</span> Tram</span>`;
-    } else if (t === 'metro') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">subway</span> Metro</span>`;
-    } else if (t === 'ferry') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 dark:ring-1 dark:ring-cyan-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_boat</span> Ferry</span>`;
-    } else if (t === 'air') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 dark:ring-1 dark:ring-purple-500/30"><span class="material-symbols-outlined text-xs leading-none">flight</span> Air</span>`;
-    } else if (t === 'ha') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> Home Assistant</span>`;
-    }
-    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
-  };
-
-  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || function (type) {
-    const t = String(type || '').toLowerCase();
-    if (t === 'rail') return 'train';
-    if (t === 'bus') return 'directions_bus';
-    if (t === 'tram') return 'tram';
-    if (t === 'metro') return 'subway';
-    if (t === 'ferry') return 'directions_boat';
-    if (t === 'air') return 'flight';
-    if (t === 'ha') return 'home';
-    return 'pin_drop';
-  };
-
-  const formatDaysSummary = (window.TransitUI && window.TransitUI.formatDaysSummary) || function (days) {
-    if (!days || !days.length) return 'All days';
-    const dayMap = {
-      mon: 'Mon',
-      tue: 'Tue',
-      wed: 'Wed',
-      thu: 'Thu',
-      fri: 'Fri',
-      sat: 'Sat',
-      sun: 'Sun',
-      bank_holiday: 'Bank Holiday',
-    };
-    const mapped = days.map(d => dayMap[d] || d);
-    const hasWeekdays = ['mon', 'tue', 'wed', 'thu', 'fri'].every(d => days.includes(d));
-    const isOnlyWeekdays = hasWeekdays && days.length === 5;
-    const isOnlyWeekends = days.length === 2 && days.includes('sat') && days.includes('sun');
-
-    if (isOnlyWeekdays) return 'Weekdays (Mon–Fri)';
-    if (isOnlyWeekends) return 'Weekends (Sat–Sun)';
-    if (days.length === 8) return 'All days & Bank Holidays';
-    return mapped.join(', ');
-  };
 
   function formatScheduleSummary(timeSettings) {
     if (!timeSettings || !timeSettings.length) {
@@ -364,82 +306,36 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Location Autocomplete Component ---
-  function setupAutocomplete(inputEl, suggestionsEl, typeEl, idEl, nameEl, previewEl, previewIconEl, previewNameEl, previewIdEl, clearBtnEl, defaultFilter = 'all') {
-    function setSelection(item) {
-      typeEl.value = item.type;
-      idEl.value = item.id;
-      nameEl.value = item.name;
+  const fromAutocomplete = window.PlaceAutocomplete
+    ? window.PlaceAutocomplete.bindSelection({
+        searchInput: fromSearchInput,
+        suggestionsContainer: fromSuggestions,
+        typeInput: fromTypeInput,
+        idInput: fromIdInput,
+        nameInput: fromNameInput,
+        previewContainer: fromPreview,
+        previewIcon: fromPreviewIcon,
+        previewName: fromPreviewName,
+        previewId: fromPreviewId,
+        clearBtn: clearFromBtn,
+      })
+    : null;
 
-      previewIconEl.textContent = getLocationIcon(item.type);
-      previewNameEl.textContent = item.name;
-      previewIdEl.textContent = item.id;
+  const toAutocomplete = window.PlaceAutocomplete
+    ? window.PlaceAutocomplete.bindSelection({
+        searchInput: toSearchInput,
+        suggestionsContainer: toSuggestions,
+        typeInput: toTypeInput,
+        idInput: toIdInput,
+        nameInput: toNameInput,
+        previewContainer: toPreview,
+        previewIcon: toPreviewIcon,
+        previewName: toPreviewName,
+        previewId: toPreviewId,
+        clearBtn: clearToBtn,
+      })
+    : null;
 
-      previewEl.classList.remove('hidden');
-      inputEl.parentElement.classList.add('hidden');
-      if (autocomplete) autocomplete.hide();
-      inputEl.value = '';
-    }
-
-    function clearSelection() {
-      typeEl.value = '';
-      idEl.value = '';
-      nameEl.value = '';
-      if (autocomplete) autocomplete.resetFilter(defaultFilter);
-
-      previewEl.classList.add('hidden');
-      inputEl.parentElement.classList.remove('hidden');
-      inputEl.value = '';
-      inputEl.focus();
-    }
-
-    if (clearBtnEl) {
-      clearBtnEl.addEventListener('click', clearSelection);
-    }
-
-    const autocomplete = window.PlaceAutocomplete
-      ? window.PlaceAutocomplete.create({
-          inputEl,
-          suggestionsEl,
-          defaultFilter,
-          searchBaseUrl,
-          onSelect: setSelection,
-        })
-      : null;
-
-    return {
-      setSelection,
-      clearSelection,
-      resetFilter: (filterType) => {
-        if (autocomplete) autocomplete.resetFilter(filterType || defaultFilter);
-      },
-    };
-  }
-
-  const fromAutocomplete = setupAutocomplete(
-    fromSearchInput,
-    fromSuggestions,
-    fromTypeInput,
-    fromIdInput,
-    fromNameInput,
-    fromPreview,
-    fromPreviewIcon,
-    fromPreviewName,
-    fromPreviewId,
-    clearFromBtn
-  );
-
-  const toAutocomplete = setupAutocomplete(
-    toSearchInput,
-    toSuggestions,
-    toTypeInput,
-    toIdInput,
-    toNameInput,
-    toPreview,
-    toPreviewIcon,
-    toPreviewName,
-    toPreviewId,
-    clearToBtn
-  );
 
   // --- Dynamic Time Windows Builder ---
   const ALL_DAYS = [

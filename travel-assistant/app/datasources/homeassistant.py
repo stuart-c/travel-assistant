@@ -11,7 +11,6 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.models.setting import Setting
 
 
 class HomeAssistantClient(BaseDataSource):
@@ -54,21 +53,14 @@ class HomeAssistantClient(BaseDataSource):
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "HomeAssistantClient":
         """Initialise HomeAssistantClient from Setting model or environment."""
+        getter = cls.get_setting_getter(settings)
         ha_url = None
         ha_token = None
-
-        if isinstance(settings, dict):
-            ha_url = settings.get("ha_url")
-            ha_token = settings.get("ha_token")
-        elif settings is not None and hasattr(settings, "get_val"):
-            ha_url = settings.get_val("ha_url")
-            ha_token = settings.get_val("ha_token")
-        else:
-            try:
-                ha_url = Setting.get_val("ha_url")
-                ha_token = Setting.get_val("ha_token")
-            except Exception:
-                pass
+        try:
+            ha_url = getter("ha_url")
+            ha_token = getter("ha_token")
+        except Exception:
+            pass
 
         return cls(base_url=ha_url, token=ha_token)
 

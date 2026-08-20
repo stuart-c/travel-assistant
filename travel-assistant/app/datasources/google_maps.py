@@ -18,9 +18,9 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
-from app.models.setting import Setting
 
 logger = logging.getLogger(__name__)
+
 
 DEFAULT_REGION = "uk"
 
@@ -60,26 +60,14 @@ class GoogleMapsClient(BaseDataSource):
         Returns:
             Configured GoogleMapsClient instance.
         """
+        getter = cls.get_setting_getter(settings)
         api_key = ""
         region = DEFAULT_REGION
-
-        if isinstance(settings, dict):
-            api_key = settings.get("google_maps_api_key", "")
-            region = settings.get("google_maps_region", DEFAULT_REGION)
-        elif hasattr(settings, "get"):
-            api_key = settings.get("google_maps_api_key", "")
-            region = settings.get("google_maps_region", DEFAULT_REGION)
-        elif hasattr(settings, "get_val"):
-            api_key = settings.get_val("google_maps_api_key", "")
-            region = settings.get_val("google_maps_region", DEFAULT_REGION)
-        else:
-            try:
-                api_key = Setting.get_val("google_maps_api_key", "")
-                region = Setting.get_val("google_maps_region", DEFAULT_REGION)
-            except Exception as e:
-                logger.warning(
-                    "Could not load Google Maps settings from database: %s", e
-                )
+        try:
+            api_key = getter("google_maps_api_key", "")
+            region = getter("google_maps_region", DEFAULT_REGION)
+        except Exception as e:
+            logger.warning("Could not load Google Maps settings from database: %s", e)
 
         return cls(api_key=api_key or "", region=region or DEFAULT_REGION)
 

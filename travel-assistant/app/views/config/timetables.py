@@ -13,7 +13,12 @@ from app.models import (
 )
 from app.models.base import TRANSPORT_MODES
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_config_page
+from app.views.config.common import (
+    PageConfig,
+    parse_optional_id,
+    register_config_page,
+    sanitise_choice,
+)
 
 
 def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -25,12 +30,7 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not name:
         return None
 
-    item_id: Optional[int] = None
-    if entry.get("id") is not None and str(entry.get("id")).strip():
-        try:
-            item_id = int(entry.get("id"))
-        except (ValueError, TypeError):
-            item_id = None
+    item_id = parse_optional_id(entry.get("id"))
 
     start_date_val: Optional[datetime.date] = None
     start_date_raw = entry.get("start_date")
@@ -58,8 +58,9 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             f"start date ({start_date_val}) for timetable '{name}'."
         )
 
-    raw_type = str(entry.get("transport_type", "bus")).strip().lower()
-    transport_type = raw_type if raw_type in TRANSPORT_MODES else "bus"
+    transport_type = sanitise_choice(
+        entry.get("transport_type"), TRANSPORT_MODES, "bus"
+    )
 
     raw_content = entry.get("content")
     if isinstance(raw_content, str):

@@ -10,7 +10,6 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.models.setting import Setting
 
 DEFAULT_NAPTAN_STOPS_URL = (
     "https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv"
@@ -51,17 +50,12 @@ class NaptanClient(BaseDataSource):
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "NaptanClient":
         """Instantiate NaptanClient (NaPTAN requires no API key)."""
-        getter = (
-            settings.get_val
-            if hasattr(settings, "get_val")
-            else (settings.get if hasattr(settings, "get") else Setting.get_val)
-        )
+        getter = cls.get_setting_getter(settings)
         endpoint = (
             getter("naptan_stops_url", DEFAULT_NAPTAN_STOPS_URL)
-            if getter
-            else DEFAULT_NAPTAN_STOPS_URL
+            or DEFAULT_NAPTAN_STOPS_URL
         )
-        return cls(endpoint=endpoint or DEFAULT_NAPTAN_STOPS_URL)
+        return cls(endpoint=endpoint)
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Validate NaPTAN service availability (public open data)."""

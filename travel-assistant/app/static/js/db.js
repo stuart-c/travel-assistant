@@ -12,14 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let tables = [];
 
-  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  };
+  const escapeHtml =
+    (window.TransitUI && window.TransitUI.escapeHtml) ||
+    ((str) => (str ? String(str) : ''));
+
 
   function formatDbGridData(tableList) {
     return tableList.map((tbl) => {

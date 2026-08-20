@@ -6,7 +6,12 @@ from app.models import Walking
 from app.models.base import LOCATION_TYPES
 from app.sync.worker import request_sync
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_config_page
+from app.views.config.common import (
+    PageConfig,
+    parse_optional_id,
+    register_config_page,
+    sanitise_choice,
+)
 
 
 def _trigger_bus_sync_if_bus_changed(
@@ -41,17 +46,11 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(entry, dict):
         return None
 
-    start_type = str(entry.get("start_type", "custom")).lower().strip()
-    if start_type not in LOCATION_TYPES:
-        start_type = "custom"
-
+    start_type = sanitise_choice(entry.get("start_type"), LOCATION_TYPES, "custom")
     start_id = str(entry.get("start_id", "")).strip()
     start_name = str(entry.get("start_name", "")).strip()
 
-    finish_type = str(entry.get("finish_type", "custom")).lower().strip()
-    if finish_type not in LOCATION_TYPES:
-        finish_type = "custom"
-
+    finish_type = sanitise_choice(entry.get("finish_type"), LOCATION_TYPES, "custom")
     finish_id = str(entry.get("finish_id", "")).strip()
     finish_name = str(entry.get("finish_name", "")).strip()
 
@@ -63,12 +62,7 @@ def clean_walking_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except (ValueError, TypeError):
         time_needed = 5
 
-    item_id: Optional[int] = None
-    if entry.get("id") is not None and str(entry.get("id")).strip():
-        try:
-            item_id = int(entry.get("id"))
-        except (ValueError, TypeError):
-            item_id = None
+    item_id = parse_optional_id(entry.get("id"))
 
     result: Dict[str, Any] = {
         "start_type": start_type,

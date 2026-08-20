@@ -8,38 +8,23 @@ the Google Maps Directions API, and reconciles records into the Walking model.
 import logging
 import math
 import threading
-import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 from flask import Flask
 
-from app.datasources import (
-    DataSourceAuthError,
-    DataSourceConfigError,
-    DataSourceConnectionError,
-    DataSourceError,
-    DataSourceRateLimitError,
-    GoogleMapsClient,
-)
-from app.db import db, init_db
+from app.datasources import GoogleMapsClient
 from app.models import (
     Journey,
     Location,
     Stop,
-    SyncMetadata,
     Timetable,
     Walking,
 )
+from app.sync.common import run_sync_task
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WALK_RADIUS_METRES = 500.0
 _walking_sync_lock = threading.Lock()
-
-
-def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
-    """Ensure Peewee DatabaseProxy has been initialised."""
-    if db.obj is None:
-        init_db(app)
 
 
 def calculate_haversine_distance_m(
@@ -271,236 +256,183 @@ def sync_walking_routes(
     app: Optional[Flask] = None, force: bool = False
 ) -> Dict[str, Any]:
     """Discover nearby transit stops for journeys and synchronise walking duration records."""
-    _ensure_db_initialized(app)
-    start_time = time.time()
-
     with _walking_sync_lock:
-        with db.connection_context():
-            # Check Google Maps credentials
-            client = GoogleMapsClient.from_settings()
+        client = GoogleMapsClient.from_settings()
+
+        def _check_credentials() -> Optional[str]:
             if not client.api_key:
-                msg = "Google Maps API Key not configured in Settings > API Credentials"
-                SyncMetadata.record_skipped("walking", msg)
-                return {
-                    "table": "walking",
-                    "status": "skipped_no_credentials",
-                    "records": 0,
-                    "message": msg,
-                    "duration_seconds": 0.0,
-                }
+                return (
+                    "Google Maps API Key not configured in "
+                    "Settings > API Credentials"
+                )
+            return None
 
-            SyncMetadata.record_start("walking")
+        bus_stops_added = 0
 
-            try:
-                # 1. Collect all custom/HA endpoints from configured journeys
-                journeys = Journey.select()
-                target_places: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        def _perform_sync() -> int:
+            nonlocal bus_stops_added
+            # 1. Collect all custom/HA endpoints from configured journeys
+            journeys = Journey.select()
+            target_places: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
-                for j in journeys:
-                    if j.from_type in ("ha", "custom") and j.from_id:
-                        place_key = (j.from_type, j.from_id)
-                        if place_key not in target_places:
-                            coords = resolve_location_coords(
-                                j.from_type, j.from_id, j.from_name
-                            )
-                            if coords:
-                                target_places[place_key] = {
-                                    "type": j.from_type,
-                                    "id": j.from_id,
-                                    "name": j.from_name,
-                                    "latitude": coords[0],
-                                    "longitude": coords[1],
-                                }
-
-                    if j.to_type in ("ha", "custom") and j.to_id:
-                        place_key = (j.to_type, j.to_id)
-                        if place_key not in target_places:
-                            coords = resolve_location_coords(
-                                j.to_type, j.to_id, j.to_name
-                            )
-                            if coords:
-                                target_places[place_key] = {
-                                    "type": j.to_type,
-                                    "id": j.to_id,
-                                    "name": j.to_name,
-                                    "latitude": coords[0],
-                                    "longitude": coords[1],
-                                }
-
-                if not target_places:
-                    duration = round(time.time() - start_time, 2)
-                    msg = (
-                        "No custom or Home Assistant journey places found for "
-                        "walking stop discovery."
-                    )
-                    SyncMetadata.record_success("walking", 0, duration)
-                    return {
-                        "table": "walking",
-                        "status": "success",
-                        "records": 0,
-                        "bus_stops_added": 0,
-                        "message": msg,
-                        "duration_seconds": duration,
-                    }
-
-                # 2. For each target place, find candidate stops within 500m
-                added_records = 0
-                bus_stops_added = 0
-                for place_info in target_places.values():
-                    loc_type = place_info["type"]
-                    loc_id = place_info["id"]
-                    loc_name = place_info["name"]
-                    loc_lat = place_info["latitude"]
-                    loc_lon = place_info["longitude"]
-
-                    candidate_stops = find_candidate_stops_for_location(
-                        loc_lat, loc_lon, max_distance_m=DEFAULT_WALK_RADIUS_METRES
-                    )
-
-                    for stop in candidate_stops:
-                        st_type = stop["type"]
-                        st_id = stop["id"]
-                        st_name = stop["name"]
-                        st_lat = stop["latitude"]
-                        st_lon = stop["longitude"]
-
-                        # Do not connect a location to itself
-                        if loc_type == st_type and loc_id == st_id:
-                            continue
-
-                        # Skip if a walking route already exists (never overwrite)
-                        if walking_route_exists(loc_type, loc_id, st_type, st_id):
-                            continue
-
-                        # Query Google Directions API in both directions
-                        fwd_resp = client.directions(
-                            origin=(loc_lat, loc_lon),
-                            destination=(st_lat, st_lon),
-                            mode="walking",
+            for j in journeys:
+                if j.from_type in ("ha", "custom") and j.from_id:
+                    place_key = (j.from_type, j.from_id)
+                    if place_key not in target_places:
+                        coords = resolve_location_coords(
+                            j.from_type, j.from_id, j.from_name
                         )
-                        rev_resp = client.directions(
-                            origin=(st_lat, st_lon),
-                            destination=(loc_lat, loc_lon),
-                            mode="walking",
-                        )
+                        if coords:
+                            target_places[place_key] = {
+                                "type": j.from_type,
+                                "id": j.from_id,
+                                "name": j.from_name,
+                                "latitude": coords[0],
+                                "longitude": coords[1],
+                            }
 
-                        fwd_min = extract_walking_minutes(fwd_resp)
-                        rev_min = extract_walking_minutes(rev_resp)
+                if j.to_type in ("ha", "custom") and j.to_id:
+                    place_key = (j.to_type, j.to_id)
+                    if place_key not in target_places:
+                        coords = resolve_location_coords(j.to_type, j.to_id, j.to_name)
+                        if coords:
+                            target_places[place_key] = {
+                                "type": j.to_type,
+                                "id": j.to_id,
+                                "name": j.to_name,
+                                "latitude": coords[0],
+                                "longitude": coords[1],
+                            }
 
-                        if fwd_min is None and rev_min is not None:
-                            fwd_min = rev_min
-                        elif rev_min is None and fwd_min is not None:
-                            rev_min = fwd_min
-                        elif fwd_min is None and rev_min is None:
-                            logger.warning(
-                                "Could not compute walking duration between %s and %s "
-                                "via Google Maps",
-                                loc_name,
-                                st_name,
-                            )
-                            continue
+            if not target_places:
+                return 0
 
-                        is_bus_stop = st_type == "bus"
+            # 2. For each target place, find candidate stops within 500m
+            added_records = 0
+            for place_info in target_places.values():
+                loc_type = place_info["type"]
+                loc_id = place_info["id"]
+                loc_name = place_info["name"]
+                loc_lat = place_info["latitude"]
+                loc_lon = place_info["longitude"]
 
-                        # Insert records: single bidirectional if equal, otherwise 2 directional
-                        if fwd_min == rev_min:
-                            Walking.create(
-                                start_type=loc_type,
-                                start_id=loc_id,
-                                start_name=loc_name,
-                                finish_type=st_type,
-                                finish_id=st_id,
-                                finish_name=st_name,
-                                time_needed_minutes=fwd_min,
-                                bidirectional=True,
-                                auto_generated=True,
-                            )
-                            added_records += 1
-                            if is_bus_stop:
-                                bus_stops_added += 1
-                        else:
-                            Walking.create(
-                                start_type=loc_type,
-                                start_id=loc_id,
-                                start_name=loc_name,
-                                finish_type=st_type,
-                                finish_id=st_id,
-                                finish_name=st_name,
-                                time_needed_minutes=fwd_min,
-                                bidirectional=False,
-                                auto_generated=True,
-                            )
-                            Walking.create(
-                                start_type=st_type,
-                                start_id=st_id,
-                                start_name=st_name,
-                                finish_type=loc_type,
-                                finish_id=loc_id,
-                                finish_name=loc_name,
-                                time_needed_minutes=rev_min,
-                                bidirectional=False,
-                                auto_generated=True,
-                            )
-                            added_records += 2
-                            if is_bus_stop:
-                                bus_stops_added += 2
+                candidate_stops = find_candidate_stops_for_location(
+                    loc_lat, loc_lon, max_distance_m=DEFAULT_WALK_RADIUS_METRES
+                )
 
-                if bus_stops_added > 0:
-                    try:
-                        from app.sync.worker import request_sync
+                for stop in candidate_stops:
+                    st_type = stop["type"]
+                    st_id = stop["id"]
+                    st_name = stop["name"]
+                    st_lat = stop["latitude"]
+                    st_lon = stop["longitude"]
 
-                        request_sync("bus_timetables")
-                    except Exception as sync_exc:
+                    # Do not connect a location to itself
+                    if loc_type == st_type and loc_id == st_id:
+                        continue
+
+                    # Skip if a walking route already exists (never overwrite)
+                    if walking_route_exists(loc_type, loc_id, st_type, st_id):
+                        continue
+
+                    # Query Google Directions API in both directions
+                    fwd_resp = client.directions(
+                        origin=(loc_lat, loc_lon),
+                        destination=(st_lat, st_lon),
+                        mode="walking",
+                    )
+                    rev_resp = client.directions(
+                        origin=(st_lat, st_lon),
+                        destination=(loc_lat, loc_lon),
+                        mode="walking",
+                    )
+
+                    fwd_min = extract_walking_minutes(fwd_resp)
+                    rev_min = extract_walking_minutes(rev_resp)
+
+                    if fwd_min is None and rev_min is not None:
+                        fwd_min = rev_min
+                    elif rev_min is None and fwd_min is not None:
+                        rev_min = fwd_min
+                    elif fwd_min is None and rev_min is None:
                         logger.warning(
-                            "Failed to queue bus timetable sync after walking discovery: %s",
-                            sync_exc,
+                            "Could not compute walking duration between %s and %s via Google Maps",
+                            loc_name,
+                            st_name,
                         )
+                        continue
 
-                duration = round(time.time() - start_time, 2)
-                SyncMetadata.record_success("walking", added_records, duration)
-                return {
-                    "table": "walking",
-                    "status": "success",
-                    "records": added_records,
-                    "bus_stops_added": bus_stops_added,
-                    "message": f"Successfully synchronised {added_records} walking route(s).",
-                    "duration_seconds": duration,
-                }
+                    is_bus_stop = st_type == "bus"
 
-            except (DataSourceAuthError, DataSourceConfigError) as exc:
-                duration = round(time.time() - start_time, 2)
-                err_msg = str(exc)
-                SyncMetadata.record_error("walking", err_msg, duration)
-                return {
-                    "table": "walking",
-                    "status": "error",
-                    "records": 0,
-                    "message": err_msg,
-                    "duration_seconds": duration,
-                }
-            except (
-                DataSourceConnectionError,
-                DataSourceRateLimitError,
-                DataSourceError,
-            ) as exc:
-                duration = round(time.time() - start_time, 2)
-                err_msg = f"Google Maps API error during walking sync: {str(exc)}"
-                SyncMetadata.record_error("walking", err_msg, duration)
-                return {
-                    "table": "walking",
-                    "status": "error",
-                    "records": 0,
-                    "message": err_msg,
-                    "duration_seconds": duration,
-                }
-            except Exception as exc:
-                duration = round(time.time() - start_time, 2)
-                err_msg = f"Unexpected error during walking synchronisation: {str(exc)}"
-                SyncMetadata.record_error("walking", err_msg, duration)
-                return {
-                    "table": "walking",
-                    "status": "error",
-                    "records": 0,
-                    "message": err_msg,
-                    "duration_seconds": duration,
-                }
+                    # Insert records: single bidirectional if equal, otherwise 2 directional
+                    if fwd_min == rev_min:
+                        Walking.create(
+                            start_type=loc_type,
+                            start_id=loc_id,
+                            start_name=loc_name,
+                            finish_type=st_type,
+                            finish_id=st_id,
+                            finish_name=st_name,
+                            time_needed_minutes=fwd_min,
+                            bidirectional=True,
+                            auto_generated=True,
+                        )
+                        added_records += 1
+                        if is_bus_stop:
+                            bus_stops_added += 1
+                    else:
+                        Walking.create(
+                            start_type=loc_type,
+                            start_id=loc_id,
+                            start_name=loc_name,
+                            finish_type=st_type,
+                            finish_id=st_id,
+                            finish_name=st_name,
+                            time_needed_minutes=fwd_min,
+                            bidirectional=False,
+                            auto_generated=True,
+                        )
+                        Walking.create(
+                            start_type=st_type,
+                            start_id=st_id,
+                            start_name=st_name,
+                            finish_type=loc_type,
+                            finish_id=loc_id,
+                            finish_name=loc_name,
+                            time_needed_minutes=rev_min,
+                            bidirectional=False,
+                            auto_generated=True,
+                        )
+                        added_records += 2
+                        if is_bus_stop:
+                            bus_stops_added += 2
+
+            if bus_stops_added > 0:
+                try:
+                    from app.sync.worker import request_sync
+
+                    request_sync("bus_timetables")
+                except Exception as sync_exc:
+                    logger.warning(
+                        "Failed to queue bus timetable sync after walking discovery: %s",
+                        sync_exc,
+                    )
+
+            return added_records
+
+        result = run_sync_task(
+            table_name="walking",
+            sync_operation=_perform_sync,
+            client_check=_check_credentials,
+            connection_error_template="Google Maps API error during walking sync: {error}",
+            success_message_factory=lambda cnt: (
+                f"Successfully synchronised {cnt} walking route(s)."
+                if cnt > 0
+                else "No custom or Home Assistant journey places found for walking stop discovery."
+            ),
+            app=app,
+        )
+
+        if result.get("status") == "success":
+            result["bus_stops_added"] = bus_stops_added
+        return result
