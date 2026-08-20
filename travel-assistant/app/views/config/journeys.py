@@ -6,7 +6,12 @@ from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
 from app.sync.worker import request_sync
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_config_page
+from app.views.config.common import (
+    PageConfig,
+    parse_optional_id,
+    register_config_page,
+    sanitise_choice,
+)
 
 
 def _trigger_syncs_if_changed(
@@ -48,29 +53,18 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     name = str(entry.get("name", "")).strip()
-    from_type = str(entry.get("from_type", "rail")).strip().lower()
-    if from_type not in LOCATION_TYPES:
-        from_type = "rail"
-
+    from_type = sanitise_choice(entry.get("from_type"), LOCATION_TYPES, "rail")
     from_id = str(entry.get("from_id", "")).strip()
     from_name = str(entry.get("from_name", "")).strip()
 
-    to_type = str(entry.get("to_type", "rail")).strip().lower()
-    if to_type not in LOCATION_TYPES:
-        to_type = "rail"
-
+    to_type = sanitise_choice(entry.get("to_type"), LOCATION_TYPES, "rail")
     to_id = str(entry.get("to_id", "")).strip()
     to_name = str(entry.get("to_name", "")).strip()
 
     if not name or not (from_id and from_name and to_id and to_name):
         return None
 
-    item_id: Optional[int] = None
-    if entry.get("id") is not None and str(entry.get("id")).strip():
-        try:
-            item_id = int(entry.get("id"))
-        except (ValueError, TypeError):
-            item_id = None
+    item_id = parse_optional_id(entry.get("id"))
 
     raw_time_settings = entry.get("time_settings", [])
     cleaned_time_settings: list[Dict[str, Any]] = []

@@ -68,131 +68,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const finishPreviewId = document.getElementById('finish-preview-id');
   const clearFinishBtn = document.getElementById('clear-finish-selection');
 
-  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || function (str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  };
+  const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
+  const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
+  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || (() => 'pin_drop');
 
-  const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || function (type) {
-    const t = String(type || '').toLowerCase();
-    if (t === 'rail') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30"><span class="material-symbols-outlined text-xs leading-none">train</span> Rail</span>`;
-    } else if (t === 'bus') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_bus</span> Bus</span>`;
-    } else if (t === 'tram') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 dark:ring-1 dark:ring-purple-500/30"><span class="material-symbols-outlined text-xs leading-none">tram</span> Tram</span>`;
-    } else if (t === 'metro') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30"><span class="material-symbols-outlined text-xs leading-none">subway</span> Metro</span>`;
-    } else if (t === 'ferry') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 dark:ring-1 dark:ring-cyan-500/30"><span class="material-symbols-outlined text-xs leading-none">directions_boat</span> Ferry</span>`;
-    } else if (t === 'air') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30"><span class="material-symbols-outlined text-xs leading-none">flight</span> Air</span>`;
-    } else if (t === 'ha') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 dark:ring-1 dark:ring-rose-500/30"><span class="material-symbols-outlined text-xs leading-none">home</span> HA Zone</span>`;
-    }
-    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"><span class="material-symbols-outlined text-xs leading-none">pin_drop</span> Custom</span>`;
-  };
+  const startAutocomplete = window.PlaceAutocomplete
+    ? window.PlaceAutocomplete.bindSelection({
+        searchInput: startSearchInput,
+        suggestionsContainer: startSuggestions,
+        typeInput: startTypeInput,
+        idInput: startIdInput,
+        nameInput: startNameInput,
+        previewContainer: startPreview,
+        previewIcon: startPreviewIcon,
+        previewName: startPreviewName,
+        previewId: startPreviewId,
+        clearBtn: clearStartBtn,
+      })
+    : null;
 
-  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || function (type) {
-    const t = String(type || '').toLowerCase();
-    if (t === 'rail') return 'train';
-    if (t === 'bus') return 'directions_bus';
-    if (t === 'tram') return 'tram';
-    if (t === 'metro') return 'subway';
-    if (t === 'ferry') return 'directions_boat';
-    if (t === 'air') return 'flight';
-    if (t === 'ha') return 'home';
-    return 'pin_drop';
-  };
+  const finishAutocomplete = window.PlaceAutocomplete
+    ? window.PlaceAutocomplete.bindSelection({
+        searchInput: finishSearchInput,
+        suggestionsContainer: finishSuggestions,
+        typeInput: finishTypeInput,
+        idInput: finishIdInput,
+        nameInput: finishNameInput,
+        previewContainer: finishPreview,
+        previewIcon: finishPreviewIcon,
+        previewName: finishPreviewName,
+        previewId: finishPreviewId,
+        clearBtn: clearFinishBtn,
+      })
+    : null;
 
-  // Setup PlaceAutocomplete instances
-  let startAutocomplete = null;
-  let finishAutocomplete = null;
-
-  if (window.PlaceAutocomplete && startSearchInput && startSuggestions) {
-    startAutocomplete = window.PlaceAutocomplete.create({
-      inputEl: startSearchInput,
-      suggestionsEl: startSuggestions,
-      searchBaseUrl: searchBaseUrl,
-      onSelect: (item) => {
-        setStartSelection(item.type, item.id, item.name);
-        startAutocomplete.hide();
-      },
-    });
-  }
-
-  if (window.PlaceAutocomplete && finishSearchInput && finishSuggestions) {
-    finishAutocomplete = window.PlaceAutocomplete.create({
-      inputEl: finishSearchInput,
-      suggestionsEl: finishSuggestions,
-      searchBaseUrl: searchBaseUrl,
-      onSelect: (item) => {
-        setFinishSelection(item.type, item.id, item.name);
-        finishAutocomplete.hide();
-      },
-    });
-  }
-
-  function setStartSelection(type, id, name) {
-    startTypeInput.value = type || 'custom';
-    startIdInput.value = id || '';
-    startNameInput.value = name || '';
-
-    if (id && name) {
-      startPreviewIcon.textContent = getLocationIcon(type);
-      startPreviewName.textContent = name;
-      startPreviewId.textContent = id;
-      startPreview.classList.remove('hidden');
-      startSearchInput.value = '';
-      startSearchInput.classList.add('hidden');
-    } else {
-      clearStartSelection();
-    }
-  }
-
-  function clearStartSelection() {
-    startTypeInput.value = '';
-    startIdInput.value = '';
-    startNameInput.value = '';
-    startPreview.classList.add('hidden');
-    startSearchInput.classList.remove('hidden');
-    startSearchInput.value = '';
-    if (startAutocomplete) startAutocomplete.clear();
-  }
-
-  function setFinishSelection(type, id, name) {
-    finishTypeInput.value = type || 'custom';
-    finishIdInput.value = id || '';
-    finishNameInput.value = name || '';
-
-    if (id && name) {
-      finishPreviewIcon.textContent = getLocationIcon(type);
-      finishPreviewName.textContent = name;
-      finishPreviewId.textContent = id;
-      finishPreview.classList.remove('hidden');
-      finishSearchInput.value = '';
-      finishSearchInput.classList.add('hidden');
-    } else {
-      clearFinishSelection();
-    }
-  }
-
-  function clearFinishSelection() {
-    finishTypeInput.value = '';
-    finishIdInput.value = '';
-    finishNameInput.value = '';
-    finishPreview.classList.add('hidden');
-    finishSearchInput.classList.remove('hidden');
-    finishSearchInput.value = '';
-    if (finishAutocomplete) finishAutocomplete.clear();
-  }
-
-  if (clearStartBtn) clearStartBtn.addEventListener('click', clearStartSelection);
-  if (clearFinishBtn) clearFinishBtn.addEventListener('click', clearFinishSelection);
 
   // Format data rows for Grid.js
   function formatGridData(items) {
@@ -425,19 +334,32 @@ document.addEventListener('DOMContentLoaded', () => {
       modalTitle.textContent = 'Edit Walking Route';
       modalIcon.textContent = 'edit';
 
-      setStartSelection(item.start_type, item.start_id, item.start_name);
-      setFinishSelection(item.finish_type, item.finish_id, item.finish_name);
+      if (startAutocomplete) {
+        startAutocomplete.setSelection({
+          type: item.start_type,
+          id: item.start_id,
+          name: item.start_name,
+        });
+      }
+      if (finishAutocomplete) {
+        finishAutocomplete.setSelection({
+          type: item.finish_type,
+          id: item.finish_id,
+          name: item.finish_name,
+        });
+      }
       timeNeededInput.value = item.time_needed_minutes || 5;
       bidirectionalInput.checked = item.bidirectional !== false;
     } else {
       modalTitle.textContent = 'Add New Walking Route';
       modalIcon.textContent = 'directions_walk';
 
-      clearStartSelection();
-      clearFinishSelection();
+      if (startAutocomplete) startAutocomplete.clearSelection();
+      if (finishAutocomplete) finishAutocomplete.clearSelection();
       timeNeededInput.value = '5';
       bidirectionalInput.checked = true;
     }
+
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();

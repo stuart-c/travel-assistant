@@ -5,7 +5,12 @@ from typing import Any, Dict, Optional
 from app.models import PlatformTransfer
 from app.models.base import LOCATION_TYPES
 from app.views.config import config_bp
-from app.views.config.common import PageConfig, register_config_page
+from app.views.config.common import (
+    PageConfig,
+    parse_optional_id,
+    register_config_page,
+    sanitise_choice,
+)
 
 
 def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -13,10 +18,7 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
     if not isinstance(entry, dict):
         return None
 
-    loc_type = str(entry.get("location_type", "rail")).lower().strip()
-    if loc_type not in LOCATION_TYPES:
-        loc_type = "rail"
-
+    loc_type = sanitise_choice(entry.get("location_type"), LOCATION_TYPES, "rail")
     location_id = str(entry.get("location_id", "")).strip()
     location_name = str(entry.get("location_name", "")).strip()
     from_platform = str(entry.get("from_platform", "")).strip()
@@ -30,12 +32,7 @@ def clean_platform_transfer_item(entry: Dict[str, Any]) -> Optional[Dict[str, An
     if not (location_id and location_name and from_platform and to_platform):
         return None
 
-    item_id: Optional[int] = None
-    if entry.get("id") is not None and str(entry.get("id")).strip():
-        try:
-            item_id = int(entry.get("id"))
-        except (ValueError, TypeError):
-            item_id = None
+    item_id = parse_optional_id(entry.get("id"))
 
     result: Dict[str, Any] = {
         "location_type": loc_type,

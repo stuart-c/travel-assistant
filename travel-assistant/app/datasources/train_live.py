@@ -16,7 +16,6 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.models.setting import Setting
 
 DEFAULT_USER_AGENT = "TravelAssistant/1.0 (HomeAssistant; Linux)"
 DEFAULT_SWAGGER_SCHEMA_URL = (
@@ -92,11 +91,7 @@ class TrainLiveClient(BaseDataSource):
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "TrainLiveClient":
         """Instantiate TrainLiveClient with credentials loaded from Setting model or provider."""
-        getter = (
-            settings.get_val
-            if hasattr(settings, "get_val")
-            else (settings.get if hasattr(settings, "get") else Setting.get_val)
-        )
+        getter = cls.get_setting_getter(settings)
         return cls(
             api_key=getter("train_live_api_key", ""),
             endpoint=getter("train_live_endpoint", ""),

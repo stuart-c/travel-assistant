@@ -16,7 +16,6 @@ from app.datasources.exceptions import (
     DataSourceConnectionError,
     DataSourceError,
 )
-from app.models.setting import Setting
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
@@ -101,11 +100,7 @@ class OpenAIClient(BaseDataSource):
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "OpenAIClient":
         """Instantiate OpenAIClient with credentials loaded from Setting model or provider."""
-        getter = (
-            settings.get_val
-            if hasattr(settings, "get_val")
-            else (settings.get if hasattr(settings, "get") else Setting.get_val)
-        )
+        getter = cls.get_setting_getter(settings)
         return cls(
             api_key=getter("open_api_key", ""),
             base_url=getter("open_api_base_url", DEFAULT_OPENAI_BASE_URL),

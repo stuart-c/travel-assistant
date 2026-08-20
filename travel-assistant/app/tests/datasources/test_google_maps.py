@@ -75,9 +75,7 @@ def test_google_maps_from_settings(app: Flask) -> None:
 
 def test_google_maps_from_settings_db_exception() -> None:
     """Test GoogleMapsClient fallback when database read fails."""
-    with patch(
-        "app.datasources.google_maps.Setting.get_val", side_effect=Exception("DB fail")
-    ):
+    with patch("app.models.setting.Setting.get_val", side_effect=Exception("DB fail")):
         client = GoogleMapsClient.from_settings()
         assert client.api_key == ""
         assert client.region == "uk"

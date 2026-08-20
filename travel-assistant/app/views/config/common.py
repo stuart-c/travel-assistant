@@ -1,9 +1,31 @@
 """Common utility functions and shared controllers for configuration views."""
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Container, Dict, List, Optional, Type
 from flask import Blueprint, jsonify, render_template, request
 from peewee import Model
+
+
+def parse_optional_id(raw_val: Any) -> Optional[int]:
+    """Parse an integer primary key from raw input, returning None if absent or invalid."""
+    if raw_val is None or raw_val == "":
+        return None
+    try:
+        return int(raw_val)
+    except (ValueError, TypeError):
+        return None
+
+
+def sanitise_choice(
+    val: Any,
+    valid_choices: Container[str],
+    default: str,
+) -> str:
+    """Sanitise a string value against a set of valid choices, falling back to default."""
+    if val is None:
+        return default
+    cleaned = str(val).strip().lower()
+    return cleaned if cleaned in valid_choices else default
 
 
 def parse_json_changeset(data: Any) -> Dict[str, List[Any]]:

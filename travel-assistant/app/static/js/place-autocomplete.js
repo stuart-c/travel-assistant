@@ -3,6 +3,8 @@
  * Provides unified place & transit search autocomplete dropdowns with pinned filter chips.
  */
 window.PlaceAutocomplete = (function () {
+  'use strict';
+
   const PLACE_TYPE_FILTERS = [
     { type: 'all', label: 'All', icon: 'apps' },
     { type: 'rail', label: 'Train', icon: 'train' },
@@ -14,49 +16,6 @@ window.PlaceAutocomplete = (function () {
     { type: 'ha', label: 'HA', icon: 'home' },
     { type: 'custom', label: 'Custom', icon: 'pin_drop' },
   ];
-
-  const TYPE_META = {
-    rail: {
-      label: 'Train',
-      icon: 'train',
-      bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
-    },
-    bus: {
-      label: 'Bus',
-      icon: 'directions_bus',
-      bg: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
-    },
-    metro: {
-      label: 'Metro',
-      icon: 'subway',
-      bg: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300',
-    },
-    tram: {
-      label: 'Tram',
-      icon: 'tram',
-      bg: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300',
-    },
-    ferry: {
-      label: 'Ferry',
-      icon: 'directions_boat',
-      bg: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300',
-    },
-    air: {
-      label: 'Air',
-      icon: 'flight',
-      bg: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300',
-    },
-    ha: {
-      label: 'HA Zone',
-      icon: 'home',
-      bg: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
-    },
-    custom: {
-      label: 'Custom',
-      icon: 'pin_drop',
-      bg: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
-    },
-  };
 
   function escapeHtml(str) {
     if (window.TransitUI && typeof window.TransitUI.escapeHtml === 'function') {
@@ -72,16 +31,18 @@ window.PlaceAutocomplete = (function () {
   }
 
   function getIcon(type) {
-    return (TYPE_META[type] && TYPE_META[type].icon) || 'place';
+    if (window.TransitUI && typeof window.TransitUI.getTransportIcon === 'function') {
+      return window.TransitUI.getTransportIcon(type);
+    }
+    return 'place';
   }
 
   function getBadge(type) {
-    const meta = TYPE_META[type] || {
-      label: type || 'Place',
-      bg: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
-    };
-    return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${meta.bg}">${escapeHtml(
-      meta.label
+    if (window.TransitUI && typeof window.TransitUI.getTransportBadge === 'function') {
+      return window.TransitUI.getTransportBadge(type);
+    }
+    return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">${escapeHtml(
+      type || 'Place'
     )}</span>`;
   }
 
@@ -122,131 +83,124 @@ window.PlaceAutocomplete = (function () {
 
     async function fetchPlaces() {
       const q = inputEl.value.trim();
-      const typeParam = activeFilter === 'all' ? '' : activeFilter;
-      const baseUrl = getEffectiveSearchUrl();
-      const url = `${baseUrl}?type=${encodeURIComponent(
-        typeParam
-      )}&q=${encodeURIComponent(q)}&limit=${limit}`;
+      const typeParam = activeFilter !== 'all' ? `&type=${encodeURIComponent(activeFilter)}` : '';
+      const url = `${getEffectiveSearchUrl()}?q=${encodeURIComponent(q)}${typeParam}&limit=${limit}`;
 
       try {
         const resp = await fetch(url);
         if (!resp.ok) throw new Error('Search failed');
         const data = await resp.json();
-        currentResults = data.results || [];
-        renderDropdown(currentResults);
+        currentResults = data.items || [];
+        renderDropdown();
       } catch (err) {
         console.error('Place search error:', err);
+        currentResults = [];
+        renderDropdown();
       }
     }
 
-    function renderDropdown(items) {
-      const filterBarHtml = `
-        <div class="place-filter-bar p-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800 sticky top-0 z-10">
-          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-            ${PLACE_TYPE_FILTERS.map((f) => {
-              const isActive = f.type === activeFilter;
-              const activeClass = isActive
-                ? 'bg-sky-600 text-white font-semibold shadow-xs dark:bg-sky-500'
-                : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600/80';
-              return `
-                <button
-                  type="button"
-                  class="filter-chip px-2 py-0.5 rounded-md text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-all duration-150 select-none ${activeClass}"
-                  data-filter-type="${f.type}"
-                >
-                  <span class="material-symbols-outlined text-[13px] leading-none">${f.icon}</span>
-                  <span>${f.label}</span>
-                </button>
-              `;
-            }).join('')}
-          </div>
-        </div>
+    function renderDropdown() {
+      const q = inputEl.value.trim();
+      const hasQuery = q.length > 0;
+
+      let chipsHtml = `
+        <div class="px-2.5 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/80 flex flex-wrap gap-1 items-center sticky top-0 z-10">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mr-1">Filter:</span>
       `;
 
-      let listHtml = '';
-      if (!items || items.length === 0) {
-        const filterObj = PLACE_TYPE_FILTERS.find(
-          (f) => f.type === activeFilter
-        );
-        const filterLabel = filterObj ? filterObj.label : activeFilter;
-        const defaultMsg = `No matching ${escapeHtml(
-          filterLabel === 'All' ? 'places' : filterLabel + ' locations'
-        )} found.`;
-        listHtml = `
-          <div class="px-3.5 py-4 text-xs text-slate-500 dark:text-slate-400 text-center">
-            ${emptyText ? escapeHtml(emptyText) : defaultMsg}
+      PLACE_TYPE_FILTERS.forEach((f) => {
+        const isActive = f.type === activeFilter;
+        const activeClass = isActive
+          ? 'bg-sky-600 text-white font-bold'
+          : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600';
+
+        chipsHtml += `
+          <button 
+            type="button" 
+            class="place-filter-chip px-2 py-0.5 rounded-full text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer ${activeClass}" 
+            data-filter="${f.type}"
+          >
+            <span class="material-symbols-outlined text-[12px] leading-none">${f.icon}</span>
+            <span>${f.label}</span>
+          </button>
+        `;
+      });
+      chipsHtml += '</div>';
+
+      let itemsHtml = '';
+      if (currentResults.length === 0) {
+        const message = emptyText
+          ? emptyText
+          : hasQuery
+          ? `No places found for "${escapeHtml(q)}"`
+          : 'Type to search stops or Home Assistant locations...';
+
+        itemsHtml = `
+          <div class="px-4 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+            <span class="material-symbols-outlined text-base block mb-1">search_off</span>
+            ${message}
           </div>
         `;
       } else {
-        listHtml = `
-          <div class="place-results-list divide-y divide-slate-100 dark:divide-slate-700/50">
-            ${items
-              .map((item, idx) => {
-                const icon = item.icon || getIcon(item.type);
-                const badge = getBadge(item.type);
-                return `
-                <div 
-                  class="suggestion-item px-3.5 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between gap-3 transition-colors"
-                  data-index="${idx}"
-                >
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <span class="material-symbols-outlined text-slate-400 dark:text-slate-500 text-base shrink-0">${escapeHtml(
-                      icon
-                    )}</span>
-                    <div class="truncate min-w-0">
-                      <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(
-                        item.name
-                      )}</div>
-                      <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(
-                        item.description || item.indicator || item.id
-                      )}</div>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-1.5 shrink-0">
-                    ${badge}
-                    ${
-                      item.id
-                        ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">${escapeHtml(
-                            item.id
-                          )}</span>`
-                        : ''
-                    }
-                  </div>
+        itemsHtml = `<div class="divide-y divide-slate-100 dark:divide-slate-800 max-h-56 overflow-y-auto">`;
+        currentResults.forEach((item, idx) => {
+          const badge = getBadge(item.type);
+          const metaSub = [item.indicator, item.id ? `Code: ${item.id}` : '']
+            .filter(Boolean)
+            .join(' • ');
+
+          itemsHtml += `
+            <div 
+              class="place-item px-3 py-2 hover:bg-sky-50 dark:hover:bg-sky-950/40 cursor-pointer flex items-center justify-between gap-2 transition-colors" 
+              data-idx="${idx}"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="material-symbols-outlined text-slate-600 dark:text-slate-400 text-lg flex-shrink-0">${getIcon(
+                  item.type
+                )}</span>
+                <div class="truncate">
+                  <div class="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">${escapeHtml(
+                    item.name
+                  )}</div>
+                  ${
+                    metaSub
+                      ? `<div class="text-[10px] text-slate-600 dark:text-slate-400 truncate">${escapeHtml(
+                          metaSub
+                        )}</div>`
+                      : ''
+                  }
                 </div>
-              `;
-              })
-              .join('')}
-          </div>
-        `;
+              </div>
+              <div class="flex-shrink-0">${badge}</div>
+            </div>
+          `;
+        });
+        itemsHtml += '</div>';
       }
 
-      suggestionsEl.innerHTML = filterBarHtml + listHtml;
+      suggestionsEl.innerHTML = chipsHtml + itemsHtml;
       suggestionsEl.classList.remove('hidden');
 
-      // Bind filter chip clicks
-      suggestionsEl.querySelectorAll('.filter-chip').forEach((chipBtn) => {
-        chipBtn.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-        });
-        chipBtn.addEventListener('click', (e) => {
+      // Bind filter chip buttons
+      suggestionsEl.querySelectorAll('.place-filter-chip').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const newType = chipBtn.getAttribute('data-filter-type');
-          if (newType !== activeFilter) {
-            activeFilter = newType;
-            fetchPlaces();
-          }
-          inputEl.focus();
+          activeFilter = btn.getAttribute('data-filter') || 'all';
+          fetchPlaces();
         });
       });
 
-      // Bind suggestion item clicks
-      suggestionsEl.querySelectorAll('.suggestion-item').forEach((el) => {
-        el.addEventListener('click', () => {
-          const idx = parseInt(el.getAttribute('data-index'), 10);
-          const selectedItem = items[idx];
-          if (selectedItem && typeof onSelect === 'function') {
-            onSelect(selectedItem);
+      // Bind item click
+      suggestionsEl.querySelectorAll('.place-item').forEach((row) => {
+        row.addEventListener('click', () => {
+          const idx = parseInt(row.getAttribute('data-idx'), 10);
+          const selected = currentResults[idx];
+          if (selected) {
+            suggestionsEl.classList.add('hidden');
+            if (typeof onSelect === 'function') {
+              onSelect(selected);
+            }
           }
         });
       });
@@ -299,8 +253,123 @@ window.PlaceAutocomplete = (function () {
     };
   }
 
+  /**
+   * Binds PlaceAutocomplete together with hidden type/id/name inputs,
+   * search text input, selected preview chip container, and clear button.
+   *
+   * @param {Object} options
+   * @param {HTMLElement} options.searchInput
+   * @param {HTMLElement} options.suggestionsContainer
+   * @param {HTMLElement} options.typeInput
+   * @param {HTMLElement} options.idInput
+   * @param {HTMLElement} options.nameInput
+   * @param {HTMLElement} options.previewContainer
+   * @param {HTMLElement} options.previewIcon
+   * @param {HTMLElement} options.previewName
+   * @param {HTMLElement} options.previewId
+   * @param {HTMLElement} options.clearBtn
+   * @param {string} [options.defaultFilter='all']
+   * @param {Function} [options.onSelect]
+   * @param {Function} [options.onClear]
+   * @returns {Object} { setSelection, clearSelection, getSelection, autocomplete }
+   */
+  function bindSelection(options) {
+    const {
+      searchInput,
+      suggestionsContainer,
+      typeInput,
+      idInput,
+      nameInput,
+      previewContainer,
+      previewIcon,
+      previewName,
+      previewId,
+      clearBtn,
+      defaultFilter = 'all',
+      onSelect = null,
+      onClear = null,
+    } = options || {};
+
+    let currentItem = null;
+
+    function setSelection(item) {
+      currentItem = item || null;
+      if (!item || (!item.id && !item.name)) {
+        clearSelection();
+        return;
+      }
+
+      if (typeInput) typeInput.value = item.type || '';
+      if (idInput) idInput.value = item.id || '';
+      if (nameInput) nameInput.value = item.name || '';
+
+      if (previewIcon) {
+        previewIcon.textContent = getIcon(item.type);
+      }
+      if (previewName) {
+        previewName.textContent = item.name || '';
+      }
+      if (previewId) {
+        previewId.textContent = item.id ? `(${item.id})` : '';
+      }
+
+      if (previewContainer) previewContainer.classList.remove('hidden');
+      if (searchInput) {
+        searchInput.value = '';
+        searchInput.classList.add('hidden');
+      }
+      if (suggestionsContainer) suggestionsContainer.classList.add('hidden');
+
+      if (typeof onSelect === 'function') {
+        onSelect(item);
+      }
+    }
+
+    function clearSelection() {
+      currentItem = null;
+      if (typeInput) typeInput.value = '';
+      if (idInput) idInput.value = '';
+      if (nameInput) nameInput.value = '';
+
+      if (previewContainer) previewContainer.classList.add('hidden');
+      if (searchInput) {
+        searchInput.classList.remove('hidden');
+        searchInput.value = '';
+      }
+      if (suggestionsContainer) suggestionsContainer.classList.add('hidden');
+
+      if (typeof onClear === 'function') {
+        onClear();
+      }
+    }
+
+    const autocomplete = create({
+      inputEl: searchInput,
+      suggestionsEl: suggestionsContainer,
+      defaultFilter,
+      onSelect: (item) => {
+        setSelection(item);
+      },
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        clearSelection();
+        if (searchInput) searchInput.focus();
+      });
+    }
+
+    return {
+      setSelection,
+      clearSelection,
+      getSelection: () => currentItem,
+      autocomplete,
+    };
+  }
+
   return {
     create,
+    bindSelection,
     FILTERS: PLACE_TYPE_FILTERS,
     getIcon,
     getBadge,
