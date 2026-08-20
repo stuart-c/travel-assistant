@@ -435,10 +435,19 @@ def test_bods_fetch_timetables_success(
     tts = client.fetch_timetables(
         target_stop_codes={"049000001"},
         admin_areas=["049"],
-        bounding_box=(-0.2, 51.9, -0.1, 52.0),
     )
     assert len(tts) == 1
     assert tts[0]["name"] == "Bus 10: Stevenage to Hitchin"
+    mock_get.assert_called_once_with(
+        "https://data.bus-data.dft.gov.uk/api/v1/dataset",
+        params={
+            "api_key": "test-key",
+            "status": "published",
+            "limit": 25,
+            "adminArea": "049",
+        },
+        timeout=5.0,
+    )
 
 
 @patch("app.datasources.bods.requests.get")

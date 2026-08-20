@@ -725,7 +725,6 @@ class BodsClient(BaseDataSource):
         self,
         target_stop_codes: Optional[Set[str]] = None,
         admin_areas: Optional[List[str]] = None,
-        bounding_box: Optional[Tuple[float, float, float, float]] = None,
         stop_lookup: Optional[Dict[str, Dict[str, Any]]] = None,
         limit: int = 25,
     ) -> List[Dict[str, Any]]:
@@ -750,8 +749,6 @@ class BodsClient(BaseDataSource):
             clean_areas = [str(a).strip() for a in admin_areas if str(a).strip()]
             if clean_areas:
                 params["adminArea"] = ",".join(clean_areas)
-        if bounding_box and len(bounding_box) == 4:
-            params["boundingBox"] = ",".join(str(c) for c in bounding_box)
 
         try:
             response = requests.get(url, params=params, timeout=self.timeout)
