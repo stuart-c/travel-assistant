@@ -203,6 +203,8 @@ def test_stop_model(app: Flask) -> None:
                 "locality": "Oxford",
                 "latitude": 51.753,
                 "longitude": -1.269,
+                "easting": 451200,
+                "northing": 206400,
             },
             {
                 "atco_code": "340000002",
@@ -233,6 +235,8 @@ def test_stop_model(app: Flask) -> None:
         assert stop is not None
         assert stop.name == "Frideswide Square"
         assert stop.stop_type == "bus"
+        assert stop.easting == 451200
+        assert stop.northing == 206400
 
         # Lookup by code (CRS / NaPTAN)
         pad = Stop.get_by_code("PAD")
@@ -694,6 +698,54 @@ def test_location_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         assert locs[0].ha is False
         assert locs[0].id.startswith("custom:")
         assert len(locs[0].id) > 7
+
+    test_db.close()
+
+
+def test_stops_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
+    """Test run_migrations adds easting/northing columns to a legacy stops table."""
+    db_file = str(tmp_path / "legacy_stops_test.db")
+    test_db = SqliteDatabase(db_file)
+    test_db.connect()
+
+    # Create legacy stops table without easting/northing
+    test_db.execute_sql("""
+        CREATE TABLE "stops" (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+            "created_at" DATETIME NOT NULL,
+            "updated_at" DATETIME NOT NULL,
+            "atco_code" VARCHAR(255) NOT NULL UNIQUE,
+            "naptan_code" VARCHAR(255),
+            "stop_type" VARCHAR(50) NOT NULL DEFAULT 'bus',
+            "name" VARCHAR(255) NOT NULL,
+            "indicator" VARCHAR(255),
+            "locality" VARCHAR(255),
+            "latitude" REAL,
+            "longitude" REAL
+        );
+        """)
+    test_db.execute_sql("""
+        INSERT INTO "stops" (
+            "created_at", "updated_at", "atco_code", "stop_type", "name"
+        ) VALUES (
+            '2026-08-15 12:00:00', '2026-08-15 12:00:00',
+            '340000001', 'bus', 'Frideswide Square'
+        );
+        """)
+
+    run_migrations(test_db)
+
+    col_cursor = test_db.execute_sql('PRAGMA table_info("stops")')
+    cols = [col[1] for col in col_cursor.fetchall()]
+    assert "easting" in cols
+    assert "northing" in cols
+
+    with test_db.bind_ctx([Stop]):
+        stops = list(Stop.select())
+        assert len(stops) == 1
+        assert stops[0].name == "Frideswide Square"
+        assert stops[0].easting is None
+        assert stops[0].northing is None
 
     test_db.close()
 

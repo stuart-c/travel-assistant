@@ -99,6 +99,8 @@ class Stop(BaseModel):
     locality = CharField(null=True)
     latitude = FloatField(null=True)
     longitude = FloatField(null=True)
+    northing = IntegerField(null=True)
+    easting = IntegerField(null=True)
 
     class Meta:
         table_name = "stops"
@@ -128,6 +130,8 @@ class Stop(BaseModel):
                 ),
                 "latitude": s.get("latitude"),
                 "longitude": s.get("longitude"),
+                "northing": s.get("northing"),
+                "easting": s.get("easting"),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -154,6 +158,8 @@ class Stop(BaseModel):
                             cls.locality,
                             cls.latitude,
                             cls.longitude,
+                            cls.northing,
+                            cls.easting,
                             cls.updated_at,
                         ],
                     )
