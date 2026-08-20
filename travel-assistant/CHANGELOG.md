@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Removed
+- Removed unused `NaptanClient.fetch_rail_stations()` method; rail stations have always been ingested via `fetch_stops()` (where `StopType` values `RLY`/`RPL`/`MET` are classified as `"rail"`), so the method was unreachable dead code.
 - Removed obsolete inter-location transfers feature, `LocationTransfer` model, and `location_transfers` SQLite table in favour of the dedicated Walking feature (`/config/walking`).
 - Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favour of pure OpenAPI/Swagger client integration.
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Componentised staged collection and changeset management across all configuration controllers (`locations`, `timetables`, `journeys`, `transfers`, `walking`) with `TransitUI.createChangesetTracker` in `transit-ui.js`, unifying modal adjustment detection, item staging, deletion tracking, and delta payload generation.
 
 ### Added
+- Added `easting` and `northing` (British National Grid) fields to the `Stop` model and NaPTAN sync, extracting the corresponding `Easting`/`Northing` columns from the NaPTAN CSV feed alongside the existing `latitude`/`longitude` values. A schema migration adds both columns to existing `stops` tables without data loss.
 - Added focused, entity-aware synchronisation triggers on configuration save: modifying journeys with Home Assistant or custom location endpoints queues `walking` discovery, modifying journeys with bus stop endpoints queues `bus_timetables` synchronisation, and saving walking routes involving bus stops queues `bus_timetables` synchronisation.
 - Added automated chaining of `bus_timetables` synchronisation from `sync_walking_routes` whenever newly discovered walking routes connect to bus stops (`bus_stops_added > 0`), avoiding redundant sync requests when only rail or tram connections are discovered.
 - Integrated Pydantic v2 schemas (`TimetableContent`, `TimetableStop`, `TimetableTrip`, `TripTiming`, and `JourneyTimeSetting`) and custom Peewee `PydanticField` for structured validation, serialisation, and deserialisation of embedded JSON fields (`Timetable.content` and `Journey.time_settings`).
