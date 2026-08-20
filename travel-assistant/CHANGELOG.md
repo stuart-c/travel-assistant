@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
 
 ### Removed
+- Removed unused `BusRoute.get_by_route_number()` and `BusRoute.get_all()` methods; neither is called from any production code path.
 - Removed unused `NaptanClient.fetch_rail_stations()` method; rail stations have always been ingested via `fetch_stops()` (where `StopType` values `RLY`/`RPL`/`MET` are classified as `"rail"`), so the method was unreachable dead code.
 - Removed obsolete inter-location transfers feature, `LocationTransfer` model, and `location_transfers` SQLite table in favour of the dedicated Walking feature (`/config/walking`).
 - Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favour of pure OpenAPI/Swagger client integration.
