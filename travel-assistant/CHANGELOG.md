@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
 
 ### Changed
+- Replaced legacy `flake8` linter with `ruff` across development scripts, test requirements, CI workflows, and documentation.
 - Consolidated backend datasource settings resolution with `BaseDataSource.get_setting_getter(settings)` across all provider clients (`bods`, `google_maps`, `train_s3`, `openai`, `train_live`, `homeassistant`, `naptan`), unifying dictionary and `Setting` model lookups.
 - Standardised dataset synchronisation orchestration with shared `run_sync_task` and `ensure_db_initialised` in `app/sync/common.py`, eliminating duplicate telemetry tracking (`start`, `success`, `error`, `skipped`), connection contexts, elapsed duration calculations, and exception formatting across HA, Transit (BODS, NaPTAN, Train S3), and Walking sync modules.
 - Refactored form and grid item sanitisation across configuration views (`journeys`, `timetables`, `walking`, `transfers`) with `parse_optional_id` and `sanitise_choice` helpers in `app/views/config/common.py`.

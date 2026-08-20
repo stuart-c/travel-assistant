@@ -46,7 +46,7 @@ Tests and lints **MUST** be run locally before being pushed to GitHub. This is m
 
 ### Quality Targets
 - **Code Coverage**: Aim for 100% unit test code coverage for new backend code.
-- **Linting**: Ensure `black --check` and `flake8` pass with 0 warnings or errors.
+- **Linting**: Ensure `black --check` and `ruff check` pass with 0 warnings or errors.
 
 ## 4. Mandatory Pull Requests & Review Workflow
 **All changes, regardless of size or scope, MUST be submitted as a Pull Request (PR) for user review.** Direct pushes or commits to `main` are strictly forbidden.

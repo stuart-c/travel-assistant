@@ -14,8 +14,8 @@ source "$VENV_PATH/bin/activate"
 echo "=== Running Code Formatting Check (black) ==="
 black --check "$TOP_DIR/travel-assistant/app"
 
-echo "=== Running Linter (flake8) ==="
-flake8 "$TOP_DIR/travel-assistant/app" --max-line-length=100 --extend-ignore=E203,W503
+echo "=== Running Linter (ruff) ==="
+ruff check "$TOP_DIR/travel-assistant/app"
 
 echo "=== Running Unit Tests & Coverage (pytest) ==="
 if [ $# -gt 0 ]; then

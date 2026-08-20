@@ -11,12 +11,12 @@ Testing in `travel-assistant` is structured across three complementary tiers:
 ```mermaid
 flowchart TD
     A["Interactive Agent UI Testing<br>Antigravity /browser + docs/testing/*.md"] --> B["Automated UI & Route Tests<br>scripts/run_ui_tests.sh & pytest test_ui_flows.py"]
-    B --> C["Unit Tests & Linters<br>pytest + black + flake8 (scripts/run_tests.sh)"]
+    B --> C["Unit Tests & Linters<br>pytest + black + ruff (scripts/run_tests.sh)"]
 ```
 
 | Tier | Tool / Runner | Purpose | Execution Frequency |
 | :--- | :--- | :--- | :--- |
-| **Unit & Lints** | `bash scripts/run_tests.sh` | Unit test models, API validators, sync engines, and enforce code style (`black`, `flake8`). | Pre-commit / Pre-PR |
+| **Unit & Lints** | `bash scripts/run_tests.sh` | Unit test models, API validators, sync engines, and enforce code style (`black`, `ruff`). | Pre-commit / Pre-PR |
 | **Automated UI / DOM** | `bash scripts/run_ui_tests.sh` | Fast route scanning, static asset integrity, Grid.js JSON payloads, and British English linter. | Pre-commit / Pre-PR |
 | **Full Pipeline** | `bash scripts/verify_all.sh` | Runs unit tests, automated UI tests, and Docker container packaging validation. | Mandatory Pre-PR |
 | **Agent UI Testing** | `/browser` in Antigravity | Exploratory, visual layout, responsive, and end-to-end interactive journey testing. | During development |
