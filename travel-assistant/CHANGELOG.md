@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.
 - Fixed bus timetables not being downloaded during BODS synchronisation by resolving target bus stop references with prefix awareness (`naptan:` vs `atco:`) to their 12-digit ATCO codes before matching against TransXChange XML `<StopPointRef>` elements in `sync_bus_timetables`.
 - Fixed BODS dataset listing queries truncating at single-page limits (which omitted published datasets such as Arriva Thameside in Hertfordshire) by implementing multi-page offset-based pagination across `BodsClient.fetch_routes` and `BodsClient.fetch_timetables`.
 - Fixed BODS bus timetable synchronisation failing with HTTP 400 Bad Request ("Unsupported query parameter: boundingBox") by removing the unsupported `boundingBox` parameter from dataset metadata queries in `BodsClient.fetch_timetables` and `sync_bus_timetables`, relying on valid `adminArea` filtering.
