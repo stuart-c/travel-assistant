@@ -5,7 +5,7 @@ bus stops, and rail station datasets using modular datasource clients.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 from flask import Flask
 
 from app.datasources import (
@@ -179,8 +179,6 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         stop_lookup: Dict[str, Dict[str, Any]] = {}
         admin_areas: Set[str] = set()
         resolved_atco_codes: Set[str] = set()
-        lats: List[float] = []
-        lons: List[float] = []
 
         upper_naptan = {c.upper() for c in target_naptan_codes}
         upper_atco = {c.upper() for c in target_atco_codes}
@@ -228,27 +226,11 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                         admin_areas.add(atco_clean[:3])
                 if naptan_clean:
                     resolved_atco_codes.add(naptan_clean)
-                if stp.latitude is not None and stp.longitude is not None:
-                    try:
-                        lats.append(float(stp.latitude))
-                        lons.append(float(stp.longitude))
-                    except (ValueError, TypeError):
-                        pass
-
-        bounding_box = None
-        if lats and lons:
-            bounding_box = (
-                round(min(lons) - 0.05, 4),
-                round(min(lats) - 0.05, 4),
-                round(max(lons) + 0.05, 4),
-                round(max(lats) + 0.05, 4),
-            )
 
         # 3. Fetch matching timetables from BODS
         parsed_timetables = client.fetch_timetables(
             target_stop_codes=resolved_atco_codes if resolved_atco_codes else None,
             admin_areas=sorted(list(admin_areas)) if admin_areas else None,
-            bounding_box=bounding_box,
             stop_lookup=stop_lookup,
         )
         count = len(parsed_timetables)
