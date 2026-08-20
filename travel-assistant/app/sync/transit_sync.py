@@ -4,6 +4,7 @@ Orchestrates background and on-demand synchronisation for bus routes,
 bus stops, and rail station datasets using modular datasource clients.
 """
 
+import logging
 import time
 from typing import Any, Dict, List, Optional, Set
 from flask import Flask
@@ -27,6 +28,8 @@ from app.models import (
     Timetable,
     Walking,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_db_initialized(app: Optional[Flask] = None) -> None:
@@ -524,13 +527,15 @@ def sync_table(
     elif norm_name in ("walking", "walking_routes"):
         return sync_walking_routes(app=app, force=force)
     else:
+        err_msg = (
+            f"Unknown or non-syncable table: '{norm_name}'. "
+            f"Syncable tables are: {', '.join(valid_names)}."
+        )
+        logger.error(err_msg)
         return {
             "table": norm_name,
             "status": "error",
             "records": 0,
-            "message": (
-                f"Unknown or non-syncable table: '{norm_name}'. "
-                f"Syncable tables are: {', '.join(valid_names)}."
-            ),
+            "message": err_msg,
             "duration_seconds": 0.0,
         }
