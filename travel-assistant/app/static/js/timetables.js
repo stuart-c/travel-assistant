@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30',
     },
     rail: {
-      label: 'Train / Rail',
+      label: 'Train',
       icon: 'train',
       badgeClass:
         'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30',
@@ -606,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>`
         ),
         gridjs.html(
-          `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${mode.badgeClass}">
+          `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${mode.badgeClass}">
             <span class="material-symbols-outlined text-xs leading-none">${mode.icon}</span>
             ${mode.label}
           </span>`

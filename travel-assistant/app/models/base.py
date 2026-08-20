@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 TRANSPORT_MODES: Dict[str, Dict[str, str]] = {
     "rail": {
         "type": "rail",
-        "label": "Train / Rail",
+        "label": "Train",
         "icon": "train",
         "indicator": "Rail",
         "description_label": "National Rail Station",

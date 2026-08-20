@@ -18,8 +18,8 @@ window.TransitUI = (function () {
 
   const TRANSPORT_MODES = {
     rail: {
-      label: 'Train / Rail',
-      shortLabel: 'Rail',
+      label: 'Train',
+      shortLabel: 'Train',
       icon: 'train',
       badgeClass:
         'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-500/30',
@@ -87,7 +87,7 @@ window.TransitUI = (function () {
   function getTransportBadge(type, labelOverride = null, short = false) {
     const meta = getTransportMeta(type);
     const label = labelOverride || (short ? meta.shortLabel : meta.label);
-    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${meta.badgeClass}"><span class="material-symbols-outlined text-xs leading-none">${meta.icon}</span> ${escapeHtml(label)}</span>`;
+    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${meta.badgeClass}"><span class="material-symbols-outlined text-xs leading-none">${meta.icon}</span> ${escapeHtml(label)}</span>`;
   }
 
   /**
