@@ -309,18 +309,10 @@ class TrainS3Client(BaseDataSource):
             norm_tpl = tpl.strip().upper()
             if norm_tpl in lookup:
                 return lookup[norm_tpl]
-            if norm_tpl in KNOWN_TIPLOCS:
-                info = KNOWN_TIPLOCS[norm_tpl]
-                crs = str(info.get("crs") or "").strip().upper()
-                if crs and crs in lookup:
-                    return lookup[crs]
-                return {
-                    "id": crs or norm_tpl,
-                    "name": info.get("name") or norm_tpl.title(),
-                    "type": "rail",
-                    "indicator": "Station",
-                    "icon": "train",
-                }
+            # Standard UK NaPTAN rail station ATCO code format: "9100" + TIPLOC
+            naptan_atco = f"9100{norm_tpl}"
+            if naptan_atco in lookup:
+                return lookup[naptan_atco]
             # Fallback title-case formatted station name
             human_name = norm_tpl.title()
             return {
@@ -550,23 +542,4 @@ TOC_NAMES: Dict[str, str] = {
     "SR": "ScotRail",
     "XR": "Elizabeth Line",
     "LO": "London Overground",
-}
-
-KNOWN_TIPLOCS: Dict[str, Dict[str, str]] = {
-    "STEVNG": {"crs": "SVG", "name": "Stevenage"},
-    "STEVNGE": {"crs": "SVG", "name": "Stevenage"},
-    "CAMBDGE": {"crs": "CBG", "name": "Cambridge"},
-    "CAMBNTH": {"crs": "CMB", "name": "Cambridge North"},
-    "KNGX": {"crs": "KGX", "name": "London King's Cross"},
-    "KGX": {"crs": "KGX", "name": "London King's Cross"},
-    "STPX": {"crs": "STP", "name": "London St Pancras International"},
-    "EUSTON": {"crs": "EUS", "name": "London Euston"},
-    "PBO": {"crs": "PBO", "name": "Peterborough"},
-    "MANPIC": {"crs": "MAN", "name": "Manchester Piccadilly"},
-    "EDINBUR": {"crs": "EDB", "name": "Edinburgh Waverley"},
-    "HITCHIN": {"crs": "HIT", "name": "Hitchin"},
-    "HITCHN": {"crs": "HIT", "name": "Hitchin"},
-    "LETCHWT": {"crs": "LET", "name": "Letchworth Garden City"},
-    "BALDOCK": {"crs": "BDK", "name": "Baldock"},
-    "ROYSTON": {"crs": "RYS", "name": "Royston"},
 }

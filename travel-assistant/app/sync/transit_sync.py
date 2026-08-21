@@ -101,8 +101,9 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         # Build stop lookup dictionary from cached rail stops
         stop_lookup: Dict[str, Dict[str, Any]] = {}
         for stp in Stop.select().where(Stop.stop_type == "rail"):
+            canonical_id = stp.atco_code or stp.naptan_code
             meta = {
-                "id": stp.naptan_code or stp.atco_code,
+                "id": canonical_id,
                 "name": stp.name,
                 "type": "rail",
                 "indicator": stp.indicator or "Station",
@@ -110,10 +111,14 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                 "latitude": stp.latitude,
                 "longitude": stp.longitude,
             }
+            if stp.atco_code:
+                atco_clean = stp.atco_code.upper().strip()
+                stop_lookup[atco_clean] = meta
+                if atco_clean.startswith("9100"):
+                    # Index by bare TIPLOC (e.g. 9100STEVNGE -> STEVNGE)
+                    stop_lookup[atco_clean[4:]] = meta
             if stp.naptan_code:
                 stop_lookup[stp.naptan_code.upper().strip()] = meta
-            if stp.atco_code:
-                stop_lookup[stp.atco_code.upper().strip()] = meta
             if stp.name:
                 stop_lookup[stp.name.upper().strip()] = meta
 

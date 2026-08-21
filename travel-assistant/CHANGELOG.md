@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Removed obsolete `rail_references` table, model (`RailReference`), datasource client (`RailReferencesClient`), and background sync task (`sync_rail_references`), as NaPTAN no longer provides the legacy `RailReferences.csv` endpoint and multi-modal transit linking is handled directly via the unified `stops` table and Darwin station resolvers. A migration automatically drops any legacy `rail_references` database tables on startup.
 
+### Changed
+- Removed hardcoded `KNOWN_TIPLOCS` dictionary in `TrainS3Client` and standardised train timetable stop generation to use canonical NaPTAN ATCO codes (`9100...`) mapped dynamically from Darwin XML TIPLOC codes and NaPTAN rail stop lookups, eliminating CRS stop ID mismatches across multi-modal `stop_interchanges` and shuttle bus timetables.
+
 ### Fixed
 - Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.
 - Fixed bus timetables not being downloaded during BODS synchronisation by resolving target bus stop references with prefix awareness (`naptan:` vs `atco:`) to their 12-digit ATCO codes before matching against TransXChange XML `<StopPointRef>` elements in `sync_bus_timetables`.

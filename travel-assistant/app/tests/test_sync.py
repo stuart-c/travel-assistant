@@ -267,7 +267,7 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
                 "content": {
                     "stops": [
                         {
-                            "id": "SVG",
+                            "id": "9100STEVNGE",
                             "name": "Stevenage",
                             "type": "rail",
                             "indicator": "Station",
