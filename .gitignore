@@ -156,6 +156,7 @@ activemq-data/
 # Worktrees & git internal repo
 .worktrees/
 .git_repo/
+.git_local/
 .gh_token
 
 # Local test data & artifacts

@@ -20,6 +20,7 @@ from app.models.transit import (
     BusRoute,
     RailReference,
     Stop,
+    StopInterchange,
     SyncMetadata,
 )
 from app.models.walking import Walking
@@ -31,6 +32,7 @@ ALL_MODELS = [
     BusRoute,
     Stop,
     RailReference,
+    StopInterchange,
     PlatformTransfer,
     Location,
     Journey,
@@ -53,6 +55,7 @@ __all__ = [
     "BusRoute",
     "Stop",
     "RailReference",
+    "StopInterchange",
     "SyncMetadata",
     "PlatformTransfer",
     "ALL_MODELS",

@@ -545,7 +545,7 @@ def test_get_sync_stats(app: Flask) -> None:
         SyncMetadata.record_success("custom_feed", 99, 2.0)
 
         stats = get_sync_stats(app)
-        assert len(stats) == 7
+        assert len(stats) == 8
 
         bus_entry = next((s for s in stats if s["name"] == "bus_routes"), None)
         assert bus_entry is not None
