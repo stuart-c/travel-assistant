@@ -332,24 +332,24 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
     gz_bytes = gzip.compress(xml_content.encode("utf-8"))
     client = TrainS3Client(bucket_name="rail-bucket")
 
-    # 1. Parse with cached stop lookup
+    # 1. Parse with cached stop lookup using canonical NaPTAN ATCO IDs
     stop_lookup = {
-        "SVG": {
-            "id": "SVG",
+        "STEVNG": {
+            "id": "9100STEVNGE",
             "name": "Stevenage",
             "type": "rail",
             "indicator": "Station",
             "icon": "train",
         },
-        "HIT": {
-            "id": "HIT",
+        "HITCHIN": {
+            "id": "9100HITCHIN",
             "name": "Hitchin",
             "type": "rail",
             "indicator": "Station",
             "icon": "train",
         },
-        "CBG": {
-            "id": "CBG",
+        "9100CAMBDGE": {
+            "id": "9100CAMBDGE",
             "name": "Cambridge",
             "type": "rail",
             "indicator": "Station",
@@ -368,8 +368,11 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
 
     content = tt["content"]
     assert len(content["stops"]) == 3
+    assert content["stops"][0]["id"] == "9100STEVNGE"
     assert content["stops"][0]["name"] == "Stevenage"
+    assert content["stops"][1]["id"] == "9100HITCHIN"
     assert content["stops"][1]["name"] == "Hitchin"
+    assert content["stops"][2]["id"] == "9100CAMBDGE"
     assert content["stops"][2]["name"] == "Cambridge"
 
     assert len(content["trips"]) == 2
