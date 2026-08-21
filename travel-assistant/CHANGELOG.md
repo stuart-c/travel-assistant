@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added comprehensive technical architecture specification (`docs/architecture/03_journey_routing_and_planning_process.md`) defining the programmatic, multi-modal routing and itinerary planning process using pure SQLite database data (RAPTOR search engine, dual-mode topological corridor discovery and time-dependent trip scheduling, multi-criteria Pareto frontier ranking, and hierarchical transfer resolution).
 - Added weekly background synchronisation process and `stop_interchanges` table discovering nearby transit stop interchanges within 250 metres across all transport modes using SQLite R*Tree geospatial indexing on British National Grid `easting` and `northing` coordinates. Includes the `StopInterchange` model, `sync_stop_interchanges` pipeline, automated re-sync trigger upon `stops` ingest, and full integration into `SYNC_REGISTRY` and `/config/sync`.
 
 ### Removed
