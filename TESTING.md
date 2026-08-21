@@ -38,7 +38,7 @@ bash scripts/run_dev.sh --sample-db
 The sample dataset includes:
 * **UK Rail Stations**: London King's Cross (`KGX`), London St Pancras (`STP`), London Euston (`EUS`), Manchester Piccadilly (`MAN`), Edinburgh Waverley (`EDB`).
 * **Bus Stops & Routes**: TfL bus stops (`490000077E`, `490000077W`, `490000077C`) and routes (73, 30, 205).
-* **Locations**: Home Assistant zones (`zone.home`, `zone.work`, `zone.gym`) and custom places (`custom:central_library`, `custom:community_centre`, `custom:parents_house`).
+* **Locations**: Home Assistant zones (`ha:home`, `ha:work`, `ha:gym`) and custom places (`custom:central_library`, `custom:community_centre`, `custom:parents_house`).
 * **Timetables**: Configured weekday and weekend transit schedules.
 * **Transfers**: Within-station platform and stand transfer times.
 * **Journeys**: Configured multi-leg travel routes with target arrival times.

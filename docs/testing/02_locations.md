@@ -17,12 +17,12 @@ Validate custom location creation, geographic coordinate validation, Home Assist
 2. Verify the page title is `Locations - Travel Assistant`.
 3. Verify that the Grid.js table mounts properly in `#locations-grid-wrapper`.
 4. Check that pre-seeded sample locations appear in the table:
-   * **Home** (`zone.home`) with HA badge indicating synchronised status.
-   * **Tech Campus** (`zone.work`) with HA badge.
+   * **Home** (`ha:home`) with HA badge indicating synchronised status.
+   * **Tech Campus** (`ha:work`) with HA badge.
    * **Central Public Library** (`custom:...`) as a custom location.
 
 ### Scenario 2.2: Home Assistant Read-Only Protection
-1. Locate the **Home** (`zone.home`) row in the table.
+1. Locate the **Home** (`ha:home`) row in the table.
 2. Click the edit button for this row.
 3. **Expected Result**:
    * The location modal opens with an informative banner: `This location is synchronised from Home Assistant and is read-only. Coordinates and names cannot be edited or deleted here.`

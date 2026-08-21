@@ -204,21 +204,21 @@ def seed_database(db_path: str) -> None:
         print("  -> Seeding Home Assistant zones and custom locations...")
         locations = [
             Location(
-                id="zone.home",
+                id="ha:home",
                 name="Home",
                 latitude=51.5360,
                 longitude=-0.1250,
                 ha=True,
             ),
             Location(
-                id="zone.work",
+                id="ha:work",
                 name="Tech Campus",
                 latitude=51.5200,
                 longitude=-0.0800,
                 ha=True,
             ),
             Location(
-                id="zone.gym",
+                id="ha:gym",
                 name="City Health Club",
                 latitude=51.5250,
                 longitude=-0.1100,
@@ -270,7 +270,7 @@ def seed_database(db_path: str) -> None:
             {
                 "stops": [
                     {
-                        "id": "9100KNGX",
+                        "id": "naptan:KGX",
                         "name": "London King's Cross",
                         "type": "rail",
                         "indicator": "Station",
@@ -279,7 +279,7 @@ def seed_database(db_path: str) -> None:
                         "longitude": -0.1238,
                     },
                     {
-                        "id": "490000077E",
+                        "id": "atco:490000077E",
                         "name": "King's Cross Station",
                         "type": "bus",
                         "indicator": "Stop E",
@@ -348,7 +348,7 @@ def seed_database(db_path: str) -> None:
             {
                 "stops": [
                     {
-                        "id": "490000077E",
+                        "id": "atco:490000077E",
                         "name": "King's Cross Station",
                         "type": "bus",
                         "indicator": "Stop E",
@@ -357,7 +357,7 @@ def seed_database(db_path: str) -> None:
                         "longitude": -0.1225,
                     },
                     {
-                        "id": "490000077C",
+                        "id": "atco:490000077C",
                         "name": "Euston Station",
                         "type": "bus",
                         "indicator": "Stop C",
@@ -406,7 +406,7 @@ def seed_database(db_path: str) -> None:
             {
                 "stops": [
                     {
-                        "id": "SVG",
+                        "id": "naptan:SVG",
                         "name": "Stevenage",
                         "type": "rail",
                         "indicator": "Station",
@@ -415,7 +415,7 @@ def seed_database(db_path: str) -> None:
                         "longitude": -0.2065,
                     },
                     {
-                        "id": "HIT",
+                        "id": "naptan:HIT",
                         "name": "Hitchin",
                         "type": "rail",
                         "indicator": "Station",
@@ -424,7 +424,7 @@ def seed_database(db_path: str) -> None:
                         "longitude": -0.2640,
                     },
                     {
-                        "id": "CBG",
+                        "id": "naptan:CBG",
                         "name": "Cambridge",
                         "type": "rail",
                         "indicator": "Station",
@@ -508,16 +508,16 @@ def seed_database(db_path: str) -> None:
             Journey(
                 name="Daily Office Commute",
                 from_type="ha",
-                from_id="zone.home",
+                from_id="ha:home",
                 from_name="Home",
                 to_type="ha",
-                to_id="zone.work",
+                to_id="ha:work",
                 to_name="Tech Campus",
             ),
             Journey(
                 name="Library Study Session",
                 from_type="ha",
-                from_id="zone.home",
+                from_id="ha:home",
                 from_name="Home",
                 to_type="custom",
                 to_id="custom:central_library",
@@ -526,7 +526,7 @@ def seed_database(db_path: str) -> None:
             Journey(
                 name="Weekend Family Visit",
                 from_type="ha",
-                from_id="zone.home",
+                from_id="ha:home",
                 from_name="Home",
                 to_type="custom",
                 to_id="custom:parents_house",
@@ -535,10 +535,10 @@ def seed_database(db_path: str) -> None:
             Journey(
                 name="Intercity Journey: London to Manchester",
                 from_type="rail",
-                from_id="9100EUSTON",
+                from_id="naptan:EUS",
                 from_name="London Euston",
                 to_type="rail",
-                to_id="9100MNCR",
+                to_id="naptan:MAN",
                 to_name="Manchester Piccadilly",
             ),
         ]
@@ -559,17 +559,17 @@ def seed_database(db_path: str) -> None:
         walking_routes = [
             Walking(
                 start_type="ha",
-                start_id="zone.home",
+                start_id="ha:home",
                 start_name="Home",
                 finish_type="bus",
-                finish_id="490000077E",
+                finish_id="atco:490000077E",
                 finish_name="King's Cross Station (Stop E)",
                 time_needed_minutes=8,
                 bidirectional=True,
             ),
             Walking(
                 start_type="rail",
-                start_id="9100KNGX",
+                start_id="naptan:KGX",
                 start_name="London King's Cross",
                 finish_type="custom",
                 finish_id="custom:central_library",
@@ -579,7 +579,7 @@ def seed_database(db_path: str) -> None:
             ),
             Walking(
                 start_type="ha",
-                start_id="zone.home",
+                start_id="ha:home",
                 start_name="Home",
                 finish_type="custom",
                 finish_id="custom:parents_house",

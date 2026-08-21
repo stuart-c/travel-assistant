@@ -318,7 +318,7 @@ class TrainS3Client(BaseDataSource):
             # Fallback title-case formatted station name
             human_name = norm_tpl.title()
             return {
-                "id": norm_tpl,
+                "id": f"tiploc:{norm_tpl}",
                 "name": human_name,
                 "type": "rail",
                 "indicator": "Station",

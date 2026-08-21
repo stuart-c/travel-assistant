@@ -536,7 +536,7 @@ class BodsClient(BaseDataSource):
                 if stop_ref:
                     meta = lookup.get(stop_ref.upper()) or {}
                     stops_map[stop_ref] = {
-                        "id": stop_ref,
+                        "id": meta.get("id") or f"atco:{stop_ref}",
                         "name": meta.get("name") or common_name or stop_ref,
                         "indicator": meta.get("indicator") or indicator or "Bus Stop",
                         "type": "bus",

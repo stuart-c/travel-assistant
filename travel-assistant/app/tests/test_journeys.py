@@ -287,10 +287,10 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
         {
             "name": "Gym Workout Route",
             "from_type": "ha",
-            "from_id": "zone.home",
+            "from_id": "ha:home",
             "from_name": "Home",
             "to_type": "ha",
-            "to_id": "zone.gym",
+            "to_id": "ha:gym",
             "to_name": "City Health Club",
             "time_settings": [
                 {
@@ -330,8 +330,8 @@ def test_journey_save_leave_and_return_persistence(client: FlaskClient) -> None:
     assert len(persisted_journeys) == 1
     item = persisted_journeys[0]
     assert item["name"] == "Gym Workout Route"
-    assert item["from_id"] == "zone.home"
-    assert item["to_id"] == "zone.gym"
+    assert item["from_id"] == "ha:home"
+    assert item["to_id"] == "ha:gym"
     assert len(item["time_settings"]) == 1
     assert item["time_settings"][0]["mode"] == "arrive"
     assert item["time_settings"][0]["days"] == ["mon", "wed", "fri"]
@@ -347,7 +347,7 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
             {
                 "name": "Library Study Session",
                 "from_type": "ha",
-                "from_id": "zone.home",
+                "from_id": "ha:home",
                 "from_name": "Home",
                 "to_type": "custom",
                 "to_id": "custom:library",
@@ -357,7 +357,7 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
             {
                 "name": "Weekend Family Visit",
                 "from_type": "ha",
-                "from_id": "zone.home",
+                "from_id": "ha:home",
                 "from_name": "Home",
                 "to_type": "custom",
                 "to_id": "custom:parents",
@@ -389,7 +389,7 @@ def test_journey_edit_and_delete_persistence(client: FlaskClient) -> None:
                 "id": lib_journey.id,
                 "name": "Central Library Research Session",
                 "from_type": "ha",
-                "from_id": "zone.home",
+                "from_id": "ha:home",
                 "from_name": "Home",
                 "to_type": "custom",
                 "to_id": "custom:library",
@@ -434,7 +434,7 @@ def test_config_journeys_data_endpoint(app: Flask, client: FlaskClient) -> None:
                 {
                     "name": "Data Endpoint Test Journey",
                     "from_type": "ha",
-                    "from_id": "zone.home",
+                    "from_id": "ha:home",
                     "from_name": "Home",
                     "to_type": "rail",
                     "to_id": "WAT",
@@ -452,7 +452,7 @@ def test_config_journeys_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert "total" in payload
     assert payload["total"] == 1
     assert payload["data"][0]["name"] == "Data Endpoint Test Journey"
-    assert payload["data"][0]["from_id"] == "zone.home"
+    assert payload["data"][0]["from_id"] == "ha:home"
 
 
 def test_config_journeys_pagination_and_sorting(

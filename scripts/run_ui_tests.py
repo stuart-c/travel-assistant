@@ -281,7 +281,7 @@ class UITester:
                 {
                     "name": "Lab Commute",
                     "from_type": "ha",
-                    "from_id": "zone.home",
+                    "from_id": "ha:home",
                     "from_name": "Home Base",
                     "to_type": "custom",
                     "to_id": "custom:lab",
@@ -314,7 +314,7 @@ class UITester:
             "added": [
                 {
                     "start_type": "ha",
-                    "start_id": "zone.home",
+                    "start_id": "ha:home",
                     "start_name": "Home Base",
                     "finish_type": "custom",
                     "finish_id": "custom:lab",

@@ -24,8 +24,8 @@ Validate the creation, modification, and persistence of configured journeys betw
 1. Click **+ Add Journey**.
 2. In the modal dialog, configure:
    * **Journey Name**: `Gym Workout Route`
-   * **Origin Type & Location**: Select `Home Assistant Zone` -> `Home` (`zone.home`).
-   * **Destination Type & Location**: Select `Home Assistant Zone` -> `City Health Club` (`zone.gym`).
+   * **Origin Type & Location**: Select `Home Assistant Zone` -> `Home` (`ha:home`).
+   * **Destination Type & Location**: Select `Home Assistant Zone` -> `City Health Club` (`ha:gym`).
    * **Target Arrival Time**: `07:15`
    * **Buffer Time**: `10` minutes.
 3. Click **Add to Table**.
