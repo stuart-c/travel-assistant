@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added weekly background synchronisation of NaPTAN `RailReferences.csv` into a new `rail_references` table, providing a mapping from TIPLOC codes (used in Darwin XML timetable feeds) to NaPTAN ATCO codes and passenger-facing CRS codes. The `RailReferencesClient` datasource client, `sync_rail_references` sync function, and `RailReference` model (with `bulk_replace`, `get_by_tiploc`, `get_by_atco`, and `get_by_crs` helpers) are all wired into the existing `SYNC_REGISTRY`, `sync_table` dispatcher, and UI sync endpoint.
+
 ### Fixed
 - Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.
 - Fixed bus timetables not being downloaded during BODS synchronisation by resolving target bus stop references with prefix awareness (`naptan:` vs `atco:`) to their 12-digit ATCO codes before matching against TransXChange XML `<StopPointRef>` elements in `sync_bus_timetables`.
