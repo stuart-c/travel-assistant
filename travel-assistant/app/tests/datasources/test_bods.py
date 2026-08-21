@@ -727,3 +727,163 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
     # Peak full trip: 08:30 -> 08:40 -> 08:45 -> 08:53 -> 09:05
     assert trips[2]["id"] == "VJ_PEAK_FULL"
     assert trips[2]["times"] == ["08:30", "08:40", "08:45", "08:53", "09:05"]
+
+
+def test_bods_parse_vehicle_journey_operating_profile_override():
+    """Test that VehicleJourney-level OperatingProfile overrides Service-level default."""
+    xml_data = """<?xml version="1.0" encoding="UTF-8"?>
+<TransXChange xmlns="http://www.transxchange.org.uk/" CreationDateTime="2026-08-21T07:00:00" SchemaVersion="2.4">
+  <StopPoints>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_A</StopPointRef>
+      <CommonName>Stevenage Station</CommonName>
+    </AnnotatedStopPointRef>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_B</StopPointRef>
+      <CommonName>Hitchin Town Centre</CommonName>
+    </AnnotatedStopPointRef>
+  </StopPoints>
+  <JourneyPatternSections>
+    <JourneyPatternSection id="JPS_1">
+      <JourneyPatternTimingLink id="JPTL_1">
+        <From><StopPointRef>STOP_A</StopPointRef></From>
+        <To><StopPointRef>STOP_B</StopPointRef></To>
+        <RunTime>PT20M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+  </JourneyPatternSections>
+  <Services>
+    <Service>
+      <ServiceCode>SER_100</ServiceCode>
+      <Lines><Line id="L1"><LineName>100</LineName></Line></Lines>
+      <OperatingPeriod><StartDate>2026-08-01</StartDate></OperatingPeriod>
+      <OperatingProfile>
+        <RegularDayType>
+          <DaysOfWeek><MondayToSunday/></DaysOfWeek>
+        </RegularDayType>
+      </OperatingProfile>
+      <StandardService>
+        <Origin>Stevenage</Origin>
+        <Destination>Hitchin</Destination>
+        <JourneyPattern id="JP_1">
+          <JourneyPatternSectionRefs>JPS_1</JourneyPatternSectionRefs>
+        </JourneyPattern>
+      </StandardService>
+    </Service>
+  </Services>
+  <VehicleJourneys>
+    <VehicleJourney>
+      <VehicleJourneyCode>VJ_WD_1</VehicleJourneyCode>
+      <ServiceRef>SER_100</ServiceRef>
+      <JourneyPatternRef>JP_1</JourneyPatternRef>
+      <DepartureTime>07:00:00</DepartureTime>
+      <OperatingProfile>
+        <RegularDayType>
+          <DaysOfWeek><MondayToFriday/></DaysOfWeek>
+        </RegularDayType>
+        <BankHolidayOperation><DaysOfNonOperation/></BankHolidayOperation>
+      </OperatingProfile>
+    </VehicleJourney>
+    <VehicleJourney>
+      <VehicleJourneyCode>VJ_SUN_1</VehicleJourneyCode>
+      <ServiceRef>SER_100</ServiceRef>
+      <JourneyPatternRef>JP_1</JourneyPatternRef>
+      <DepartureTime>09:00:00</DepartureTime>
+      <OperatingProfile>
+        <RegularDayType>
+          <DaysOfWeek><Sunday/></DaysOfWeek>
+        </RegularDayType>
+      </OperatingProfile>
+    </VehicleJourney>
+  </VehicleJourneys>
+</TransXChange>
+"""
+    timetables = BodsClient.parse_transxchange_xml(xml_data)
+    assert len(timetables) == 2
+
+    # Find weekday timetable and Sunday timetable
+    wd_tt = next((tt for tt in timetables if tt["monday"] and not tt["sunday"]), None)
+    sun_tt = next((tt for tt in timetables if tt["sunday"] and not tt["monday"]), None)
+
+    assert wd_tt is not None
+    assert wd_tt["monday"] is True
+    assert wd_tt["friday"] is True
+    assert wd_tt["saturday"] is False
+    assert wd_tt["sunday"] is False
+    assert wd_tt["bank_holiday"] is False
+    assert len(wd_tt["content"]["trips"]) == 1
+    assert wd_tt["content"]["trips"][0]["id"] == "VJ_WD_1"
+
+    assert sun_tt is not None
+    assert sun_tt["monday"] is False
+    assert sun_tt["saturday"] is False
+    assert sun_tt["sunday"] is True
+    assert len(sun_tt["content"]["trips"]) == 1
+    assert sun_tt["content"]["trips"][0]["id"] == "VJ_SUN_1"
+
+
+def test_bods_parse_linear_deviating_patterns_consolidation():
+    """Test that linear route patterns skipping intermediate stops consolidate into one timetable with gaps."""
+    xml_data = """<?xml version="1.0" encoding="UTF-8"?>
+<TransXChange xmlns="http://www.transxchange.org.uk/" CreationDateTime="2026-08-21T07:00:00" SchemaVersion="2.4">
+  <StopPoints>
+    <AnnotatedStopPointRef><StopPointRef>STOP_1</StopPointRef><CommonName>Origin Station</CommonName></AnnotatedStopPointRef>
+    <AnnotatedStopPointRef><StopPointRef>STOP_2</StopPointRef><CommonName>Intermediate Stop</CommonName></AnnotatedStopPointRef>
+    <AnnotatedStopPointRef><StopPointRef>STOP_3</StopPointRef><CommonName>Skipped Village</CommonName></AnnotatedStopPointRef>
+    <AnnotatedStopPointRef><StopPointRef>STOP_4</StopPointRef><CommonName>Terminus</CommonName></AnnotatedStopPointRef>
+  </StopPoints>
+  <JourneyPatternSections>
+    <JourneyPatternSection id="JPS_ALL">
+      <JourneyPatternTimingLink id="L1"><From><StopPointRef>STOP_1</StopPointRef></From><To><StopPointRef>STOP_2</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="L2"><From><StopPointRef>STOP_2</StopPointRef></From><To><StopPointRef>STOP_3</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="L3"><From><StopPointRef>STOP_3</StopPointRef></From><To><StopPointRef>STOP_4</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_EXPRESS">
+      <JourneyPatternTimingLink id="EL1"><From><StopPointRef>STOP_1</StopPointRef></From><To><StopPointRef>STOP_2</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="EL2"><From><StopPointRef>STOP_2</StopPointRef></From><To><StopPointRef>STOP_4</StopPointRef></To><RunTime>PT15M</RunTime></JourneyPatternTimingLink>
+    </JourneyPatternSection>
+  </JourneyPatternSections>
+  <Services>
+    <Service>
+      <ServiceCode>SER_55</ServiceCode>
+      <Lines><Line id="L1"><LineName>55</LineName></Line></Lines>
+      <StandardService>
+        <Origin>Origin</Origin><Destination>Terminus</Destination>
+        <JourneyPattern id="JP_ALL"><JourneyPatternSectionRefs>JPS_ALL</JourneyPatternSectionRefs></JourneyPattern>
+        <JourneyPattern id="JP_EXP"><JourneyPatternSectionRefs>JPS_EXPRESS</JourneyPatternSectionRefs></JourneyPattern>
+      </StandardService>
+    </Service>
+  </Services>
+  <VehicleJourneys>
+    <VehicleJourney>
+      <VehicleJourneyCode>TRIP_ALL</VehicleJourneyCode>
+      <ServiceRef>SER_55</ServiceRef>
+      <JourneyPatternRef>JP_ALL</JourneyPatternRef>
+      <DepartureTime>08:00:00</DepartureTime>
+    </VehicleJourney>
+    <VehicleJourney>
+      <VehicleJourneyCode>TRIP_EXP</VehicleJourneyCode>
+      <ServiceRef>SER_55</ServiceRef>
+      <JourneyPatternRef>JP_EXP</JourneyPatternRef>
+      <DepartureTime>08:30:00</DepartureTime>
+    </VehicleJourney>
+  </VehicleJourneys>
+</TransXChange>
+"""
+    timetables = BodsClient.parse_transxchange_xml(xml_data)
+    assert len(timetables) == 1
+    tt = timetables[0]
+    assert [s["id"] for s in tt["content"]["stops"]] == [
+        "STOP_1",
+        "STOP_2",
+        "STOP_3",
+        "STOP_4",
+    ]
+    trips = tt["content"]["trips"]
+    assert len(trips) == 2
+    # All stops trip
+    assert trips[0]["id"] == "TRIP_ALL"
+    assert trips[0]["times"] == ["08:00", "08:10", "08:20", "08:30"]
+    # Express trip skipping STOP_3
+    assert trips[1]["id"] == "TRIP_EXP"
+    assert trips[1]["times"] == ["08:30", "08:40", "", "08:55"]

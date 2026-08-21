@@ -74,6 +74,158 @@ def _format_seconds_to_hh_mm(total_seconds: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+def _parse_operating_profile(
+    elem: ET.Element,
+    default_days: Optional[Dict[str, bool]] = None,
+) -> Dict[str, bool]:
+    """Parse OperatingProfile XML element for days of week and bank holiday flags."""
+    days = (
+        dict(default_days)
+        if default_days is not None
+        else {
+            "monday": True,
+            "tuesday": True,
+            "wednesday": True,
+            "thursday": True,
+            "friday": True,
+            "saturday": True,
+            "sunday": True,
+            "bank_holiday": True,
+        }
+    )
+
+    for child in elem:
+        c_tag = _clean_tag(child.tag)
+        if c_tag == "RegularDayType":
+            for rdt in child:
+                rdt_tag = _clean_tag(rdt.tag)
+                if rdt_tag == "DaysOfWeek":
+                    day_tags = {_clean_tag(d.tag) for d in rdt}
+                    if day_tags:
+                        days["monday"] = (
+                            "Monday" in day_tags
+                            or "MondayToFriday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "MondayToThursday" in day_tags
+                            or "SundayToThursday" in day_tags
+                            or "NotSaturday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["tuesday"] = (
+                            "Tuesday" in day_tags
+                            or "MondayToFriday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "MondayToThursday" in day_tags
+                            or "TuesdayToFriday" in day_tags
+                            or "SundayToThursday" in day_tags
+                            or "NotSaturday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["wednesday"] = (
+                            "Wednesday" in day_tags
+                            or "MondayToFriday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "MondayToThursday" in day_tags
+                            or "TuesdayToFriday" in day_tags
+                            or "SundayToThursday" in day_tags
+                            or "NotSaturday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["thursday"] = (
+                            "Thursday" in day_tags
+                            or "MondayToFriday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "MondayToThursday" in day_tags
+                            or "TuesdayToFriday" in day_tags
+                            or "SundayToThursday" in day_tags
+                            or "NotSaturday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["friday"] = (
+                            "Friday" in day_tags
+                            or "MondayToFriday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "TuesdayToFriday" in day_tags
+                            or "NotSaturday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["saturday"] = (
+                            "Saturday" in day_tags
+                            or "Weekend" in day_tags
+                            or "SaturdayToSunday" in day_tags
+                            or "MondayToSaturday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "NotSunday" in day_tags
+                        )
+                        days["sunday"] = (
+                            "Sunday" in day_tags
+                            or "Weekend" in day_tags
+                            or "SaturdayToSunday" in day_tags
+                            or "SundayToThursday" in day_tags
+                            or "MondayToSunday" in day_tags
+                            or "NotSaturday" in day_tags
+                        )
+                elif rdt_tag == "HolidaysOnly":
+                    days["monday"] = False
+                    days["tuesday"] = False
+                    days["wednesday"] = False
+                    days["thursday"] = False
+                    days["friday"] = False
+                    days["saturday"] = False
+                    days["sunday"] = False
+                    days["bank_holiday"] = True
+        elif c_tag == "BankHolidayOperation":
+            for bho in child:
+                bho_tag = _clean_tag(bho.tag)
+                if bho_tag == "DaysOfNonOperation":
+                    days["bank_holiday"] = False
+                elif bho_tag == "DaysOfOperation":
+                    days["bank_holiday"] = True
+
+    return days
+
+
+def _merge_stop_sequences(master: List[str], new_seq: List[str]) -> List[str]:
+    """Merge new_seq into master stop sequence preserving relative visitation order."""
+    if not master:
+        return list(new_seq)
+    if not new_seq:
+        return list(master)
+
+    res = list(master)
+    curr_idx = 0
+    for s in new_seq:
+        if s in res[curr_idx:]:
+            curr_idx = res.index(s, curr_idx) + 1
+        elif s in res:
+            curr_idx = res.index(s) + 1
+        else:
+            res.insert(curr_idx, s)
+            curr_idx += 1
+    return res
+
+
+def _align_times_to_master(
+    stops: List[str], times: List[Any], master_stops: List[str]
+) -> List[Any]:
+    """Align a trip's stop times onto master_stops, filling unvisited stops with empty string."""
+    m_len = len(master_stops)
+    aligned: List[Any] = [""] * m_len
+    curr_m = 0
+    for s, tm in zip(stops, times):
+        while curr_m < m_len and master_stops[curr_m] != s:
+            curr_m += 1
+        if curr_m < m_len:
+            aligned[curr_m] = tm
+            curr_m += 1
+    return aligned
+
+
 def _align_subsequence(
     sub_stops: List[str], sub_times: List[str], master_stops: List[str]
 ) -> Optional[List[str]]:
@@ -450,7 +602,10 @@ class BodsClient(BaseDataSource):
                     sections_map[sec_id] = links
 
         # 4. Parse Services
-        services: List[Dict[str, Any]] = []
+        services_by_code: Dict[str, Dict[str, Any]] = {}
+        pattern_to_service: Dict[str, str] = {}
+        pattern_sequences: Dict[str, Dict[str, Any]] = {}
+
         for elem in root.iter():
             tag = _clean_tag(elem.tag)
             if tag == "Service":
@@ -460,11 +615,17 @@ class BodsClient(BaseDataSource):
                 destination = ""
                 start_date: Optional[datetime.date] = None
                 end_date: Optional[datetime.date] = None
-                monday = tuesday = wednesday = thursday = friday = saturday = sunday = (
-                    True
-                )
-                bank_holiday = True
-                patterns: Dict[str, Dict[str, Any]] = {}
+                svc_days: Dict[str, bool] = {
+                    "monday": True,
+                    "tuesday": True,
+                    "wednesday": True,
+                    "thursday": True,
+                    "friday": True,
+                    "saturday": True,
+                    "sunday": True,
+                    "bank_holiday": True,
+                }
+                patterns_elem: List[ET.Element] = []
 
                 for child in elem:
                     c_tag = _clean_tag(child.tag)
@@ -494,57 +655,9 @@ class BodsClient(BaseDataSource):
                                 except ValueError:
                                     pass
                     elif c_tag == "OperatingProfile":
-                        for opc in child:
-                            if _clean_tag(opc.tag) == "RegularDayType":
-                                for rdt in opc:
-                                    if _clean_tag(rdt.tag) == "DaysOfWeek":
-                                        day_tags = {_clean_tag(d.tag) for d in rdt}
-                                        if day_tags:
-                                            monday = (
-                                                "Monday" in day_tags
-                                                or "MondayToFriday" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            tuesday = (
-                                                "Tuesday" in day_tags
-                                                or "MondayToFriday" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            wednesday = (
-                                                "Wednesday" in day_tags
-                                                or "MondayToFriday" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            thursday = (
-                                                "Thursday" in day_tags
-                                                or "MondayToFriday" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            friday = (
-                                                "Friday" in day_tags
-                                                or "MondayToFriday" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            saturday = (
-                                                "Saturday" in day_tags
-                                                or "Weekend" in day_tags
-                                                or "MondayToSaturday" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                                            sunday = (
-                                                "Sunday" in day_tags
-                                                or "Weekend" in day_tags
-                                                or "MondayToSunday" in day_tags
-                                            )
-                            elif _clean_tag(opc.tag) == "BankHolidayOperation":
-                                for bho in opc:
-                                    if _clean_tag(bho.tag) == "DaysOfNonOperation":
-                                        bank_holiday = False
+                        svc_days = _parse_operating_profile(
+                            child, default_days=svc_days
+                        )
                     elif c_tag == "StandardService":
                         for ssc in child:
                             ssc_tag = _clean_tag(ssc.tag)
@@ -553,77 +666,109 @@ class BodsClient(BaseDataSource):
                             elif ssc_tag == "Destination" and ssc.text:
                                 destination = ssc.text.strip()
                             elif ssc_tag == "JourneyPattern":
-                                jp_id = ssc.get("id", "").strip()
-                                sec_refs: List[str] = []
-                                for jpc in ssc:
-                                    if (
-                                        _clean_tag(jpc.tag)
-                                        == "JourneyPatternSectionRefs"
-                                        and jpc.text
-                                    ):
-                                        sec_refs.append(jpc.text.strip())
-                                if jp_id:
-                                    patterns[jp_id] = {"section_refs": sec_refs}
+                                patterns_elem.append(ssc)
 
                 line_name = lines[0] if lines else svc_code or "Bus"
-                services.append(
-                    {
-                        "service_code": svc_code,
-                        "line_name": line_name,
-                        "origin": origin,
-                        "destination": destination,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "monday": monday,
-                        "tuesday": tuesday,
-                        "wednesday": wednesday,
-                        "thursday": thursday,
-                        "friday": friday,
-                        "saturday": saturday,
-                        "sunday": sunday,
-                        "bank_holiday": bank_holiday,
-                        "patterns": patterns,
-                    }
-                )
-
-        # Build full sequence of stops & cumulative offsets for each journey pattern
-        pattern_sequences: Dict[str, Dict[str, Any]] = {}
-        for svc in services:
-            for jp_id, p_info in svc["patterns"].items():
-                ordered_stops: List[str] = []
-                cum_offsets: List[int] = []
-                current_time = 0
-
-                for sec_ref in p_info.get("section_refs", []):
-                    links = sections_map.get(sec_ref, [])
-                    for link in links:
-                        from_st = link["from"]
-                        to_st = link["to"]
-                        runtime = link["runtime_sec"]
-
-                        if not ordered_stops:
-                            ordered_stops.append(from_st)
-                            cum_offsets.append(current_time)
-
-                        current_time += runtime
-                        if not ordered_stops or ordered_stops[-1] != to_st:
-                            ordered_stops.append(to_st)
-                            cum_offsets.append(current_time)
-
-                pattern_sequences[jp_id] = {
-                    "stops": ordered_stops,
-                    "offsets": cum_offsets,
+                svc_info = {
+                    "service_code": svc_code,
+                    "line_name": line_name,
+                    "origin": origin,
+                    "destination": destination,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "days": svc_days,
                 }
+                if svc_code:
+                    services_by_code[svc_code] = svc_info
+                # Also store under line_name as fallback
+                services_by_code.setdefault(line_name, svc_info)
+
+                for jp_elem in patterns_elem:
+                    jp_id = jp_elem.get("id", "").strip()
+                    sec_refs: List[str] = []
+                    direction = ""
+                    jp_days = dict(svc_days)
+
+                    for jpc in jp_elem:
+                        jpc_tag = _clean_tag(jpc.tag)
+                        if jpc_tag == "JourneyPatternSectionRefs" and jpc.text:
+                            sec_refs.append(jpc.text.strip())
+                        elif jpc_tag == "Direction" and jpc.text:
+                            direction = jpc.text.strip().lower()
+                        elif jpc_tag == "OperatingProfile":
+                            jp_days = _parse_operating_profile(
+                                jpc, default_days=svc_days
+                            )
+
+                    if jp_id:
+                        pattern_to_service[jp_id] = svc_code or line_name
+
+                        # Build ordered stops and offsets for journey pattern
+                        ordered_stops: List[str] = []
+                        cum_offsets: List[int] = []
+                        current_time = 0
+
+                        for sec_ref in sec_refs:
+                            links = sections_map.get(sec_ref, [])
+                            for link in links:
+                                from_st = link["from"]
+                                to_st = link["to"]
+                                runtime = link["runtime_sec"]
+
+                                if not ordered_stops:
+                                    ordered_stops.append(from_st)
+                                    cum_offsets.append(current_time)
+
+                                current_time += runtime
+                                if not ordered_stops or ordered_stops[-1] != to_st:
+                                    ordered_stops.append(to_st)
+                                    cum_offsets.append(current_time)
+
+                        pattern_sequences[jp_id] = {
+                            "stops": ordered_stops,
+                            "offsets": cum_offsets,
+                            "direction": direction,
+                            "days": jp_days,
+                            "service_code": svc_code,
+                            "line_name": line_name,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "origin": origin,
+                            "destination": destination,
+                        }
+
+        default_service: Dict[str, Any] = {
+            "service_code": "",
+            "line_name": "Bus",
+            "origin": "",
+            "destination": "",
+            "start_date": None,
+            "end_date": None,
+            "days": {
+                "monday": True,
+                "tuesday": True,
+                "wednesday": True,
+                "thursday": True,
+                "friday": True,
+                "saturday": True,
+                "sunday": True,
+                "bank_holiday": True,
+            },
+        }
 
         # 5. Parse VehicleJourneys
-        trips_by_pattern: Dict[str, List[Dict[str, Any]]] = {}
+        raw_trips: List[Dict[str, Any]] = []
         for elem in root.iter():
             tag = _clean_tag(elem.tag)
             if tag == "VehicleJourney":
                 vj_code = ""
                 jp_ref = ""
+                svc_ref = ""
                 dep_time_str = ""
                 operator_ref = ""
+                vj_op_profile_elem: Optional[ET.Element] = None
+                vj_start_date: Optional[datetime.date] = None
+                vj_end_date: Optional[datetime.date] = None
 
                 for child in elem:
                     c_tag = _clean_tag(child.tag)
@@ -631,10 +776,31 @@ class BodsClient(BaseDataSource):
                         vj_code = child.text.strip()
                     elif c_tag == "JourneyPatternRef" and child.text:
                         jp_ref = child.text.strip()
+                    elif c_tag == "ServiceRef" and child.text:
+                        svc_ref = child.text.strip()
                     elif c_tag == "DepartureTime" and child.text:
                         dep_time_str = child.text.strip()
                     elif c_tag == "OperatorRef" and child.text:
                         operator_ref = child.text.strip()
+                    elif c_tag == "OperatingProfile":
+                        vj_op_profile_elem = child
+                    elif c_tag == "OperatingPeriod":
+                        for opc in child:
+                            opc_tag = _clean_tag(opc.tag)
+                            if opc_tag == "StartDate" and opc.text:
+                                try:
+                                    vj_start_date = datetime.date.fromisoformat(
+                                        opc.text.strip()[:10]
+                                    )
+                                except ValueError:
+                                    pass
+                            elif opc_tag == "EndDate" and opc.text:
+                                try:
+                                    vj_end_date = datetime.date.fromisoformat(
+                                        opc.text.strip()[:10]
+                                    )
+                                except ValueError:
+                                    pass
 
                 if not jp_ref or not dep_time_str:
                     continue
@@ -644,8 +810,25 @@ class BodsClient(BaseDataSource):
                     continue
 
                 p_seq = pattern_sequences.get(jp_ref)
-                if not p_seq:
+                if not p_seq or not p_seq["stops"]:
                     continue
+
+                # Resolve service info
+                resolved_svc_code = (
+                    svc_ref
+                    or p_seq.get("service_code")
+                    or pattern_to_service.get(jp_ref, "")
+                )
+                svc_info = services_by_code.get(resolved_svc_code) or default_service
+
+                # Resolve operating days for this vehicle journey
+                base_days = p_seq.get("days") or svc_info["days"]
+                if vj_op_profile_elem is not None:
+                    vj_days = _parse_operating_profile(
+                        vj_op_profile_elem, default_days=base_days
+                    )
+                else:
+                    vj_days = dict(base_days)
 
                 times = [
                     _format_seconds_to_hh_mm(dep_sec + offset)
@@ -653,200 +836,230 @@ class BodsClient(BaseDataSource):
                 ]
                 op_name = operators_map.get(operator_ref) or operator_ref
 
-                trip_obj = {
-                    "id": vj_code
-                    or f"trip_{len(trips_by_pattern.get(jp_ref, [])) + 1}",
-                    "dep_sec": dep_sec,
-                    "times": times,
-                    "operator": op_name,
-                }
-                trips_by_pattern.setdefault(jp_ref, []).append(trip_obj)
+                raw_trips.append(
+                    {
+                        "id": vj_code or f"trip_{len(raw_trips) + 1}",
+                        "line_name": p_seq.get("line_name")
+                        or svc_info.get("line_name")
+                        or "Bus",
+                        "direction": p_seq.get("direction", ""),
+                        "stops": list(p_seq["stops"]),
+                        "times": times,
+                        "dep_sec": dep_sec,
+                        "operator": op_name,
+                        "days": vj_days,
+                        "start_date": vj_start_date
+                        or p_seq.get("start_date")
+                        or svc_info.get("start_date"),
+                        "end_date": vj_end_date
+                        or p_seq.get("end_date")
+                        or svc_info.get("end_date"),
+                    }
+                )
 
-        # 6. Consolidate Journey Patterns into corridors and build Timetable dictionaries
-        timetables: List[Dict[str, Any]] = []
+        # 6. Group trips into Timetables by Line, Operating Days, and Corridors
+        # First group trips by (line_name, days_tuple)
+        trips_by_line_days: Dict[Tuple[str, Tuple[bool, ...]], List[Dict[str, Any]]] = (
+            {}
+        )
 
-        for svc in services:
-            line_name = svc["line_name"]
-            corridors: List[Dict[str, Any]] = []
+        for trip in raw_trips:
+            l_name = trip["line_name"]
+            d_dict = trip["days"]
+            days_tuple = (
+                bool(d_dict.get("monday", True)),
+                bool(d_dict.get("tuesday", True)),
+                bool(d_dict.get("wednesday", True)),
+                bool(d_dict.get("thursday", True)),
+                bool(d_dict.get("friday", True)),
+                bool(d_dict.get("saturday", True)),
+                bool(d_dict.get("sunday", True)),
+                bool(d_dict.get("bank_holiday", True)),
+            )
+            trips_by_line_days.setdefault((l_name, days_tuple), []).append(trip)
 
-            # Sort patterns descending by stop sequence length so largest pattern becomes initial master
-            sorted_patterns = sorted(
-                svc["patterns"].items(),
-                key=lambda item: len(
-                    pattern_sequences.get(item[0], {}).get("stops", [])
-                ),
-                reverse=True,
+        def _can_merge_corridor(master_stops: List[str], trip_stops: List[str]) -> bool:
+            """Check if trip_stops flows in the same direction as master_stops without reversals."""
+            if not master_stops or not trip_stops:
+                return True
+            common_stops = [s for s in trip_stops if s in master_stops]
+            if len(common_stops) < 2:
+                return True
+            master_indices = [master_stops.index(s) for s in common_stops]
+            return all(
+                master_indices[i] < master_indices[i + 1]
+                for i in range(len(master_indices) - 1)
             )
 
-            for jp_id, p_info in sorted_patterns:
-                p_seq = pattern_sequences.get(jp_id)
-                if not p_seq or not p_seq["stops"]:
+        timetables: List[Dict[str, Any]] = []
+
+        for (l_name, days_tuple), line_trips in trips_by_line_days.items():
+            # Check if any trip or service in this group is circular
+            has_circular = any(
+                (t["stops"][0] == t["stops"][-1] and len(t["stops"]) > 1)
+                or t.get("direction") in ("circular", "clockwise", "anticlockwise")
+                for t in line_trips
+            )
+
+            # Sort trips descending by stop count so longer full-length routes form initial master sequences
+            sorted_line_trips = sorted(
+                line_trips, key=lambda t: len(t.get("stops", [])), reverse=True
+            )
+
+            corridors: List[Dict[str, Any]] = []
+
+            for trip in sorted_line_trips:
+                t_stops = trip["stops"]
+                if not t_stops:
                     continue
 
-                p_stops = p_seq["stops"]
-                p_trips = trips_by_pattern.get(jp_id, [])
+                t_dir = trip.get("direction", "").strip().lower()
+                is_trip_circular = (
+                    has_circular
+                    or (t_stops[0] == t_stops[-1] and len(t_stops) > 1)
+                    or t_dir in ("circular", "clockwise", "anticlockwise")
+                )
 
-                # Attempt to merge into an existing corridor
                 merged = False
                 for corr in corridors:
-                    c_stops = corr["master_stops"]
-
-                    # Case 1: p_stops is a sub-sequence of c_stops
-                    aligned_trips: List[Dict[str, Any]] = []
-                    can_align = True
-                    for t in p_trips:
-                        aligned_t = _align_subsequence(
-                            p_stops, t.get("times", []), c_stops
-                        )
-                        if aligned_t is None:
-                            can_align = False
-                            break
-                        aligned_trips.append(
-                            {
-                                "id": t.get("id"),
-                                "dep_sec": t.get("dep_sec", 0),
-                                "operator": t.get("operator", ""),
-                                "times": aligned_t,
-                            }
-                        )
-
-                    if can_align and (aligned_trips or not p_trips):
-                        corr["trips"].extend(aligned_trips)
-                        merged = True
-                        break
-
-                    # Case 2: c_stops is a sub-sequence of p_stops (p_stops is a superset)
-                    can_expand = True
-                    expanded_existing_trips: List[Dict[str, Any]] = []
-                    for t in corr["trips"]:
-                        aligned_t = _align_subsequence(
-                            c_stops, t.get("times", []), p_stops
-                        )
-                        if aligned_t is None:
-                            can_expand = False
-                            break
-                        expanded_existing_trips.append(
-                            {
-                                "id": t.get("id"),
-                                "dep_sec": t.get("dep_sec", 0),
-                                "operator": t.get("operator", ""),
-                                "times": aligned_t,
-                            }
-                        )
-
-                    if can_expand:
-                        corr["master_stops"] = list(p_stops)
-                        corr["trips"] = expanded_existing_trips
-                        for t in p_trips:
-                            corr["trips"].append(
-                                {
-                                    "id": t.get("id"),
-                                    "dep_sec": t.get("dep_sec", 0),
-                                    "operator": t.get("operator", ""),
-                                    "times": t.get("times", []),
-                                }
+                    if is_trip_circular:
+                        if corr["is_circular"]:
+                            corr["master_stops"] = _merge_stop_sequences(
+                                corr["master_stops"], t_stops
                             )
-                        merged = True
-                        break
+                            corr["trips"].append(trip)
+                            merged = True
+                            break
+                    else:
+                        if not corr["is_circular"]:
+                            # If directions match or are unspecified, check flow order compatibility
+                            if (
+                                not t_dir
+                                or not corr["direction"]
+                                or t_dir == corr["direction"]
+                            ):
+                                if _can_merge_corridor(corr["master_stops"], t_stops):
+                                    corr["master_stops"] = _merge_stop_sequences(
+                                        corr["master_stops"], t_stops
+                                    )
+                                    corr["trips"].append(trip)
+                                    if not corr["direction"] and t_dir:
+                                        corr["direction"] = t_dir
+                                    merged = True
+                                    break
 
                 if not merged:
                     corridors.append(
                         {
-                            "master_stops": list(p_stops),
-                            "trips": [
-                                {
-                                    "id": t.get("id"),
-                                    "dep_sec": t.get("dep_sec", 0),
-                                    "operator": t.get("operator", ""),
-                                    "times": t.get("times", []),
-                                }
-                                for t in p_trips
-                            ],
+                            "is_circular": is_trip_circular,
+                            "direction": t_dir,
+                            "master_stops": list(t_stops),
+                            "trips": [trip],
                         }
                     )
 
             for corr in corridors:
-                master_stop_refs = corr["master_stops"]
-                if not master_stop_refs:
+                master_stops = corr["master_stops"]
+                corr_trips = corr["trips"]
+                if not master_stops or not corr_trips:
                     continue
 
-                # Filter by target stops if requested
-                if target_codes is not None:
-                    covers_target = any(
-                        s.upper().strip() in target_codes for s in master_stop_refs
-                    )
-                    if not covers_target:
-                        continue
+            # Filter by target stops if requested
+            if target_codes is not None:
+                covers_target = any(
+                    s.upper().strip() in target_codes for s in master_stops
+                )
+                if not covers_target:
+                    continue
 
-                stops_list: List[Dict[str, Any]] = []
-                for s_ref in master_stop_refs:
-                    st_meta = stops_map.get(s_ref) or lookup.get(s_ref.upper()) or {}
-                    stops_list.append(
-                        {
-                            "id": s_ref,
-                            "name": st_meta.get("name") or s_ref,
-                            "type": "bus",
-                            "indicator": st_meta.get("indicator") or "Bus Stop",
-                            "icon": "directions_bus",
-                            "latitude": st_meta.get("latitude"),
-                            "longitude": st_meta.get("longitude"),
-                        }
-                    )
-
-                # Deduplicate and sort trips chronologically
-                seen_trip_ids: Set[str] = set()
-                sorted_trips = sorted(corr["trips"], key=lambda t: t.get("dep_sec", 0))
-                unique_trips: List[Dict[str, Any]] = []
-                for t in sorted_trips:
-                    tid = t.get("id")
-                    if tid and tid in seen_trip_ids:
-                        continue
-                    if tid:
-                        seen_trip_ids.add(tid)
-                    unique_trips.append(t)
-
-                first_name = stops_list[0]["name"] if stops_list else "Origin"
-                last_name = stops_list[-1]["name"] if stops_list else "Destination"
-                first_id = stops_list[0]["id"] if stops_list else ""
-                last_id = stops_list[-1]["id"] if stops_list else ""
-
-                if first_id and last_id and first_id == last_id and len(stops_list) > 1:
-                    timetable_name = f"Bus {line_name}: {first_name} (Circular)"
-                else:
-                    timetable_name = f"Bus {line_name}: {first_name} to {last_name}"
-
-                clean_trips: List[Dict[str, Any]] = []
-                for idx, t in enumerate(unique_trips):
-                    clean_trips.append(
-                        {
-                            "id": t.get("id") or f"trip_{idx + 1}",
-                            "headsign": f"{line_name} to {last_name}".strip(),
-                            "operator": t.get("operator", ""),
-                            "times": t.get("times", []),
-                        }
-                    )
-
-                timetables.append(
+            stops_list: List[Dict[str, Any]] = []
+            for s_ref in master_stops:
+                st_meta = stops_map.get(s_ref) or lookup.get(s_ref.upper()) or {}
+                stops_list.append(
                     {
-                        "name": timetable_name,
-                        "transport_type": "bus",
-                        "start_date": svc["start_date"],
-                        "end_date": svc["end_date"],
-                        "monday": svc["monday"],
-                        "tuesday": svc["tuesday"],
-                        "wednesday": svc["wednesday"],
-                        "thursday": svc["thursday"],
-                        "friday": svc["friday"],
-                        "saturday": svc["saturday"],
-                        "sunday": svc["sunday"],
-                        "bank_holiday": svc["bank_holiday"],
-                        "auto_added": True,
-                        "content": {
-                            "stops": stops_list,
-                            "trips": clean_trips,
-                        },
+                        "id": s_ref,
+                        "name": st_meta.get("name") or s_ref,
+                        "type": "bus",
+                        "indicator": st_meta.get("indicator") or "Bus Stop",
+                        "icon": "directions_bus",
+                        "latitude": st_meta.get("latitude"),
+                        "longitude": st_meta.get("longitude"),
                     }
                 )
+
+            first_name = stops_list[0]["name"] if stops_list else "Origin"
+            last_name = stops_list[-1]["name"] if stops_list else "Destination"
+            first_id = stops_list[0]["id"] if stops_list else ""
+            last_id = stops_list[-1]["id"] if stops_list else ""
+
+            if corr["is_circular"] or (
+                first_id and last_id and first_id == last_id and len(stops_list) > 1
+            ):
+                timetable_name = f"Bus {l_name}: {first_name} (Circular)"
+            else:
+                timetable_name = f"Bus {l_name}: {first_name} to {last_name}"
+
+            # Align each trip's times onto the master stop sequence
+            aligned_trips: List[Dict[str, Any]] = []
+            seen_trip_ids: Set[str] = set()
+
+            # Sort trips chronologically
+            sorted_trips = sorted(corr_trips, key=lambda t: t.get("dep_sec", 0))
+
+            for idx, t in enumerate(sorted_trips):
+                tid = t.get("id") or f"trip_{idx + 1}"
+                if tid in seen_trip_ids:
+                    continue
+                seen_trip_ids.add(tid)
+
+                aligned_times = _align_times_to_master(
+                    t["stops"], t["times"], master_stops
+                )
+                aligned_trips.append(
+                    {
+                        "id": tid,
+                        "headsign": f"{l_name} to {last_name}".strip(),
+                        "operator": t.get("operator", ""),
+                        "times": aligned_times,
+                    }
+                )
+
+            # Determine start and end date
+            start_date = corr_trips[0].get("start_date")
+            end_date = corr_trips[0].get("end_date")
+
+            (
+                mon,
+                tue,
+                wed,
+                thu,
+                fri,
+                sat,
+                sun,
+                bh,
+            ) = days_tuple
+
+            timetables.append(
+                {
+                    "name": timetable_name,
+                    "transport_type": "bus",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "monday": mon,
+                    "tuesday": tue,
+                    "wednesday": wed,
+                    "thursday": thu,
+                    "friday": fri,
+                    "saturday": sat,
+                    "sunday": sun,
+                    "bank_holiday": bh,
+                    "auto_added": True,
+                    "content": {
+                        "stops": stops_list,
+                        "trips": aligned_trips,
+                    },
+                }
+            )
 
         return timetables
 
@@ -901,7 +1114,8 @@ class BodsClient(BaseDataSource):
     ) -> List[Dict[str, Any]]:
         """Fetch and parse published bus timetables covering target stops from BODS.
 
-        Supports multi-page pagination across all available datasets.
+        Supports multi-page pagination across all available datasets and merges
+        trips for identical routes and operating day profiles.
         """
         if not self.api_key:
             raise DataSourceConfigError(
@@ -960,7 +1174,7 @@ class BodsClient(BaseDataSource):
                 if not data.get("next"):
                     break
 
-            timetables_by_sig: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
+            timetables_by_key: Dict[Tuple[str, Tuple[bool, ...]], Dict[str, Any]] = {}
 
             for item in results:
                 dl_url = item.get("url")
@@ -976,18 +1190,61 @@ class BodsClient(BaseDataSource):
                     )
                     for tt in parsed_tt:
                         name = tt.get("name") or "Bus"
-                        stops = tuple(
-                            s.get("id", "")
-                            for s in tt.get("content", {}).get("stops", [])
+                        days_key = (
+                            bool(tt.get("monday")),
+                            bool(tt.get("tuesday")),
+                            bool(tt.get("wednesday")),
+                            bool(tt.get("thursday")),
+                            bool(tt.get("friday")),
+                            bool(tt.get("saturday")),
+                            bool(tt.get("sunday")),
+                            bool(tt.get("bank_holiday")),
                         )
-                        sig = (name, stops)
+                        key = (name, days_key)
 
-                        if sig in timetables_by_sig:
-                            # Merge additional trips into existing timetable
-                            existing = timetables_by_sig[sig]
+                        if key in timetables_by_key:
+                            # Merge trips and combine stops into existing timetable
+                            existing = timetables_by_key[key]
+                            existing_stops = [
+                                s.get("id", "")
+                                for s in existing.get("content", {}).get("stops", [])
+                            ]
+                            new_stops = [
+                                s.get("id", "")
+                                for s in tt.get("content", {}).get("stops", [])
+                            ]
+
+                            # Unified stop sequence
+                            combined_stops = _merge_stop_sequences(
+                                existing_stops, new_stops
+                            )
+
+                            # Rebuild stops metadata list
+                            stop_meta_by_id = {
+                                s.get("id"): s
+                                for s in existing.get("content", {}).get("stops", [])
+                            }
+                            for s in tt.get("content", {}).get("stops", []):
+                                if s.get("id") and s.get("id") not in stop_meta_by_id:
+                                    stop_meta_by_id[s.get("id")] = s
+
+                            combined_stops_list = [
+                                stop_meta_by_id.get(
+                                    sid, {"id": sid, "name": sid, "type": "bus"}
+                                )
+                                for sid in combined_stops
+                            ]
+
+                            # Re-align existing trips onto combined stops
                             existing_trips = existing.get("content", {}).get(
                                 "trips", []
                             )
+                            for t in existing_trips:
+                                t["times"] = _align_times_to_master(
+                                    existing_stops, t.get("times", []), combined_stops
+                                )
+
+                            # Align and append new trips
                             new_trips = tt.get("content", {}).get("trips", [])
                             seen_trip_ids = {
                                 t.get("id") for t in existing_trips if t.get("id")
@@ -998,6 +1255,9 @@ class BodsClient(BaseDataSource):
                                 if not tid or tid not in seen_trip_ids:
                                     if tid:
                                         seen_trip_ids.add(tid)
+                                    nt["times"] = _align_times_to_master(
+                                        new_stops, nt.get("times", []), combined_stops
+                                    )
                                     existing_trips.append(nt)
 
                             def _first_time_val(trip: Dict[str, Any]) -> str:
@@ -1007,8 +1267,10 @@ class BodsClient(BaseDataSource):
                                 return "99:99"
 
                             existing_trips.sort(key=_first_time_val)
+                            existing["content"]["stops"] = combined_stops_list
+                            existing["content"]["trips"] = existing_trips
                         else:
-                            timetables_by_sig[sig] = tt
+                            timetables_by_key[key] = tt
                 except (
                     DataSourceAuthError,
                     DataSourceConfigError,
@@ -1018,7 +1280,7 @@ class BodsClient(BaseDataSource):
                 except Exception:
                     continue
 
-            return list(timetables_by_sig.values())
+            return list(timetables_by_key.values())
 
         except requests.exceptions.Timeout as e:
             raise DataSourceConnectionError(

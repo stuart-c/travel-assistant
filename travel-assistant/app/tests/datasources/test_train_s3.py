@@ -445,3 +445,77 @@ def test_train_s3_fetch_timetables_workflow() -> None:
     with pytest.raises(DataSourceError) as exc_info:
         client.fetch_timetables()
     assert "No Darwin XML timetable snapshots found" in str(exc_info.value)
+
+
+def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
+    """Test parse_darwin_timetables partitions journeys by weekday, Saturday, and Sunday with correct day flags."""
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
+  <!-- Weekday (Friday 2026-08-14) -->
+  <Journey rid="20260814111111" trainId="1W01" toc="TL" ssd="2026-08-14" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="07:00"/>
+    <DT tpl="CAMBDGE" pta="07:50"/>
+  </Journey>
+  <!-- Duplicate Weekday (Thursday 2026-08-13) with same trainId -->
+  <Journey rid="20260813111111" trainId="1W01" toc="TL" ssd="2026-08-13" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="07:00"/>
+    <DT tpl="CAMBDGE" pta="07:50"/>
+  </Journey>
+  <!-- Saturday (2026-08-15) -->
+  <Journey rid="20260815222222" trainId="1S01" toc="TL" ssd="2026-08-15" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="08:00"/>
+    <DT tpl="CAMBDGE" pta="08:50"/>
+  </Journey>
+  <!-- Sunday (2026-08-16) -->
+  <Journey rid="20260816333333" trainId="1U01" toc="TL" ssd="2026-08-16" isPassengerSvc="true">
+    <OR tpl="STEVNG" ptd="09:00"/>
+    <DT tpl="CAMBDGE" pta="09:50"/>
+  </Journey>
+</PportTimetable>"""
+
+    client = TrainS3Client(bucket_name="rail-bucket")
+    stop_lookup = {
+        "STEVNG": {"id": "9100STEVNGE", "name": "Stevenage", "type": "rail"},
+        "CAMBDGE": {"id": "9100CAMBDGE", "name": "Cambridge", "type": "rail"},
+    }
+    timetables = client.parse_darwin_timetables(
+        xml_content.encode("utf-8"), stop_lookup=stop_lookup
+    )
+
+    # Should have 3 timetables: Weekday (Mon-Fri), Saturday, Sunday
+    assert len(timetables) == 3
+
+    wd_tt = next((t for t in timetables if t["monday"]), None)
+    sat_tt = next((t for t in timetables if t["saturday"]), None)
+    sun_tt = next((t for t in timetables if t["sunday"]), None)
+
+    assert wd_tt is not None
+    assert wd_tt["name"] == "Stevenage to Cambridge (Mon-Fri)"
+    assert wd_tt["monday"] is True
+    assert wd_tt["friday"] is True
+    assert wd_tt["saturday"] is False
+    assert wd_tt["sunday"] is False
+    assert wd_tt["bank_holiday"] is False
+    # Verified deduplication: 1W01 only appears once in weekday timetable
+    assert len(wd_tt["content"]["trips"]) == 1
+    assert wd_tt["content"]["trips"][0]["headsign"] == "TL 1W01"
+
+    assert sat_tt is not None
+    assert sat_tt["name"] == "Stevenage to Cambridge (Sat)"
+    assert sat_tt["monday"] is False
+    assert sat_tt["friday"] is False
+    assert sat_tt["saturday"] is True
+    assert sat_tt["sunday"] is False
+    assert sat_tt["bank_holiday"] is False
+    assert len(sat_tt["content"]["trips"]) == 1
+    assert sat_tt["content"]["trips"][0]["headsign"] == "TL 1S01"
+
+    assert sun_tt is not None
+    assert sun_tt["name"] == "Stevenage to Cambridge (Sun)"
+    assert sun_tt["monday"] is False
+    assert sun_tt["friday"] is False
+    assert sun_tt["saturday"] is False
+    assert sun_tt["sunday"] is True
+    assert sun_tt["bank_holiday"] is True
+    assert len(sun_tt["content"]["trips"]) == 1
+    assert sun_tt["content"]["trips"][0]["headsign"] == "TL 1U01"
