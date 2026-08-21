@@ -4,7 +4,6 @@ from app.sync.ha_sync import sync_ha_locations
 from app.sync.transit_sync import (
     sync_bus_routes,
     sync_bus_timetables,
-    sync_rail_references,
     sync_stop_interchanges,
     sync_stops,
     sync_table,
@@ -23,7 +22,6 @@ from app.sync.worker import (
 
 __all__ = [
     "sync_bus_routes",
-    "sync_rail_references",
     "sync_stop_interchanges",
     "sync_stops",
     "sync_ha_locations",

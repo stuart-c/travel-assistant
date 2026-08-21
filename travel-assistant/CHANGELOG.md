@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added weekly background synchronisation process and `stop_interchanges` table discovering nearby transit stop interchanges within 250 metres across all transport modes using SQLite R*Tree geospatial indexing on British National Grid `easting` and `northing` coordinates. Includes the `StopInterchange` model, `sync_stop_interchanges` pipeline, automated re-sync trigger upon `stops` ingest, and full integration into `SYNC_REGISTRY` and `/config/sync`.
-- Added weekly background synchronisation of NaPTAN `RailReferences.csv` into a new `rail_references` table, providing a mapping from TIPLOC codes (used in Darwin XML timetable feeds) to NaPTAN ATCO codes and passenger-facing CRS codes. The `RailReferencesClient` datasource client, `sync_rail_references` sync function, and `RailReference` model (with `bulk_replace`, `get_by_tiploc`, `get_by_atco`, and `get_by_crs` helpers) are all wired into the existing `SYNC_REGISTRY`, `sync_table` dispatcher, and UI sync endpoint.
+
+### Removed
+- Removed obsolete `rail_references` table, model (`RailReference`), datasource client (`RailReferencesClient`), and background sync task (`sync_rail_references`), as NaPTAN no longer provides the legacy `RailReferences.csv` endpoint and multi-modal transit linking is handled directly via the unified `stops` table and Darwin station resolvers. A migration automatically drops any legacy `rail_references` database tables on startup.
 
 ### Fixed
 - Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.

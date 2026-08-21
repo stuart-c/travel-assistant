@@ -15,10 +15,6 @@ DEFAULT_NAPTAN_STOPS_URL = (
     "https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv"
 )
 
-DEFAULT_RAIL_REFERENCES_URL = (
-    "https://beta-naptan.dft.gov.uk/Download/File/RailReferences.csv"
-)
-
 
 def classify_stop_type(naptan_stop_type: str) -> str:
     """Classify a NaPTAN StopType into a canonical transit category."""
@@ -147,114 +143,5 @@ class NaptanClient(BaseDataSource):
         except Exception as e:
             raise DataSourceError(
                 f"Unexpected error parsing NaPTAN data: {str(e)}",
-                provider=self.provider_name,
-            ) from e
-
-
-class RailReferencesClient(BaseDataSource):
-    """Datasource client for NaPTAN RailReferences.csv (TIPLOC/ATCO/CRS mapping).
-
-    Downloads the rail references CSV from the UK government NaPTAN service,
-    providing a lookup table that maps TIPLOC codes (used in Darwin XML timetable
-    feeds) to NaPTAN ATCO codes and passenger-facing CRS codes.
-    """
-
-    provider_name: str = "naptan_rail_references"
-
-    def __init__(
-        self,
-        endpoint: str = DEFAULT_RAIL_REFERENCES_URL,
-        timeout: int = 30,
-    ) -> None:
-        self.endpoint = endpoint or DEFAULT_RAIL_REFERENCES_URL
-        self.timeout = timeout
-
-    @classmethod
-    def from_settings(cls, settings: Optional[Any] = None) -> "RailReferencesClient":
-        """Instantiate RailReferencesClient (NaPTAN requires no API key)."""
-        getter = cls.get_setting_getter(settings)
-        endpoint = (
-            getter("naptan_rail_references_url", DEFAULT_RAIL_REFERENCES_URL)
-            or DEFAULT_RAIL_REFERENCES_URL
-        )
-        return cls(endpoint=endpoint)
-
-    def validate_credentials(self) -> Dict[str, Any]:
-        """Validate NaPTAN service availability (public open data)."""
-        return {
-            "valid": True,
-            "message": "NaPTAN RailReferences is public open data and does not require credentials.",
-        }
-
-    def fetch_rail_references(
-        self, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """Fetch TIPLOC/ATCO/CRS rail reference mappings from NaPTAN CSV feed.
-
-        Each row in ``RailReferences.csv`` maps a TIPLOC code to the corresponding
-        NaPTAN ATCO code and passenger-facing CRS code. Rows without a TIPLOC are
-        silently skipped.
-
-        Args:
-            limit: Optional maximum number of records to return (useful for testing).
-
-        Returns:
-            List of dicts with keys ``tiploc``, ``atco_code``, ``crs_code``.
-        """
-        try:
-            response = requests.get(self.endpoint, timeout=self.timeout)
-            response.raise_for_status()
-
-            reader = csv.DictReader(io.StringIO(response.text))
-            refs: List[Dict[str, Any]] = []
-
-            for row in reader:
-                tiploc = (
-                    (
-                        row.get("TiplocCode")
-                        or row.get("tiploc_code")
-                        or row.get("tiploc")
-                        or ""
-                    )
-                    .strip()
-                    .upper()
-                )
-
-                if not tiploc:
-                    continue
-
-                atco_code = (
-                    row.get("AtcoCode") or row.get("atco_code") or row.get("atco") or ""
-                ).strip() or None
-
-                crs_code = (
-                    row.get("CrsCode") or row.get("crs_code") or row.get("crs") or ""
-                ).strip().upper() or None
-
-                refs.append(
-                    {
-                        "tiploc": tiploc,
-                        "atco_code": atco_code,
-                        "crs_code": crs_code,
-                    }
-                )
-
-                if limit is not None and len(refs) >= limit:
-                    break
-
-            return refs
-        except requests.exceptions.Timeout as e:
-            raise DataSourceConnectionError(
-                f"NaPTAN RailReferences connection timed out: {str(e)}",
-                provider=self.provider_name,
-            ) from e
-        except requests.exceptions.RequestException as e:
-            raise DataSourceConnectionError(
-                f"Network error connecting to NaPTAN RailReferences: {str(e)}",
-                provider=self.provider_name,
-            ) from e
-        except Exception as e:
-            raise DataSourceError(
-                f"Unexpected error parsing NaPTAN RailReferences data: {str(e)}",
                 provider=self.provider_name,
             ) from e

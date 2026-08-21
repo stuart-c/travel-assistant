@@ -89,7 +89,6 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.transfer import PlatformTransfer
     from app.models.transit import (
         BusRoute,
-        RailReference,
         Stop,
         StopInterchange,
         SyncMetadata,
@@ -100,6 +99,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         database.execute_sql('DROP TABLE IF EXISTS "bus_stops"')
         database.execute_sql('DROP TABLE IF EXISTS "stations"')
         database.execute_sql('DROP TABLE IF EXISTS "location_transfers"')
+        database.execute_sql('DROP TABLE IF EXISTS "rail_references"')
     except Exception:
         pass
 
@@ -109,7 +109,6 @@ def run_migrations(database: SqliteDatabase) -> None:
         SyncMetadata,
         BusRoute,
         Stop,
-        RailReference,
         StopInterchange,
         PlatformTransfer,
         Location,
@@ -365,7 +364,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.transfer import PlatformTransfer
     from app.models.transit import (
         BusRoute,
-        RailReference,
         Stop,
         StopInterchange,
         SyncMetadata,
@@ -434,7 +432,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "sync_metadata": SyncMetadata,
             "bus_routes": BusRoute,
             "stops": Stop,
-            "rail_references": RailReference,
             "stop_interchanges": StopInterchange,
             "platform_transfers": PlatformTransfer,
             "locations": Location,
@@ -464,7 +461,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             _syncable = (
                 "bus_routes",
                 "stops",
-                "rail_references",
                 "stop_interchanges",
                 "ha_locations",
                 "train_timetables",

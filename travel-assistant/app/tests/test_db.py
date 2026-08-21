@@ -18,7 +18,6 @@ from app.models import (
     BusRoute,
     Location,
     PlatformTransfer,
-    RailReference,
     Setting,
     Stop,
     SyncMetadata,
@@ -545,7 +544,7 @@ def test_get_sync_stats(app: Flask) -> None:
         SyncMetadata.record_success("custom_feed", 99, 2.0)
 
         stats = get_sync_stats(app)
-        assert len(stats) == 8
+        assert len(stats) == 7
 
         bus_entry = next((s for s in stats if s["name"] == "bus_routes"), None)
         assert bus_entry is not None
@@ -852,111 +851,3 @@ def test_pydantic_field_serialization() -> None:
 
     j_fallback = j_field.python_value("bad-json-string")
     assert j_fallback == []
-
-
-# ---------------------------------------------------------------------------
-# RailReference model tests
-# ---------------------------------------------------------------------------
-
-
-def test_rail_reference_bulk_replace_inserts(app: Flask) -> None:
-    """Test RailReference.bulk_replace inserts records correctly."""
-    with app.app_context():
-        refs = [
-            {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-            {"tiploc": "OXFD", "atco_code": "9100OXFD", "crs_code": "OXF"},
-        ]
-        count = RailReference.bulk_replace(refs)
-        assert count == 2
-        assert RailReference.select().count() == 2
-
-        row = RailReference.get_by_tiploc("PADTON")
-        assert row is not None
-        assert row.atco_code == "9100PADTON"
-        assert row.crs_code == "PAD"
-
-
-def test_rail_reference_bulk_replace_full_replace(app: Flask) -> None:
-    """Test bulk_replace removes stale rows that are absent from the new dataset."""
-    with app.app_context():
-        initial = [
-            {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-            {"tiploc": "OXFD", "atco_code": "9100OXFD", "crs_code": "OXF"},
-            {"tiploc": "DIDCOT", "atco_code": "9100DID", "crs_code": "DID"},
-        ]
-        RailReference.bulk_replace(initial)
-        assert RailReference.select().count() == 3
-
-        updated = [
-            {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-        ]
-        count = RailReference.bulk_replace(updated)
-        assert count == 1
-        assert RailReference.select().count() == 1
-        assert RailReference.get_by_tiploc("OXFD") is None
-        assert RailReference.get_by_tiploc("DIDCOT") is None
-
-
-def test_rail_reference_bulk_replace_empty_clears_table(app: Flask) -> None:
-    """Test bulk_replace with an empty list clears all existing rows."""
-    with app.app_context():
-        RailReference.bulk_replace(
-            [
-                {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-            ]
-        )
-        assert RailReference.select().count() == 1
-
-        count = RailReference.bulk_replace([])
-        assert count == 0
-        assert RailReference.select().count() == 0
-
-
-def test_rail_reference_bulk_replace_skips_missing_tiploc(app: Flask) -> None:
-    """Test bulk_replace silently skips rows without a tiploc key."""
-    with app.app_context():
-        refs = [
-            {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-            {"tiploc": "", "atco_code": "9100EMPTY", "crs_code": "XXX"},
-            {"atco_code": "9100NONE"},
-        ]
-        count = RailReference.bulk_replace(refs)
-        assert count == 1
-
-
-def test_rail_reference_lookup_helpers(app: Flask) -> None:
-    """Test RailReference lookup helpers: get_by_tiploc, get_by_atco, get_by_crs."""
-    with app.app_context():
-        RailReference.bulk_replace(
-            [
-                {"tiploc": "PADTON", "atco_code": "9100PADTON", "crs_code": "PAD"},
-            ]
-        )
-
-        # get_by_tiploc — case-insensitive (normalised to upper)
-        assert RailReference.get_by_tiploc("PADTON") is not None
-        assert RailReference.get_by_tiploc("padton") is not None
-        assert RailReference.get_by_tiploc("UNKNOWN") is None
-
-        # get_by_atco
-        assert RailReference.get_by_atco("9100PADTON") is not None
-        assert RailReference.get_by_atco("9999XXXX") is None
-
-        # get_by_crs
-        assert RailReference.get_by_crs("PAD") is not None
-        assert RailReference.get_by_crs("pad") is not None
-        assert RailReference.get_by_crs("ZZZ") is None
-
-
-def test_rail_reference_nullable_fields_stored(app: Flask) -> None:
-    """Test RailReference stores None correctly for optional fields."""
-    with app.app_context():
-        RailReference.bulk_replace(
-            [
-                {"tiploc": "SOMEJN", "atco_code": None, "crs_code": None},
-            ]
-        )
-        row = RailReference.get_by_tiploc("SOMEJN")
-        assert row is not None
-        assert row.atco_code is None
-        assert row.crs_code is None

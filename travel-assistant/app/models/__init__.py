@@ -18,7 +18,6 @@ from app.models.timetable import (
 from app.models.transfer import PlatformTransfer
 from app.models.transit import (
     BusRoute,
-    RailReference,
     Stop,
     StopInterchange,
     SyncMetadata,
@@ -31,7 +30,6 @@ ALL_MODELS = [
     SyncMetadata,
     BusRoute,
     Stop,
-    RailReference,
     StopInterchange,
     PlatformTransfer,
     Location,
@@ -54,7 +52,6 @@ __all__ = [
     "Walking",
     "BusRoute",
     "Stop",
-    "RailReference",
     "StopInterchange",
     "SyncMetadata",
     "PlatformTransfer",
