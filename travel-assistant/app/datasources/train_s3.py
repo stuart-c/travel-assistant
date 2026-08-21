@@ -1,7 +1,7 @@
 """Client library for AWS S3 rail datasets and archives."""
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import boto3
 from botocore.config import Config
 from botocore.exceptions import (
@@ -280,13 +280,15 @@ class TrainS3Client(BaseDataSource):
     ) -> List[Dict[str, Any]]:
         """Parse Darwin XML timetable snapshot into structured route timetable matrices.
 
-        Extracts passenger journeys, groups them by origin-destination route corridor,
-        unifies calling point sequences, records TOC per trip, and generates timetable objects.
+        Extracts passenger journeys, groups them by route corridor and day-of-week profile
+        (Weekday / Saturday / Sunday), unifies calling point sequences, records TOC per trip,
+        and generates structured timetable objects.
         """
+        import datetime
+        from collections import defaultdict
         import gzip
         import io
         import xml.etree.ElementTree as ET
-        import datetime
 
         lookup = stop_lookup or {}
 
@@ -355,32 +357,94 @@ class TrainS3Client(BaseDataSource):
                                         }
                                     )
 
-                        if len(calling_points) >= 2:
+                        if len(calling_points) >= 2 and ssd:
+                            try:
+                                d = datetime.date.fromisoformat(ssd)
+                                weekday = d.weekday()  # 0=Mon..4=Fri, 5=Sat, 6=Sun
+                                if weekday <= 4:
+                                    day_profile = "weekday"
+                                    day_flags = {
+                                        "monday": True,
+                                        "tuesday": True,
+                                        "wednesday": True,
+                                        "thursday": True,
+                                        "friday": True,
+                                        "saturday": False,
+                                        "sunday": False,
+                                        "bank_holiday": False,
+                                    }
+                                elif weekday == 5:
+                                    day_profile = "saturday"
+                                    day_flags = {
+                                        "monday": False,
+                                        "tuesday": False,
+                                        "wednesday": False,
+                                        "thursday": False,
+                                        "friday": False,
+                                        "saturday": True,
+                                        "sunday": False,
+                                        "bank_holiday": False,
+                                    }
+                                else:
+                                    day_profile = "sunday"
+                                    day_flags = {
+                                        "monday": False,
+                                        "tuesday": False,
+                                        "wednesday": False,
+                                        "thursday": False,
+                                        "friday": False,
+                                        "saturday": False,
+                                        "sunday": True,
+                                        "bank_holiday": True,
+                                    }
+                            except ValueError:
+                                day_profile = "all"
+                                day_flags = {
+                                    "monday": True,
+                                    "tuesday": True,
+                                    "wednesday": True,
+                                    "thursday": True,
+                                    "friday": True,
+                                    "saturday": True,
+                                    "sunday": True,
+                                    "bank_holiday": True,
+                                }
+
                             origin_tpl = calling_points[0]["tpl"]
                             dest_tpl = calling_points[-1]["tpl"]
-                            corridor_id = f"{origin_tpl}_{dest_tpl}"
+                            base_corridor_id = f"{origin_tpl}_{dest_tpl}"
+                            corridor_key = f"{base_corridor_id}_{day_profile}"
 
-                            if corridor_id not in corridors:
+                            if corridor_key not in corridors:
                                 origin_meta = _resolve_station(origin_tpl)
                                 dest_meta = _resolve_station(dest_tpl)
-                                corridors[corridor_id] = {
+                                corridors[corridor_key] = {
+                                    "base_id": base_corridor_id,
+                                    "day_profile": day_profile,
+                                    "day_flags": day_flags,
                                     "origin_tpl": origin_tpl,
                                     "dest_tpl": dest_tpl,
                                     "origin_name": origin_meta["name"],
                                     "dest_name": dest_meta["name"],
-                                    "ssd": ssd,
+                                    "start_date": ssd,
+                                    "end_date": ssd,
                                     "journeys": [],
+                                    "seen_trains": set(),
                                 }
 
-                            corridors[corridor_id]["journeys"].append(
-                                {
-                                    "rid": rid,
-                                    "train_id": train_id,
-                                    "toc": toc,
-                                    "ssd": ssd,
-                                    "calling_points": calling_points,
-                                }
-                            )
+                            # Deduplicate journeys by train_id or rid within the same corridor profile
+                            dedup_key = train_id if train_id else rid
+                            if dedup_key not in corridors[corridor_key]["seen_trains"]:
+                                corridors[corridor_key]["seen_trains"].add(dedup_key)
+                                corridors[corridor_key]["journeys"].append(
+                                    {
+                                        "rid": rid,
+                                        "train_id": train_id,
+                                        "toc": toc,
+                                        "ssd": ssd,
+                                        "calling_points": calling_points,
+                                    }
+                                )
 
                     elem.clear()
 
@@ -390,9 +454,14 @@ class TrainS3Client(BaseDataSource):
                 provider="train_s3",
             ) from exc
 
+        # Identify base corridors that have multiple day profiles
+        base_counts: Dict[str, Set[str]] = defaultdict(set)
+        for c_info in corridors.values():
+            base_counts[c_info["base_id"]].add(c_info["day_profile"])
+
         timetables: List[Dict[str, Any]] = []
 
-        for corridor_id, corr in corridors.items():
+        for corr in corridors.values():
             journeys = corr["journeys"]
             if not journeys:
                 continue
@@ -473,17 +542,25 @@ class TrainS3Client(BaseDataSource):
             for t in trips:
                 t.pop("_first_dep", None)
 
+            # Format timetable name with day profile suffix where appropriate
+            name = f"{corr['origin_name']} to {corr['dest_name']}"
+            day_prof = corr["day_profile"]
+            if day_prof == "saturday":
+                name = f"{name} (Sat)"
+            elif day_prof == "sunday":
+                name = f"{name} (Sun)"
+            elif len(base_counts[corr["base_id"]]) > 1 and day_prof == "weekday":
+                name = f"{name} (Mon-Fri)"
+
             # Parse start/end dates from ssd if available
             start_d = None
             end_d = None
-            if corr.get("ssd"):
+            if corr.get("start_date"):
                 try:
-                    start_d = datetime.date.fromisoformat(corr["ssd"])
+                    start_d = datetime.date.fromisoformat(corr["start_date"])
                     end_d = start_d
                 except ValueError:
                     pass
-
-            name = f"{corr['origin_name']} to {corr['dest_name']}"
 
             timetables.append(
                 {
@@ -491,14 +568,7 @@ class TrainS3Client(BaseDataSource):
                     "transport_type": "rail",
                     "start_date": start_d,
                     "end_date": end_d,
-                    "monday": True,
-                    "tuesday": True,
-                    "wednesday": True,
-                    "thursday": True,
-                    "friday": True,
-                    "saturday": True,
-                    "sunday": True,
-                    "bank_holiday": True,
+                    **corr["day_flags"],
                     "auto_added": True,
                     "content": {
                         "stops": stops,
