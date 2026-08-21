@@ -292,7 +292,7 @@ def test_bods_parse_transxchange_xml() -> None:
     )
     assert len(timetables) == 1
     tt = timetables[0]
-    assert tt["name"] == "Bus 10: Stevenage to Hitchin"
+    assert tt["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
     assert tt["transport_type"] == "bus"
     assert tt["auto_added"] is True
     assert tt["monday"] is True
@@ -344,7 +344,9 @@ def test_bods_parse_transxchange_dataset_zip() -> None:
         target_stop_codes={"049000002"},
     )
     assert len(timetables) == 1
-    assert timetables[0]["name"] == "Bus 10: Stevenage to Hitchin"
+    assert (
+        timetables[0]["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
+    )
 
 
 def test_bods_parse_transxchange_dataset_corrupted_zip() -> None:
@@ -438,7 +440,7 @@ def test_bods_fetch_timetables_success(
         admin_areas=["049"],
     )
     assert len(tts) == 1
-    assert tts[0]["name"] == "Bus 10: Stevenage to Hitchin"
+    assert tts[0]["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
     mock_get.assert_called_once_with(
         "https://data.bus-data.dft.gov.uk/api/v1/dataset",
         params={
@@ -542,3 +544,186 @@ def test_bods_fetch_timetables_errors(mock_get: MagicMock) -> None:
     mock_get.side_effect = Exception("Unknown failure")
     with pytest.raises(DataSourceError):
         client.fetch_timetables()
+
+
+def test_bods_align_subsequence() -> None:
+    """Test _align_subsequence matches subsequences and maps times."""
+    from app.datasources.bods import _align_subsequence
+
+    master = ["A", "B", "C", "D", "A"]
+
+    # 1. Exact match
+    res1 = _align_subsequence(
+        ["A", "B", "C", "D", "A"], ["01", "02", "03", "04", "05"], master
+    )
+    assert res1 == ["01", "02", "03", "04", "05"]
+
+    # 2. Prefix subsequence
+    res2 = _align_subsequence(["A", "B", "C"], ["01", "02", "03"], master)
+    assert res2 == ["01", "02", "03", "", ""]
+
+    # 3. Suffix subsequence (including circular end stop)
+    res3 = _align_subsequence(["C", "D", "A"], ["03", "04", "05"], master)
+    assert res3 == ["", "", "03", "04", "05"]
+
+    # 4. Empty subsequence
+    res4 = _align_subsequence([], [], master)
+    assert res4 == ["", "", "", "", ""]
+
+    # 5. Non-matching order (reverse)
+    res5 = _align_subsequence(["D", "C", "B"], ["04", "03", "02"], master)
+    assert res5 is None
+
+    # 6. Longer than master
+    res6 = _align_subsequence(["A", "B", "C", "D", "E", "F"], ["1"] * 6, master)
+    assert res6 is None
+
+
+def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
+    """Test parse_transxchange_xml consolidates multiple journey patterns into master corridors."""
+    multi_pattern_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<TransXChange xmlns="http://www.transxchange.org.uk/" CreationDateTime="2026-08-21T07:00:00" SchemaVersion="2.4">
+  <Operators>
+    <Operator id="O1">
+      <OperatorCode>ARRI</OperatorCode>
+      <OperatorShortName>Arriva</OperatorShortName>
+    </Operator>
+  </Operators>
+  <StopPoints>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_A</StopPointRef>
+      <CommonName>Stevenage Bus Station</CommonName>
+      <Indicator>Stop G</Indicator>
+    </AnnotatedStopPointRef>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_B</StopPointRef>
+      <CommonName>Chells Way</CommonName>
+    </AnnotatedStopPointRef>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_C</StopPointRef>
+      <CommonName>Woodcock Road</CommonName>
+    </AnnotatedStopPointRef>
+    <AnnotatedStopPointRef>
+      <StopPointRef>STOP_D</StopPointRef>
+      <CommonName>Sweyns Mead</CommonName>
+    </AnnotatedStopPointRef>
+  </StopPoints>
+  <JourneyPatternSections>
+    <JourneyPatternSection id="JPS_FULL">
+      <JourneyPatternTimingLink id="JPTL_1">
+        <From><StopPointRef>STOP_A</StopPointRef></From>
+        <To><StopPointRef>STOP_B</StopPointRef></To>
+        <RunTime>PT10M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="JPTL_2">
+        <From><StopPointRef>STOP_B</StopPointRef></From>
+        <To><StopPointRef>STOP_C</StopPointRef></To>
+        <RunTime>PT5M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="JPTL_3">
+        <From><StopPointRef>STOP_C</StopPointRef></From>
+        <To><StopPointRef>STOP_D</StopPointRef></To>
+        <RunTime>PT8M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="JPTL_4">
+        <From><StopPointRef>STOP_D</StopPointRef></From>
+        <To><StopPointRef>STOP_A</StopPointRef></To>
+        <RunTime>PT12M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_SHORT">
+      <JourneyPatternTimingLink id="JPTL_S1">
+        <From><StopPointRef>STOP_A</StopPointRef></From>
+        <To><StopPointRef>STOP_B</StopPointRef></To>
+        <RunTime>PT10M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="JPTL_S2">
+        <From><StopPointRef>STOP_B</StopPointRef></From>
+        <To><StopPointRef>STOP_C</StopPointRef></To>
+        <RunTime>PT5M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+  </JourneyPatternSections>
+  <Services>
+    <Service>
+      <ServiceCode>SER_SB1</ServiceCode>
+      <Lines>
+        <Line id="L1"><LineName>SB1</LineName></Line>
+      </Lines>
+      <OperatingPeriod>
+        <StartDate>2026-08-01</StartDate>
+        <EndDate>2026-12-31</EndDate>
+      </OperatingPeriod>
+      <OperatingProfile>
+        <RegularDayType>
+          <DaysOfWeek><MondayToFriday/></DaysOfWeek>
+        </RegularDayType>
+      </OperatingProfile>
+      <StandardService>
+        <Origin>Stevenage</Origin>
+        <Destination>Stevenage</Destination>
+        <JourneyPattern id="JP_SHORT">
+          <JourneyPatternSectionRefs>JPS_SHORT</JourneyPatternSectionRefs>
+        </JourneyPattern>
+        <JourneyPattern id="JP_FULL">
+          <JourneyPatternSectionRefs>JPS_FULL</JourneyPatternSectionRefs>
+        </JourneyPattern>
+      </StandardService>
+    </Service>
+  </Services>
+  <VehicleJourneys>
+    <VehicleJourney>
+      <VehicleJourneyCode>VJ_EARLY_FULL</VehicleJourneyCode>
+      <ServiceRef>SER_SB1</ServiceRef>
+      <JourneyPatternRef>JP_FULL</JourneyPatternRef>
+      <DepartureTime>06:00:00</DepartureTime>
+      <OperatorRef>O1</OperatorRef>
+    </VehicleJourney>
+    <VehicleJourney>
+      <VehicleJourneyCode>VJ_DAY_SHORT</VehicleJourneyCode>
+      <ServiceRef>SER_SB1</ServiceRef>
+      <JourneyPatternRef>JP_SHORT</JourneyPatternRef>
+      <DepartureTime>07:50:00</DepartureTime>
+      <OperatorRef>O1</OperatorRef>
+    </VehicleJourney>
+    <VehicleJourney>
+      <VehicleJourneyCode>VJ_PEAK_FULL</VehicleJourneyCode>
+      <ServiceRef>SER_SB1</ServiceRef>
+      <JourneyPatternRef>JP_FULL</JourneyPatternRef>
+      <DepartureTime>08:30:00</DepartureTime>
+      <OperatorRef>O1</OperatorRef>
+    </VehicleJourney>
+  </VehicleJourneys>
+</TransXChange>
+"""
+    timetables = BodsClient.parse_transxchange_xml(
+        multi_pattern_xml,
+        target_stop_codes={"STOP_A", "STOP_D"},
+    )
+    assert len(timetables) == 1
+    tt = timetables[0]
+    assert tt["name"] == "Bus SB1: Stevenage Bus Station (Circular)"
+
+    stops = tt["content"]["stops"]
+    assert len(stops) == 5
+    assert [s["id"] for s in stops] == [
+        "STOP_A",
+        "STOP_B",
+        "STOP_C",
+        "STOP_D",
+        "STOP_A",
+    ]
+
+    trips = tt["content"]["trips"]
+    assert len(trips) == 3
+    # Early full trip: 06:00 -> 06:10 -> 06:15 -> 06:23 -> 06:35
+    assert trips[0]["id"] == "VJ_EARLY_FULL"
+    assert trips[0]["times"] == ["06:00", "06:10", "06:15", "06:23", "06:35"]
+
+    # Short daytime trip: 07:50 -> 08:00 -> 08:05, and empty for STOP_D and STOP_A
+    assert trips[1]["id"] == "VJ_DAY_SHORT"
+    assert trips[1]["times"] == ["07:50", "08:00", "08:05", "", ""]
+
+    # Peak full trip: 08:30 -> 08:40 -> 08:45 -> 08:53 -> 09:05
+    assert trips[2]["id"] == "VJ_PEAK_FULL"
+    assert trips[2]["times"] == ["08:30", "08:40", "08:45", "08:53", "09:05"]

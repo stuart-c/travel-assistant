@@ -74,6 +74,50 @@ def _format_seconds_to_hh_mm(total_seconds: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+def _align_subsequence(
+    sub_stops: List[str], sub_times: List[str], master_stops: List[str]
+) -> Optional[List[str]]:
+    """Align sub_stops and sub_times onto master_stops, filling unvisited stops with empty string.
+
+    Returns the aligned times list of length len(master_stops), or None if sub_stops is not a valid
+    subsequence of master_stops.
+    """
+    m = len(master_stops)
+    n = len(sub_stops)
+    if n == 0:
+        return [""] * m
+    if n > m:
+        return None
+
+    # Search for an ordered matching of sub_stops inside master_stops
+    for start_idx in range(m - n + 1):
+        if master_stops[start_idx] == sub_stops[0]:
+            matched_indices = [start_idx]
+            curr_master = start_idx + 1
+            matched = True
+            for sub_idx in range(1, n):
+                target = sub_stops[sub_idx]
+                found = False
+                while curr_master < m:
+                    if master_stops[curr_master] == target:
+                        matched_indices.append(curr_master)
+                        curr_master += 1
+                        found = True
+                        break
+                    curr_master += 1
+                if not found:
+                    matched = False
+                    break
+            if matched:
+                aligned_times = [""] * m
+                for s_idx, m_idx in enumerate(matched_indices):
+                    aligned_times[m_idx] = (
+                        sub_times[s_idx] if s_idx < len(sub_times) else ""
+                    )
+                return aligned_times
+    return None
+
+
 class BodsClient(BaseDataSource):
     """Datasource client for the UK Bus Open Data Service (BODS)."""
 
@@ -618,27 +662,124 @@ class BodsClient(BaseDataSource):
                 }
                 trips_by_pattern.setdefault(jp_ref, []).append(trip_obj)
 
-        # 6. Build Timetable dictionaries
+        # 6. Consolidate Journey Patterns into corridors and build Timetable dictionaries
         timetables: List[Dict[str, Any]] = []
 
         for svc in services:
-            for jp_id, p_info in svc["patterns"].items():
+            line_name = svc["line_name"]
+            corridors: List[Dict[str, Any]] = []
+
+            # Sort patterns descending by stop sequence length so largest pattern becomes initial master
+            sorted_patterns = sorted(
+                svc["patterns"].items(),
+                key=lambda item: len(
+                    pattern_sequences.get(item[0], {}).get("stops", [])
+                ),
+                reverse=True,
+            )
+
+            for jp_id, p_info in sorted_patterns:
                 p_seq = pattern_sequences.get(jp_id)
                 if not p_seq or not p_seq["stops"]:
                     continue
 
-                stop_refs = p_seq["stops"]
+                p_stops = p_seq["stops"]
+                p_trips = trips_by_pattern.get(jp_id, [])
+
+                # Attempt to merge into an existing corridor
+                merged = False
+                for corr in corridors:
+                    c_stops = corr["master_stops"]
+
+                    # Case 1: p_stops is a sub-sequence of c_stops
+                    aligned_trips: List[Dict[str, Any]] = []
+                    can_align = True
+                    for t in p_trips:
+                        aligned_t = _align_subsequence(
+                            p_stops, t.get("times", []), c_stops
+                        )
+                        if aligned_t is None:
+                            can_align = False
+                            break
+                        aligned_trips.append(
+                            {
+                                "id": t.get("id"),
+                                "dep_sec": t.get("dep_sec", 0),
+                                "operator": t.get("operator", ""),
+                                "times": aligned_t,
+                            }
+                        )
+
+                    if can_align and (aligned_trips or not p_trips):
+                        corr["trips"].extend(aligned_trips)
+                        merged = True
+                        break
+
+                    # Case 2: c_stops is a sub-sequence of p_stops (p_stops is a superset)
+                    can_expand = True
+                    expanded_existing_trips: List[Dict[str, Any]] = []
+                    for t in corr["trips"]:
+                        aligned_t = _align_subsequence(
+                            c_stops, t.get("times", []), p_stops
+                        )
+                        if aligned_t is None:
+                            can_expand = False
+                            break
+                        expanded_existing_trips.append(
+                            {
+                                "id": t.get("id"),
+                                "dep_sec": t.get("dep_sec", 0),
+                                "operator": t.get("operator", ""),
+                                "times": aligned_t,
+                            }
+                        )
+
+                    if can_expand:
+                        corr["master_stops"] = list(p_stops)
+                        corr["trips"] = expanded_existing_trips
+                        for t in p_trips:
+                            corr["trips"].append(
+                                {
+                                    "id": t.get("id"),
+                                    "dep_sec": t.get("dep_sec", 0),
+                                    "operator": t.get("operator", ""),
+                                    "times": t.get("times", []),
+                                }
+                            )
+                        merged = True
+                        break
+
+                if not merged:
+                    corridors.append(
+                        {
+                            "master_stops": list(p_stops),
+                            "trips": [
+                                {
+                                    "id": t.get("id"),
+                                    "dep_sec": t.get("dep_sec", 0),
+                                    "operator": t.get("operator", ""),
+                                    "times": t.get("times", []),
+                                }
+                                for t in p_trips
+                            ],
+                        }
+                    )
+
+            for corr in corridors:
+                master_stop_refs = corr["master_stops"]
+                if not master_stop_refs:
+                    continue
 
                 # Filter by target stops if requested
                 if target_codes is not None:
                     covers_target = any(
-                        s.upper().strip() in target_codes for s in stop_refs
+                        s.upper().strip() in target_codes for s in master_stop_refs
                     )
                     if not covers_target:
                         continue
 
                 stops_list: List[Dict[str, Any]] = []
-                for s_ref in stop_refs:
+                for s_ref in master_stop_refs:
                     st_meta = stops_map.get(s_ref) or lookup.get(s_ref.upper()) or {}
                     stops_list.append(
                         {
@@ -652,29 +793,38 @@ class BodsClient(BaseDataSource):
                         }
                     )
 
-                raw_trips = trips_by_pattern.get(jp_id, [])
-                raw_trips.sort(key=lambda t: t.get("dep_sec", 0))
+                # Deduplicate and sort trips chronologically
+                seen_trip_ids: Set[str] = set()
+                sorted_trips = sorted(corr["trips"], key=lambda t: t.get("dep_sec", 0))
+                unique_trips: List[Dict[str, Any]] = []
+                for t in sorted_trips:
+                    tid = t.get("id")
+                    if tid and tid in seen_trip_ids:
+                        continue
+                    if tid:
+                        seen_trip_ids.add(tid)
+                    unique_trips.append(t)
 
-                origin_name = svc["origin"] or (
-                    stops_list[0]["name"] if stops_list else "Origin"
-                )
-                dest_name = svc["destination"] or (
-                    stops_list[-1]["name"] if stops_list else "Destination"
-                )
-                line_name = svc["line_name"]
+                first_name = stops_list[0]["name"] if stops_list else "Origin"
+                last_name = stops_list[-1]["name"] if stops_list else "Destination"
+                first_id = stops_list[0]["id"] if stops_list else ""
+                last_id = stops_list[-1]["id"] if stops_list else ""
+
+                if first_id and last_id and first_id == last_id and len(stops_list) > 1:
+                    timetable_name = f"Bus {line_name}: {first_name} (Circular)"
+                else:
+                    timetable_name = f"Bus {line_name}: {first_name} to {last_name}"
 
                 clean_trips: List[Dict[str, Any]] = []
-                for idx, t in enumerate(raw_trips):
+                for idx, t in enumerate(unique_trips):
                     clean_trips.append(
                         {
                             "id": t.get("id") or f"trip_{idx + 1}",
-                            "headsign": f"{line_name} to {dest_name}".strip(),
+                            "headsign": f"{line_name} to {last_name}".strip(),
                             "operator": t.get("operator", ""),
                             "times": t.get("times", []),
                         }
                     )
-
-                timetable_name = f"Bus {line_name}: {origin_name} to {dest_name}"
 
                 timetables.append(
                     {
@@ -810,8 +960,7 @@ class BodsClient(BaseDataSource):
                 if not data.get("next"):
                     break
 
-            all_timetables: List[Dict[str, Any]] = []
-            seen_names: Set[str] = set()
+            timetables_by_sig: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
 
             for item in results:
                 dl_url = item.get("url")
@@ -826,10 +975,40 @@ class BodsClient(BaseDataSource):
                         stop_lookup=stop_lookup,
                     )
                     for tt in parsed_tt:
-                        name = tt.get("name")
-                        if name and name not in seen_names:
-                            seen_names.add(name)
-                            all_timetables.append(tt)
+                        name = tt.get("name") or "Bus"
+                        stops = tuple(
+                            s.get("id", "")
+                            for s in tt.get("content", {}).get("stops", [])
+                        )
+                        sig = (name, stops)
+
+                        if sig in timetables_by_sig:
+                            # Merge additional trips into existing timetable
+                            existing = timetables_by_sig[sig]
+                            existing_trips = existing.get("content", {}).get(
+                                "trips", []
+                            )
+                            new_trips = tt.get("content", {}).get("trips", [])
+                            seen_trip_ids = {
+                                t.get("id") for t in existing_trips if t.get("id")
+                            }
+
+                            for nt in new_trips:
+                                tid = nt.get("id")
+                                if not tid or tid not in seen_trip_ids:
+                                    if tid:
+                                        seen_trip_ids.add(tid)
+                                    existing_trips.append(nt)
+
+                            def _first_time_val(trip: Dict[str, Any]) -> str:
+                                for tm in trip.get("times", []):
+                                    if isinstance(tm, str) and tm.strip():
+                                        return tm.strip()
+                                return "99:99"
+
+                            existing_trips.sort(key=_first_time_val)
+                        else:
+                            timetables_by_sig[sig] = tt
                 except (
                     DataSourceAuthError,
                     DataSourceConfigError,
@@ -839,7 +1018,7 @@ class BodsClient(BaseDataSource):
                 except Exception:
                     continue
 
-            return all_timetables
+            return list(timetables_by_sig.values())
 
         except requests.exceptions.Timeout as e:
             raise DataSourceConnectionError(
