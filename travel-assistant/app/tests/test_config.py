@@ -926,10 +926,11 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert data_resp.status_code == 200
     payload = data_resp.get_json()
     tables = payload.get("data", [])
-    assert len(tables) == 6
+    assert len(tables) == 7
     expected_names = {
         "bus_routes",
         "stops",
+        "rail_references",
         "ha_locations",
         "train_timetables",
         "walking",
@@ -1161,7 +1162,7 @@ def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert "data" in payload
     assert "total" in payload
     assert isinstance(payload["data"], list)
-    assert payload["total"] == 6
+    assert payload["total"] == 7
 
     bus_routes = next((t for t in payload["data"] if t["name"] == "bus_routes"), None)
     assert bus_routes is not None

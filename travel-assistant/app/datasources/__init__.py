@@ -16,7 +16,7 @@ from app.datasources.exceptions import (
 )
 from app.datasources.google_maps import GoogleMapsClient
 from app.datasources.homeassistant import HomeAssistantClient
-from app.datasources.naptan import NaptanClient
+from app.datasources.naptan import NaptanClient, RailReferencesClient
 from app.datasources.openai import OpenAIClient, filter_chat_models
 from app.datasources.train_live import TrainLiveClient
 from app.datasources.train_s3 import TrainS3Client
@@ -69,6 +69,7 @@ __all__ = [
     "OpenAIClient",
     "GoogleMapsClient",
     "NaptanClient",
+    "RailReferencesClient",
     "HomeAssistantClient",
     "filter_chat_models",
     "get_datasource",
