@@ -67,7 +67,7 @@ def test_api_sync_endpoints(client: FlaskClient) -> None:
         assert data_all["success"] is True
         assert data_all["status"] == "queued"
         assert "tables" in data_all
-        assert mock_req.call_count == 6  # one call per SYNC_REGISTRY entry
+        assert mock_req.call_count == 7  # one call per SYNC_REGISTRY entry
 
     # 2. Queue specific valid table
     with patch("app.main.request_sync") as mock_req2:

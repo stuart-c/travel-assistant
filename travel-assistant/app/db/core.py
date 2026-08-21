@@ -87,7 +87,7 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import PlatformTransfer
-    from app.models.transit import BusRoute, Stop, SyncMetadata
+    from app.models.transit import BusRoute, RailReference, Stop, SyncMetadata
     from app.models.walking import Walking
 
     try:
@@ -103,6 +103,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         SyncMetadata,
         BusRoute,
         Stop,
+        RailReference,
         PlatformTransfer,
         Location,
         Journey,
