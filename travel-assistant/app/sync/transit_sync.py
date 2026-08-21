@@ -122,17 +122,6 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
             if stp.name:
                 stop_lookup[stp.name.upper().strip()] = meta
 
-        # If rail references exist, index them by TIPLOC and CRS to canonical ATCO stop
-        for ref in RailReference.select():
-            if ref.atco_code:
-                atco_clean = ref.atco_code.upper().strip()
-                target_meta = stop_lookup.get(atco_clean)
-                if target_meta:
-                    if ref.tiploc:
-                        stop_lookup[ref.tiploc.upper().strip()] = target_meta
-                    if ref.crs_code:
-                        stop_lookup[ref.crs_code.upper().strip()] = target_meta
-
         parsed_timetables = client.fetch_timetables(stop_lookup=stop_lookup)
         count = len(parsed_timetables)
 
