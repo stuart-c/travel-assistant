@@ -852,6 +852,7 @@ def test_sync_registry_ordering() -> None:
         "bus_routes",
         "stops",
         "rail_references",
+        "stop_interchanges",
         "ha_locations",
         "train_timetables",
         "walking",

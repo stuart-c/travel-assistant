@@ -281,6 +281,75 @@ class RailReference(BaseModel):
             return None
 
 
+class StopInterchange(BaseModel):
+    """Discovered or calculated interchange connection between two nearby transit stops."""
+
+    id = AutoField()
+    from_stop_atco = CharField(index=True)
+    from_stop_name = CharField()
+    from_stop_type = CharField(default="bus")
+    to_stop_atco = CharField(index=True)
+    to_stop_name = CharField()
+    to_stop_type = CharField(default="bus")
+    distance_metres = IntegerField()
+    estimated_walk_minutes = IntegerField(default=1)
+
+    class Meta:
+        table_name = "stop_interchanges"
+        indexes = (
+            (("from_stop_atco", "to_stop_atco"), True),
+            (("to_stop_atco",), False),
+        )
+
+    @classmethod
+    def bulk_replace(
+        cls, interchanges: List[Dict[str, Any]], batch_size: int = 500
+    ) -> int:
+        """Replace all stop interchange records atomically in chunked batches."""
+        now = datetime.datetime.utcnow()
+        rows = [
+            {
+                "from_stop_atco": str(item.get("from_stop_atco", "")).strip(),
+                "from_stop_name": str(item.get("from_stop_name", "")).strip(),
+                "from_stop_type": (
+                    str(item.get("from_stop_type", "bus")).strip().lower() or "bus"
+                ),
+                "to_stop_atco": str(item.get("to_stop_atco", "")).strip(),
+                "to_stop_name": str(item.get("to_stop_name", "")).strip(),
+                "to_stop_type": (
+                    str(item.get("to_stop_type", "bus")).strip().lower() or "bus"
+                ),
+                "distance_metres": int(item.get("distance_metres", 0)),
+                "estimated_walk_minutes": max(
+                    1, int(item.get("estimated_walk_minutes", 1))
+                ),
+                "created_at": now,
+                "updated_at": now,
+            }
+            for item in interchanges
+            if item.get("from_stop_atco") and item.get("to_stop_atco")
+        ]
+
+        with cls._meta.database.atomic():
+            cls.delete().execute()
+            if not rows:
+                return 0
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i : i + batch_size]
+                cls.insert_many(batch).execute()
+
+        return len(rows)
+
+    @classmethod
+    def get_interchanges_for_stop(cls, atco_code: str) -> List["StopInterchange"]:
+        """Retrieve all outgoing interchange connections from a given ATCO code."""
+        return list(
+            cls.select()
+            .where(cls.from_stop_atco == atco_code.strip())
+            .order_by(cls.distance_metres.asc())
+        )
+
+
 class SyncMetadata(BaseModel):
     """Synchronisation status and telemetry for transit tables."""
 

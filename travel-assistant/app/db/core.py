@@ -87,7 +87,13 @@ def run_migrations(database: SqliteDatabase) -> None:
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import PlatformTransfer
-    from app.models.transit import BusRoute, RailReference, Stop, SyncMetadata
+    from app.models.transit import (
+        BusRoute,
+        RailReference,
+        Stop,
+        StopInterchange,
+        SyncMetadata,
+    )
     from app.models.walking import Walking
 
     try:
@@ -104,6 +110,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         BusRoute,
         Stop,
         RailReference,
+        StopInterchange,
         PlatformTransfer,
         Location,
         Journey,
@@ -112,6 +119,17 @@ def run_migrations(database: SqliteDatabase) -> None:
 
     with database.bind_ctx(all_models):
         database.create_tables(all_models, safe=True)
+
+    try:
+        database.execute_sql("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS "stops_rtree" USING rtree(
+                id,
+                min_easting, max_easting,
+                min_northing, max_northing
+            )
+            """)
+    except Exception:
+        pass
 
     try:
         cursor = database.execute_sql(
@@ -345,7 +363,13 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.setting import Setting
     from app.models.timetable import Timetable
     from app.models.transfer import PlatformTransfer
-    from app.models.transit import BusRoute, Stop, SyncMetadata
+    from app.models.transit import (
+        BusRoute,
+        RailReference,
+        Stop,
+        StopInterchange,
+        SyncMetadata,
+    )
     from app.models.walking import Walking
 
     db_path = get_db_path(app)
@@ -410,6 +434,8 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "sync_metadata": SyncMetadata,
             "bus_routes": BusRoute,
             "stops": Stop,
+            "rail_references": RailReference,
+            "stop_interchanges": StopInterchange,
             "platform_transfers": PlatformTransfer,
             "locations": Location,
             "journeys": Journey,
@@ -438,6 +464,8 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             _syncable = (
                 "bus_routes",
                 "stops",
+                "rail_references",
+                "stop_interchanges",
                 "ha_locations",
                 "train_timetables",
                 "bus_timetables",

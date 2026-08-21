@@ -12,6 +12,7 @@ from app.sync.transit_sync import (
     sync_bus_routes,
     sync_bus_timetables,
     sync_rail_references,
+    sync_stop_interchanges,
     sync_stops,
     sync_train_timetables,
 )
@@ -40,6 +41,7 @@ SYNC_REGISTRY: List[SyncEntry] = [
     SyncEntry("bus_routes", sync_bus_routes, _SECONDS_PER_DAY),
     SyncEntry("stops", sync_stops, _SECONDS_PER_WEEK),
     SyncEntry("rail_references", sync_rail_references, _SECONDS_PER_WEEK),
+    SyncEntry("stop_interchanges", sync_stop_interchanges, _SECONDS_PER_WEEK),
     SyncEntry("ha_locations", sync_ha_locations, _SECONDS_PER_HOUR),
     SyncEntry("train_timetables", sync_train_timetables, _SECONDS_PER_DAY),
     SyncEntry("walking", sync_walking_routes, _SECONDS_PER_DAY),

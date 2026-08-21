@@ -5,7 +5,8 @@ bus stops, and rail station datasets using modular datasource clients.
 """
 
 import logging
-from typing import Any, Dict, Optional, Set
+import math
+from typing import Any, Dict, List, Optional, Set
 from flask import Flask
 
 from app.datasources import (
@@ -20,12 +21,16 @@ from app.models import (
     Journey,
     RailReference,
     Stop,
+    StopInterchange,
     Timetable,
     Walking,
 )
 from app.sync.common import run_sync_task
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_INTERCHANGE_RADIUS_METRES = 250.0
+WALKING_METRES_PER_MINUTE = 80.0
 
 
 def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
@@ -63,6 +68,15 @@ def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
         stops_to_upsert = client.fetch_stops()
         if stops_to_upsert:
             Stop.bulk_upsert(stops_to_upsert)
+            try:
+                from app.sync.worker import request_sync
+
+                request_sync("stop_interchanges")
+            except Exception as sync_exc:
+                logger.warning(
+                    "Failed to queue stop_interchanges sync after stops sync: %s",
+                    sync_exc,
+                )
         return len(stops_to_upsert)
 
     return run_sync_task(
@@ -289,6 +303,127 @@ def sync_rail_references(app: Optional[Flask] = None) -> Dict[str, Any]:
     )
 
 
+def populate_stops_rtree(database: Optional[Any] = None) -> int:
+    """Populate the SQLite stops_rtree virtual table with current stops coordinates."""
+    db_conn = database or db.obj
+    with db_conn.connection_context():
+        db_conn.execute_sql("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS "stops_rtree" USING rtree(
+                id,
+                min_easting, max_easting,
+                min_northing, max_northing
+            )
+            """)
+        with db_conn.atomic():
+            db_conn.execute_sql('DELETE FROM "stops_rtree"')
+            db_conn.execute_sql("""
+                INSERT INTO "stops_rtree" (id, min_easting, max_easting, min_northing, max_northing)
+                SELECT id, easting, easting, northing, northing
+                FROM "stops"
+                WHERE easting IS NOT NULL AND northing IS NOT NULL
+                """)
+            cursor = db_conn.execute_sql('SELECT COUNT(*) FROM "stops_rtree"')
+            row = cursor.fetchone()
+            return row[0] if row else 0
+
+
+def find_nearby_stop_interchanges(
+    radius_metres: float = DEFAULT_INTERCHANGE_RADIUS_METRES,
+    database: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    """Query nearby transit stop interchanges within radius_metres using SQLite R*Tree.
+
+    Performs a spatial bounding-box join against stops_rtree using British National Grid
+    easting and northing coordinates, followed by exact Euclidean distance filtering
+    and walking duration estimation.
+    """
+    db_conn = database or db.obj
+    populate_stops_rtree(database=db_conn)
+
+    query = """
+        SELECT
+            s1.atco_code AS from_stop_atco,
+            s1.name AS from_stop_name,
+            s1.stop_type AS from_stop_type,
+            s2.atco_code AS to_stop_atco,
+            s2.name AS to_stop_name,
+            s2.stop_type AS to_stop_type,
+            s1.easting AS s1_east,
+            s1.northing AS s1_north,
+            s2.easting AS s2_east,
+            s2.northing AS s2_north
+        FROM "stops" s1
+        JOIN "stops_rtree" r ON (
+            r.min_easting <= s1.easting + :radius
+            AND r.max_easting >= s1.easting - :radius
+            AND r.min_northing <= s1.northing + :radius
+            AND r.max_northing >= s1.northing - :radius
+        )
+        JOIN "stops" s2 ON s2.id = r.id
+        WHERE s1.id != s2.id
+          AND s1.easting IS NOT NULL
+          AND s1.northing IS NOT NULL
+    """
+
+    interchanges: List[Dict[str, Any]] = []
+    with db_conn.connection_context():
+        cursor = db_conn.execute_sql(query, {"radius": float(radius_metres)})
+        rows = cursor.fetchall()
+        for row in rows:
+            (
+                from_atco,
+                from_name,
+                from_type,
+                to_atco,
+                to_name,
+                to_type,
+                s1_e,
+                s1_n,
+                s2_e,
+                s2_n,
+            ) = row
+            dx = float(s2_e - s1_e)
+            dy = float(s2_n - s1_n)
+            distance_m = math.hypot(dx, dy)
+            if distance_m <= radius_metres:
+                dist_int = int(round(distance_m))
+                walk_min = max(1, math.ceil(distance_m / WALKING_METRES_PER_MINUTE))
+                interchanges.append(
+                    {
+                        "from_stop_atco": from_atco,
+                        "from_stop_name": from_name,
+                        "from_stop_type": from_type or "bus",
+                        "to_stop_atco": to_atco,
+                        "to_stop_name": to_name,
+                        "to_stop_type": to_type or "bus",
+                        "distance_metres": dist_int,
+                        "estimated_walk_minutes": walk_min,
+                    }
+                )
+
+    return interchanges
+
+
+def sync_stop_interchanges(
+    app: Optional[Flask] = None,
+    radius_metres: float = DEFAULT_INTERCHANGE_RADIUS_METRES,
+) -> Dict[str, Any]:
+    """Discover nearby stop interchanges using NaPTAN easting/northing coordinates and SQLite R*Tree."""
+
+    def _perform_sync() -> int:
+        interchanges = find_nearby_stop_interchanges(radius_metres=radius_metres)
+        return StopInterchange.bulk_replace(interchanges)
+
+    return run_sync_task(
+        table_name="stop_interchanges",
+        sync_operation=_perform_sync,
+        success_message_factory=lambda cnt: (
+            f"Successfully synchronised {cnt} nearby stop interchange pairs."
+        ),
+        app=app,
+    )
+
+
 def sync_table(
     table_name: str,
     force: bool = False,
@@ -308,6 +443,8 @@ def sync_table(
         return sync_stops(app=app)
     elif norm_name == "rail_references":
         return sync_rail_references(app=app)
+    elif norm_name in ("stop_interchanges", "interchanges", "stop_interchange"):
+        return sync_stop_interchanges(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
         return sync_ha_locations(app=app)
     elif norm_name == "train_timetables":
