@@ -942,6 +942,15 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert ha_entry is not None
     assert ha_entry["syncable"] is True
 
+    # Verify sync.js asset contains human display name and icon mappings for all sync datasets
+    js_resp = client.get("/static/js/sync.js")
+    assert js_resp.status_code == 200
+    js_content = js_resp.get_data(as_text=True)
+    assert "Stop Interchanges" in js_content
+    assert "transfer_within_a_station" in js_content
+    for name in expected_names:
+        assert f"'{name}'" in js_content or f'"{name}"' in js_content
+
 
 def test_sync_db_table_endpoint_all_rejected(client: FlaskClient) -> None:
     """Test POST /config/db/sync/all returns 400 as bulk synchronisation is removed."""

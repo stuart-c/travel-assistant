@@ -17,7 +17,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const dataUrl = (gridContainer && gridContainer.getAttribute('data-data-url')) || '/config/sync/data';
 
-  const SYNCABLE_NAMES = ['bus_routes', 'stops', 'ha_locations', 'locations', 'train_timetables', 'bus_timetables', 'walking'];
+  const SYNCABLE_NAMES = [
+    'bus_routes',
+    'stops',
+    'stop_interchanges',
+    'ha_locations',
+    'locations',
+    'train_timetables',
+    'bus_timetables',
+    'walking',
+  ];
 
   function extractSyncableTables(tablesList) {
     return (Array.isArray(tablesList) ? tablesList : []).filter(t => t.syncable || SYNCABLE_NAMES.includes(t.name));
@@ -34,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (name) {
       case 'bus_routes': return 'alt_route';
       case 'stops': return 'directions_transit';
+      case 'stop_interchanges': return 'transfer_within_a_station';
       case 'ha_locations': return 'pin_drop';
       case 'locations': return 'pin_drop';
       case 'train_timetables': return 'train';
@@ -47,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (name) {
       case 'bus_routes': return 'Bus Routes';
       case 'stops': return 'Transit Stops (NaPTAN)';
+      case 'stop_interchanges': return 'Stop Interchanges';
       case 'ha_locations': return 'Home Assistant Locations';
       case 'locations': return 'Home Assistant Locations';
       case 'train_timetables': return 'Train Timetables (Darwin S3)';
