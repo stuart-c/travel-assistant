@@ -343,6 +343,30 @@ class UITester:
             f"Verified {len(w_data)} walking routes in payload",
         )
 
+        # Sync Datasets Grid.js & Human Display Labels
+        r_sync_get = self.client.get("/config/sync/data")
+        sync_data = (
+            r_sync_get.get_json().get("data", [])
+            if r_sync_get.status_code == 200
+            else []
+        )
+        r_sync_js = self.client.get("/static/js/sync.js")
+        sync_js_content = (
+            r_sync_js.get_data(as_text=True) if r_sync_js.status_code == 200 else ""
+        )
+        has_human_titles = (
+            "Stop Interchanges" in sync_js_content
+            and "transfer_within_a_station" in sync_js_content
+            and "Transit Stops (NaPTAN)" in sync_js_content
+        )
+        self.record(
+            "Sync Datasets Grid.js Data & Human Labels",
+            r_sync_get.status_code == 200
+            and len(sync_data) >= 7
+            and has_human_titles,
+            f"Verified {len(sync_data)} sync datasets with human labels",
+        )
+
         # 5. British English Compliance
         print("\n--- 5. Checking British English Standards ---")
         prohibited_us_words = [

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed hardcoded `KNOWN_TIPLOCS` dictionary in `TrainS3Client` and standardised train timetable stop generation to use canonical NaPTAN ATCO codes (`9100...`) mapped dynamically from Darwin XML TIPLOC codes and NaPTAN rail stop lookups, eliminating CRS stop ID mismatches across multi-modal `stop_interchanges` and shuttle bus timetables.
 
 ### Fixed
+- Fixed raw database table identifier `stop_interchanges` displaying in place of a human-readable dataset title on the Background Synchronisation view (`/config/sync`) by defining a user-friendly display title ("Stop Interchanges") and dedicated Material Symbols icon (`transfer_within_a_station`) in `sync.js`.
 - Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.
 - Fixed bus timetables not being downloaded during BODS synchronisation by resolving target bus stop references with prefix awareness (`naptan:` vs `atco:`) to their 12-digit ATCO codes before matching against TransXChange XML `<StopPointRef>` elements in `sync_bus_timetables`.
 - Fixed BODS dataset listing queries truncating at single-page limits (which omitted published datasets such as Arriva Thameside in Hertfordshire) by implementing multi-page offset-based pagination across `BodsClient.fetch_routes` and `BodsClient.fetch_timetables`.
