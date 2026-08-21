@@ -7,7 +7,6 @@ from flask import Flask
 
 from app.models import (
     BusRoute,
-    RailReference,
     Setting,
     Stop,
     SyncMetadata,
@@ -19,7 +18,6 @@ from app.sync import (
     start_background_worker,
     stop_background_worker,
     sync_bus_routes,
-    sync_rail_references,
     sync_stops,
     sync_table,
 )
@@ -851,7 +849,6 @@ def test_sync_registry_ordering() -> None:
     assert table_order == [
         "bus_routes",
         "stops",
-        "rail_references",
         "stop_interchanges",
         "ha_locations",
         "train_timetables",
@@ -1007,97 +1004,3 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
                         in record.message
                         for record in caplog.records
                     )
-
-
-# ---------------------------------------------------------------------------
-# sync_rail_references tests
-# ---------------------------------------------------------------------------
-
-
-@patch("app.datasources.naptan.requests.get")
-def test_sync_rail_references_success(mock_get: MagicMock, app: Flask) -> None:
-    """Test sync_rail_references inserts records and records success metadata."""
-    csv_data = (
-        "TiplocCode,AtcoCode,CrsCode\n" "PADTON,9100PADTON,PAD\n" "OXFD,9100OXFD,OXF\n"
-    )
-    mock_get.return_value = MagicMock(status_code=200, text=csv_data)
-
-    with app.app_context():
-        res = sync_rail_references(app=app)
-
-    assert res["status"] == "success"
-    assert res["records"] == 2
-    assert "2 rail reference" in res["message"]
-
-    with app.app_context():
-        meta = SyncMetadata.get_meta("rail_references")
-        assert meta is not None
-        assert meta.status == "success"
-        assert meta.records_count == 2
-
-        assert RailReference.select().count() == 2
-        ref = RailReference.get_by_tiploc("PADTON")
-        assert ref is not None
-        assert ref.atco_code == "9100PADTON"
-        assert ref.crs_code == "PAD"
-
-
-@patch("app.datasources.naptan.requests.get")
-def test_sync_rail_references_full_replace(mock_get: MagicMock, app: Flask) -> None:
-    """Test sync_rail_references performs a full replace: previous rows are removed."""
-    csv_data_first = (
-        "TiplocCode,AtcoCode,CrsCode\n"
-        "PADTON,9100PADTON,PAD\n"
-        "OXFD,9100OXFD,OXF\n"
-        "DIDCOT,9100DID,DID\n"
-    )
-    csv_data_second = "TiplocCode,AtcoCode,CrsCode\n" "PADTON,9100PADTON,PAD\n"
-
-    with app.app_context():
-        mock_get.return_value = MagicMock(status_code=200, text=csv_data_first)
-        sync_rail_references(app=app)
-        assert RailReference.select().count() == 3
-
-        mock_get.return_value = MagicMock(status_code=200, text=csv_data_second)
-        res = sync_rail_references(app=app)
-        assert res["records"] == 1
-        assert RailReference.select().count() == 1
-        assert RailReference.get_by_tiploc("OXFD") is None
-        assert RailReference.get_by_tiploc("PADTON") is not None
-
-
-@patch("app.datasources.naptan.requests.get")
-def test_sync_rail_references_connection_error(mock_get: MagicMock, app: Flask) -> None:
-    """Test sync_rail_references records error metadata on connection failure."""
-    import requests as req
-
-    mock_get.side_effect = req.exceptions.ConnectionError("refused")
-
-    with app.app_context():
-        res = sync_rail_references(app=app)
-
-    assert res["status"] == "error"
-    assert res["records"] == 0
-
-    with app.app_context():
-        meta = SyncMetadata.get_meta("rail_references")
-        assert meta is not None
-        assert meta.status == "error"
-
-
-def test_sync_table_dispatches_rail_references(app: Flask) -> None:
-    """Test sync_table routes 'rail_references' to sync_rail_references."""
-    with app.app_context():
-        with patch(
-            "app.sync.transit_sync.sync_rail_references",
-            return_value={
-                "table": "rail_references",
-                "status": "success",
-                "records": 0,
-                "message": "ok",
-                "duration_seconds": 0.0,
-            },
-        ) as mock_sync:
-            res = sync_table("rail_references")
-            mock_sync.assert_called_once()
-            assert res["status"] == "success"

@@ -12,14 +12,12 @@ from flask import Flask
 from app.datasources import (
     BodsClient,
     NaptanClient,
-    RailReferencesClient,
     TrainS3Client,
 )
 from app.db import db
 from app.models import (
     BusRoute,
     Journey,
-    RailReference,
     Stop,
     StopInterchange,
     Timetable,
@@ -277,32 +275,6 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
     )
 
 
-def sync_rail_references(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise TIPLOC/ATCO/CRS rail reference mappings from NaPTAN RailReferences.csv.
-
-    Performs a full replace of the ``rail_references`` table on each run: all
-    existing rows are deleted and the latest dataset is inserted atomically.
-    This ensures stale entries from previous syncs are never retained.
-    """
-
-    def _perform_sync() -> int:
-        client = RailReferencesClient.from_settings()
-        refs = client.fetch_rail_references()
-        return RailReference.bulk_replace(refs)
-
-    return run_sync_task(
-        table_name="rail_references",
-        sync_operation=_perform_sync,
-        connection_error_template=(
-            "Network or connection error while fetching rail references from NaPTAN: {error}"
-        ),
-        success_message_factory=lambda cnt: (
-            f"Successfully synchronised {cnt} rail reference mappings from NaPTAN."
-        ),
-        app=app,
-    )
-
-
 def populate_stops_rtree(database: Optional[Any] = None) -> int:
     """Populate the SQLite stops_rtree virtual table with current stops coordinates."""
     db_conn = database or db.obj
@@ -441,8 +413,6 @@ def sync_table(
         return sync_bus_routes(app=app)
     elif norm_name in ("stops", "transit_stops", "naptan"):
         return sync_stops(app=app)
-    elif norm_name == "rail_references":
-        return sync_rail_references(app=app)
     elif norm_name in ("stop_interchanges", "interchanges", "stop_interchange"):
         return sync_stop_interchanges(app=app)
     elif norm_name in ("ha_locations", "locations", "homeassistant"):
