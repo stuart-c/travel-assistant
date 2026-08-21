@@ -245,7 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
         emptyText: 'No matching locations found. Enter details manually below.',
         onSelect: (item) => {
           if (platStationName) platStationName.value = item.name;
-          if (platStationId) platStationId.value = item.id;
+          if (platStationId) {
+            platStationId.value = item.id && item.id.includes(':')
+              ? item.id.split(':', 2)[1]
+              : (item.id || '');
+          }
           if (platStationType && item.type) {
             platStationType.value = item.type;
           }

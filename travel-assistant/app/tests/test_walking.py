@@ -16,17 +16,17 @@ def test_walking_model_crud(app: Flask) -> None:
         # Create walking routes
         w1 = Walking.create(
             start_type="ha",
-            start_id="zone.home",
+            start_id="ha:home",
             start_name="Home",
             finish_type="bus",
-            finish_id="490000077E",
+            finish_id="atco:490000077E",
             finish_name="King's Cross Station (Stop E)",
             time_needed_minutes=8,
             bidirectional=True,
         )
         w2 = Walking.create(
             start_type="rail",
-            start_id="9100KNGX",
+            start_id="atco:9100KNGX",
             start_name="London King's Cross",
             finish_type="custom",
             finish_id="custom:office",
@@ -42,10 +42,10 @@ def test_walking_model_crud(app: Flask) -> None:
         # Get by ID and verify dict conversion
         retrieved = Walking.get_by_id(w1.id)
         assert retrieved.start_type == "ha"
-        assert retrieved.start_id == "zone.home"
+        assert retrieved.start_id == "ha:home"
         assert retrieved.start_name == "Home"
         assert retrieved.finish_type == "bus"
-        assert retrieved.finish_id == "490000077E"
+        assert retrieved.finish_id == "atco:490000077E"
         assert retrieved.finish_name == "King's Cross Station (Stop E)"
         assert retrieved.time_needed_minutes == 8
         assert retrieved.bidirectional is True
@@ -53,7 +53,7 @@ def test_walking_model_crud(app: Flask) -> None:
         w_dict = retrieved.to_dict()
         assert w_dict["id"] == w1.id
         assert w_dict["start_type"] == "ha"
-        assert w_dict["start_id"] == "zone.home"
+        assert w_dict["start_id"] == "ha:home"
         assert w_dict["time_needed_minutes"] == 8
         assert w_dict["bidirectional"] is True
         assert "created_at" in w_dict
@@ -70,28 +70,28 @@ def test_walking_model_crud(app: Flask) -> None:
         assert res_home[0].start_name == "Home"
 
         # Search by ID
-        res_id = Walking.search("490000077E")
+        res_id = Walking.search("atco:490000077E")
         assert len(res_id) == 1
-        assert res_id[0].finish_id == "490000077E"
+        assert res_id[0].finish_id == "atco:490000077E"
 
         # Search non-existent
         assert len(Walking.search("NonExistentXYZ")) == 0
 
         # Find walking route (direct)
-        direct = Walking.find_walking_route("ha", "zone.home", "bus", "490000077E")
+        direct = Walking.find_walking_route("ha", "ha:home", "bus", "atco:490000077E")
         assert direct is not None
         assert direct.id == w1.id
 
         # Find walking route (reverse - bidirectional=True)
         reverse_bidi = Walking.find_walking_route(
-            "bus", "490000077E", "ha", "zone.home"
+            "bus", "atco:490000077E", "ha", "ha:home"
         )
         assert reverse_bidi is not None
         assert reverse_bidi.id == w1.id
 
         # Find walking route (reverse - bidirectional=False)
         reverse_unidi = Walking.find_walking_route(
-            "custom", "custom:office", "rail", "9100KNGX"
+            "custom", "custom:office", "rail", "atco:9100KNGX"
         )
         assert reverse_unidi is None
 
@@ -119,10 +119,10 @@ def test_get_walking_page(client: FlaskClient, app: Flask) -> None:
     with app.app_context():
         Walking.create(
             start_type="ha",
-            start_id="zone.home",
+            start_id="ha:home",
             start_name="Home Sweet Home",
             finish_type="bus",
-            finish_id="3400001",
+            finish_id="atco:3400001",
             finish_name="Local Bus Stop",
             time_needed_minutes=6,
             bidirectional=True,
@@ -146,10 +146,10 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
     with app.app_context():
         old_route = Walking.create(
             start_type="custom",
-            start_id="loc1",
+            start_id="custom:loc1",
             start_name="Old Route",
             finish_type="custom",
-            finish_id="loc2",
+            finish_id="custom:loc2",
             finish_name="Old Dest",
             time_needed_minutes=5,
         )
@@ -159,17 +159,17 @@ def test_post_walking_success(client: FlaskClient, app: Flask) -> None:
         "added": [
             {
                 "start_type": "ha",
-                "start_id": "zone.home",
+                "start_id": "ha:home",
                 "start_name": "Home",
                 "finish_type": "bus",
-                "finish_id": "490000077E",
+                "finish_id": "atco:490000077E",
                 "finish_name": "King's Cross Stop E",
                 "time_needed_minutes": 7,
                 "bidirectional": True,
             },
             {
                 "start_type": "rail",
-                "start_id": "9100KNGX",
+                "start_id": "atco:9100KNGX",
                 "start_name": "King's Cross",
                 "finish_type": "custom",
                 "finish_id": "custom:cafe",

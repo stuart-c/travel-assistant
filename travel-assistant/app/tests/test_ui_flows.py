@@ -17,7 +17,7 @@ from app.models import (
 def _seed_sample_data() -> None:
     """Helper to populate isolated test database with sample transit records."""
     Location.create(
-        id="zone.home",
+        id="ha:home",
         name="Home Zone",
         latitude=51.5300,
         longitude=-0.1200,
@@ -42,7 +42,7 @@ def _seed_sample_data() -> None:
         saturday=False,
         sunday=False,
     )
-    tt.set_content({"stops": ["9100KNGX"], "trips": [{"time": "08:00"}]})
+    tt.set_content({"stops": ["atco:9100KNGX"], "trips": [{"time": "08:00"}]})
     tt.save()
 
     PlatformTransfer.create(
@@ -59,7 +59,7 @@ def _seed_sample_data() -> None:
     j = Journey.create(
         name="Office Commute",
         from_type="ha",
-        from_id="zone.home",
+        from_id="ha:home",
         from_name="Home Zone",
         to_type="custom",
         to_id="custom:office",
@@ -70,10 +70,10 @@ def _seed_sample_data() -> None:
 
     Walking.create(
         start_type="ha",
-        start_id="zone.home",
+        start_id="ha:home",
         start_name="Home Zone",
         finish_type="bus",
-        finish_id="490000077E",
+        finish_id="atco:490000077E",
         finish_name="King's Cross Stop E",
         time_needed_minutes=5,
         bidirectional=True,
@@ -272,7 +272,7 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
         {
             "name": "Library Study Session",
             "from_type": "ha",
-            "from_id": "zone.home",
+            "from_id": "ha:home",
             "from_name": "Home Zone",
             "to_type": "custom",
             "to_id": "custom:office",
@@ -309,7 +309,7 @@ def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
     walking_payload = [
         {
             "start_type": "ha",
-            "start_id": "zone.home",
+            "start_id": "ha:home",
             "start_name": "Home Zone",
             "finish_type": "custom",
             "finish_id": "custom:office",
@@ -342,10 +342,10 @@ def test_journeys_ui_flow_create_save_navigate_return(client: FlaskClient) -> No
     new_journey = {
         "name": "Gym Workout Route",
         "from_type": "ha",
-        "from_id": "zone.home",
+        "from_id": "ha:home",
         "from_name": "Home Zone",
         "to_type": "ha",
-        "to_id": "zone.gym",
+        "to_id": "ha:gym",
         "to_name": "City Health Club",
         "time_settings": [
             {
@@ -477,7 +477,7 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
             {
                 "name": "Market Visit Route",
                 "from_type": "ha",
-                "from_id": "zone.home",
+                "from_id": "ha:home",
                 "from_name": "Home Zone",
                 "to_type": "custom",
                 "to_id": "custom:community_centre",
@@ -506,10 +506,10 @@ def test_all_pages_navigation_and_persistence_roundtrip(client: FlaskClient) -> 
         "added": [
             {
                 "start_type": "ha",
-                "start_id": "zone.home",
+                "start_id": "ha:home",
                 "start_name": "Home Zone",
                 "finish_type": "bus",
-                "finish_id": "490000077E",
+                "finish_id": "atco:490000077E",
                 "finish_name": "King's Cross Stop E",
                 "time_needed_minutes": 7,
                 "bidirectional": True,

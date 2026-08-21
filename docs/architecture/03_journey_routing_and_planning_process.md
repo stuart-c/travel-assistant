@@ -92,7 +92,7 @@ The planning process utilizes six core tables in `travel_assistant.db`:
 | Table | Relevant Fields | Process Role |
 | :--- | :--- | :--- |
 | **`journeys`** | `from_type`, `from_id`, `to_type`, `to_id`, `time_settings` | Defines the planning query: origin location, destination location, day masks (`mon`..`sun`), timing mode (`arrive`/`depart`), and time window (`08:30`–`10:00`). |
-| **`walking`** | `start_id`, `finish_id`, `time_needed_minutes`, `bidirectional` | Provides first-mile and last-mile walking access legs between user locations (`ha:...`, `custom:...`) and nearby NaPTAN transit stops (`naptan:...`, `2100...`, `9100...`). |
+| **`walking`** | `start_id`, `finish_id`, `time_needed_minutes`, `bidirectional` | Provides first-mile and last-mile walking access legs between user locations (`ha:...`, `custom:...`) and nearby NaPTAN transit stops (`naptan:...`, `atco:...`). |
 | **`timetables`** | `id`, `name`, `transport_type`, `monday`..`sunday`, `start_date`, `end_date`, `content` (`stops`, `trips`) | Provides scheduled transit routes, ordered stop sequences, trip departure/arrival matrices, operating day masks, and operator metadata. |
 | **`stops`** | `atco_code`, `naptan_code`, `name`, `stop_type`, `latitude`, `longitude`, `easting`, `northing` | Canonical metadata, coordinates, and transport mode classifications for all UK bus stops and rail stations. |
 | **`stop_interchanges`** | `from_stop_atco`, `to_stop_atco`, `estimated_walk_minutes`, `distance_metres` | Spatial walking interchange paths between nearby bus stops, bays, and rail station entrances (within 250m). |
@@ -300,10 +300,10 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
   "estimated_duration_minutes": 75,
   "transfers_count": 3,
   "stages": [
-    { "mode": "walk", "from": "ha:home", "to": "210021204507" },
-    { "mode": "bus", "line": "SB1", "from": "210021204507", "to": "210021200011" },
-    { "mode": "interchange", "from": "210021200011", "to": "9100STEVNGE" },
-    { "mode": "rail", "operator": "Thameslink", "from": "9100STEVNGE", "to": "9100CAMBDGE" },
+    { "mode": "walk", "from": "ha:home", "to": "atco:210021204507" },
+    { "mode": "bus", "line": "SB1", "from": "atco:210021204507", "to": "atco:210021200011" },
+    { "mode": "interchange", "from": "atco:210021200011", "to": "atco:9100STEVNGE" },
+    { "mode": "rail", "operator": "Thameslink", "from": "atco:9100STEVNGE", "to": "atco:9100CAMBDGE" },
     { "mode": "shuttle", "line": "Shuttle Bus", "from": "atco:9100CAMBNTH", "to": "ha:office" }
   ]
 }
@@ -324,7 +324,7 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
       "leg_index": 1,
       "mode": "walk",
       "origin": { "id": "ha:home", "name": "Home" },
-      "destination": { "id": "210021204507", "name": "Sweyns Mead" },
+      "destination": { "id": "atco:210021204507", "name": "Sweyns Mead" },
       "dep_time": "07:33",
       "arr_time": "07:36",
       "duration_minutes": 3
@@ -334,8 +334,8 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
       "mode": "bus",
       "line": "SB1",
       "operator": "Arriva",
-      "origin": { "id": "210021204507", "name": "Sweyns Mead" },
-      "destination": { "id": "210021200011", "name": "Stevenage Bus Station" },
+      "origin": { "id": "atco:210021204507", "name": "Sweyns Mead" },
+      "destination": { "id": "atco:210021200011", "name": "Stevenage Bus Station" },
       "dep_time": "07:36",
       "arr_time": "07:48",
       "duration_minutes": 12
@@ -343,8 +343,8 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
     {
       "leg_index": 3,
       "mode": "interchange",
-      "origin": { "id": "210021200011", "name": "Stevenage Bus Station" },
-      "destination": { "id": "9100STEVNGE", "name": "Stevenage Rail Station" },
+      "origin": { "id": "atco:210021200011", "name": "Stevenage Bus Station" },
+      "destination": { "id": "atco:9100STEVNGE", "name": "Stevenage Rail Station" },
       "dep_time": "07:48",
       "arr_time": "07:50",
       "duration_minutes": 2
@@ -354,8 +354,8 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
       "mode": "rail",
       "line": "Thameslink",
       "headsign": "TL 9S02 to Cambridge",
-      "origin": { "id": "9100STEVNGE", "name": "Stevenage Rail Station" },
-      "destination": { "id": "9100CAMBDGE", "name": "Cambridge Rail Station" },
+      "origin": { "id": "atco:9100STEVNGE", "name": "Stevenage Rail Station" },
+      "destination": { "id": "atco:9100CAMBDGE", "name": "Cambridge Rail Station" },
       "dep_time": "07:59",
       "arr_time": "08:35",
       "duration_minutes": 36

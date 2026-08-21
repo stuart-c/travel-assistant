@@ -355,7 +355,7 @@ def test_location_save_leave_and_return_persistence(
     """Verify that saving a location persists across leaving and returning to the page."""
     with app.app_context():
         Location.create(
-            id="zone.home",
+            id="ha:home",
             name="Home",
             latitude=51.5300,
             longitude=-0.1200,
@@ -402,7 +402,7 @@ def test_location_save_leave_and_return_persistence(
 
     assert ha_loc is not None
     assert ha_loc["name"] == "Home"
-    assert ha_loc["id"] == "zone.home"
+    assert ha_loc["id"] == "ha:home"
 
     assert custom_loc is not None
     assert custom_loc["name"] == "St Pancras International Library"

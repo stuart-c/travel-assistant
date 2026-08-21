@@ -101,7 +101,11 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         # Build stop lookup dictionary from cached rail stops
         stop_lookup: Dict[str, Dict[str, Any]] = {}
         for stp in Stop.select().where(Stop.stop_type == "rail"):
-            canonical_id = stp.atco_code or stp.naptan_code
+            canonical_id = (
+                f"naptan:{stp.naptan_code}"
+                if stp.naptan_code
+                else f"atco:{stp.atco_code}"
+            )
             meta = {
                 "id": canonical_id,
                 "name": stp.name,
@@ -212,7 +216,11 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
         for stp in Stop.select().where(Stop.stop_type == "bus"):
             meta = {
-                "id": stp.atco_code or stp.naptan_code,
+                "id": (
+                    f"naptan:{stp.naptan_code}"
+                    if stp.naptan_code
+                    else f"atco:{stp.atco_code}"
+                ),
                 "name": stp.name,
                 "type": "bus",
                 "indicator": stp.indicator or "Bus Stop",
