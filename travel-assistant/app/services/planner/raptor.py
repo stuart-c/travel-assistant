@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from app.models.timetable import Timetable
 from app.models.transit import StopInterchange
 from app.models.walking import Walking
-from app.services.exceptions import (
+from app.services.planner.exceptions import (
     InvalidEndpointError,
     JourneyPlanningError,
     JourneyPlanningErrorCode,
@@ -17,13 +17,13 @@ from app.services.exceptions import (
     NoServicesOnDayError,
     NoTripsInWindowError,
 )
-from app.services.models import (
+from app.services.planner.models import (
     ItineraryEndpoint,
     ItineraryLeg,
     ScheduledItinerary,
 )
-from app.services.route_finder import find_routes
-from app.services.transfers import (
+from app.services.planner.route_finder import find_routes
+from app.services.planner.transfers import (
     format_minutes_to_time,
     get_access_edges,
     is_timetable_active,
@@ -143,7 +143,7 @@ def plan_journey(
     Args:
         from_type: Origin location type ("ha", "custom", "rail", "bus", etc.).
         from_id: Origin location identifier.
-        to_type: Destination location type ("ha", "custom", "rail", "bus", etc.).
+        to_type: Destination location type ("ha", "custom", "rail", "bus", scalp, etc.).
         to_id: Destination location identifier.
         timing_mode: "depart" (leave after time_str), "arrive" (arrive before time_str), or "window".
         time_str: Target time in "HH:MM" format.

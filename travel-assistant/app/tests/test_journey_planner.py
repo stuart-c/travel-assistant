@@ -14,7 +14,7 @@ from app.models.timetable import (
 from app.models.transfer import PlatformTransfer
 from app.models.transit import Stop, StopInterchange
 from app.models.walking import Walking
-from app.services.journey_planner import (
+from app.services.planner import (
     InvalidEndpointError,
     JourneyPlanningError,
     JourneyPlanningErrorCode,

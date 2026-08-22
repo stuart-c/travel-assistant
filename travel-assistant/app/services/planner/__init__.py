@@ -1,10 +1,10 @@
-"""Journey Planner Service Facade.
+"""Journey Planner Service Package.
 
-Unifies topological route discovery (Mode 1) and concrete scheduled
-itinerary planning (Mode 2) using modular sub-components.
+Provides multi-modal topological route discovery (Mode 1) and
+concrete scheduled itinerary planning (Mode 2) using pure SQLite database tables.
 """
 
-from app.services.exceptions import (
+from app.services.planner.exceptions import (
     InvalidEndpointError,
     JourneyPlanningError,
     JourneyPlanningErrorCode,
@@ -13,16 +13,16 @@ from app.services.exceptions import (
     NoServicesOnDayError,
     NoTripsInWindowError,
 )
-from app.services.models import (
+from app.services.planner.models import (
     ItineraryEndpoint,
     ItineraryLeg,
     RouteLeg,
     RouteTemplate,
     ScheduledItinerary,
 )
-from app.services.raptor import plan_journey
-from app.services.route_finder import find_routes, prune_route_templates
-from app.services.transfers import (
+from app.services.planner.raptor import plan_journey
+from app.services.planner.route_finder import find_routes, prune_route_templates
+from app.services.planner.transfers import (
     DAY_NAME_TO_CODE,
     VALID_DAYS,
     format_minutes_to_time,

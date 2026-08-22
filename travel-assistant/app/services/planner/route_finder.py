@@ -11,15 +11,15 @@ import networkx as nx
 from app.models.timetable import Timetable
 from app.models.transit import StopInterchange
 from app.models.walking import Walking
-from app.services.exceptions import (
+from app.services.planner.exceptions import (
     InvalidEndpointError,
     JourneyPlanningError,
     JourneyPlanningErrorCode,
     NoAccessStopsError,
     NoCorridorPathError,
 )
-from app.services.models import RouteLeg, RouteTemplate
-from app.services.transfers import (
+from app.services.planner.models import RouteLeg, RouteTemplate
+from app.services.planner.transfers import (
     get_access_edges,
     is_timetable_active,
     normalise_id,

@@ -1,6 +1,8 @@
 """Services package for Travel Assistant."""
 
-from app.services.journey_planner import (
+from app.services.planner import (
+    DAY_NAME_TO_CODE,
+    VALID_DAYS,
     InvalidEndpointError,
     ItineraryEndpoint,
     ItineraryLeg,
@@ -14,17 +16,30 @@ from app.services.journey_planner import (
     RouteTemplate,
     ScheduledItinerary,
     find_routes,
+    format_minutes_to_time,
+    get_access_edges,
+    is_timetable_active,
+    normalise_id,
+    parse_time_to_minutes,
     plan_journey,
+    prune_route_templates,
+    resolve_active_days_and_date,
+    resolve_endpoint_name,
+    resolve_transfer_duration,
 )
 
 __all__ = [
+    # Solvers
     "find_routes",
     "plan_journey",
+    "prune_route_templates",
+    # Models
     "RouteTemplate",
     "RouteLeg",
     "ScheduledItinerary",
     "ItineraryLeg",
     "ItineraryEndpoint",
+    # Exceptions
     "JourneyPlanningError",
     "JourneyPlanningErrorCode",
     "InvalidEndpointError",
@@ -32,4 +47,15 @@ __all__ = [
     "NoCorridorPathError",
     "NoServicesOnDayError",
     "NoTripsInWindowError",
+    # Transfer & Date utilities
+    "parse_time_to_minutes",
+    "format_minutes_to_time",
+    "normalise_id",
+    "resolve_endpoint_name",
+    "resolve_transfer_duration",
+    "resolve_active_days_and_date",
+    "is_timetable_active",
+    "get_access_edges",
+    "VALID_DAYS",
+    "DAY_NAME_TO_CODE",
 ]
