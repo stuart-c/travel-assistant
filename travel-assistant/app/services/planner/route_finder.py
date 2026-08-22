@@ -684,7 +684,7 @@ def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
     """Validate that a sequence of route legs satisfies modal sequence rules:
 
     1. Walking cannot be followed by more walking (no consecutive walking legs).
-    2. A maximum of 3 legs of the same transport mode may occur consecutively in a row.
+    2. A maximum of 2 legs of the same transport mode may occur consecutively in a row.
 
     Args:
         legs: Ordered list of RouteLeg objects.
@@ -707,8 +707,8 @@ def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
 
         if mode == previous_mode:
             consecutive_count += 1
-            if consecutive_count > 3:
-                # Rule 2: Maximum of 3 of the same mode in a row
+            if consecutive_count > 2:
+                # Rule 2: Maximum of 2 of the same mode in a row
                 return False
         else:
             previous_mode = mode
