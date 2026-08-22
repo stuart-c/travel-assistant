@@ -1,9 +1,12 @@
 """Common utility functions and shared controllers for configuration views."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Container, Dict, List, Optional, Type
 from flask import Blueprint, jsonify, render_template, request
 from peewee import Model
+
+logger = logging.getLogger(__name__)
 
 
 def parse_optional_id(raw_val: Any) -> Optional[int]:
@@ -156,6 +159,13 @@ def apply_model_changeset(
             model_class.create(**cleaned_copy)
             stats["added"] += 1
 
+    logger.info(
+        "Applied changeset for %s: %d added, %d updated, %d deleted.",
+        model_class.__name__,
+        stats["added"],
+        stats["updated"],
+        stats["deleted"],
+    )
     return stats
 
 
@@ -243,6 +253,14 @@ def register_config_page(bp: Blueprint, cfg: PageConfig) -> None:
                 if cfg.post_save_hook is not None:
                     cfg.post_save_hook(stats, changeset)
 
+                logger.info(
+                    "Configuration save succeeded for %s (added: %d, updated: %d, deleted: %d).",
+                    cfg.entity_label,
+                    stats["added"],
+                    stats["updated"],
+                    stats["deleted"],
+                )
+
                 return jsonify(
                     {
                         "success": True,
@@ -251,6 +269,7 @@ def register_config_page(bp: Blueprint, cfg: PageConfig) -> None:
                     }
                 )
             except Exception as e:
+                logger.error("Failed to save %s: %s", cfg.entity_label.lower(), e)
                 return (
                     jsonify(
                         {

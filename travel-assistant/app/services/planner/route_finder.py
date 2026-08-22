@@ -87,6 +87,14 @@ def find_routes(
         )
 
     active_days, date_obj = resolve_active_days_and_date(days_of_week, target_date)
+    logger.info(
+        "Searching multi-modal route corridors from %s:%s to %s:%s (days: %s)...",
+        f_type,
+        f_id,
+        t_type,
+        t_id,
+        active_days,
+    )
 
     # 1. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)

@@ -41,8 +41,12 @@ def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
         return None
 
     def _perform_sync() -> int:
+        logger.info("Fetching bus routes from Bus Open Data Service (BODS)...")
         routes_to_upsert = client.fetch_routes(limit=25)
         if routes_to_upsert:
+            logger.info(
+                "Upserting %d bus route records into database...", len(routes_to_upsert)
+            )
             BusRoute.bulk_upsert(routes_to_upsert)
         return len(routes_to_upsert)
 
@@ -62,13 +66,21 @@ def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
     """Synchronise transit access nodes (bus, rail, metro, tram, ferry) using UK NaPTAN dataset."""
 
     def _perform_sync() -> int:
+        logger.info("Fetching UK public transport stops from NaPTAN dataset...")
         client = NaptanClient.from_settings()
         stops_to_upsert = client.fetch_stops()
         if stops_to_upsert:
+            logger.info(
+                "Upserting %d transit stop records into database...",
+                len(stops_to_upsert),
+            )
             Stop.bulk_upsert(stops_to_upsert)
             try:
                 from app.sync.worker import request_sync
 
+                logger.info(
+                    "Triggering automatic stop interchanges discovery following stops update..."
+                )
                 request_sync("stop_interchanges")
             except Exception as sync_exc:
                 logger.warning(
@@ -98,6 +110,10 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         return None
 
     def _perform_sync() -> int:
+        logger.info(
+            "Connecting to AWS S3 bucket '%s' for Darwin timetable snapshots...",
+            client.bucket_name,
+        )
         # Build stop lookup dictionary from cached rail stops
         stop_lookup: Dict[str, Dict[str, Any]] = {}
         for stp in Stop.select().where(Stop.stop_type == "rail"):
@@ -128,6 +144,9 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
         parsed_timetables = client.fetch_timetables(stop_lookup=stop_lookup)
         count = len(parsed_timetables)
+        logger.info(
+            "Reconciling %d Darwin train route timetable(s) in database...", count
+        )
 
         with db.atomic():
             # Reconcile auto_added train timetables while preserving custom and bus timetables
@@ -155,6 +174,9 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         try:
             from app.sync.worker import request_sync
 
+            logger.info(
+                "Triggering automatic journey routes calculation following train timetables update..."
+            )
             request_sync("journey_routes")
         except Exception as sync_exc:
             logger.warning(
@@ -268,12 +290,22 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
                     resolved_atco_codes.add(naptan_clean)
 
         # 3. Fetch matching timetables from BODS
+        logger.info(
+            "Found %d target bus stops across %d admin area(s) (%s). Fetching TransXChange datasets from BODS...",
+            len(resolved_atco_codes),
+            len(admin_areas),
+            ", ".join(sorted(admin_areas)) if admin_areas else "none",
+        )
         parsed_timetables = client.fetch_timetables(
             target_stop_codes=resolved_atco_codes if resolved_atco_codes else None,
             admin_areas=sorted(list(admin_areas)) if admin_areas else None,
             stop_lookup=stop_lookup,
         )
         count = len(parsed_timetables)
+        logger.info(
+            "Reconciling %d bus route timetable(s) from BODS TransXChange XML in database...",
+            count,
+        )
 
         with db.atomic():
             # Reconcile auto_added bus timetables while preserving
@@ -304,6 +336,9 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         try:
             from app.sync.worker import request_sync
 
+            logger.info(
+                "Triggering automatic journey routes calculation following bus timetables update..."
+            )
             request_sync("journey_routes")
         except Exception as sync_exc:
             logger.warning(
@@ -422,7 +457,15 @@ def sync_stop_interchanges(
     """Discover nearby stop interchanges using NaPTAN easting/northing coordinates and SQLite R*Tree."""
 
     def _perform_sync() -> int:
+        logger.info(
+            "Calculating nearby transit stop interchanges within %.0fm radius using spatial index...",
+            radius_metres,
+        )
         interchanges = find_nearby_stop_interchanges(radius_metres=radius_metres)
+        logger.info(
+            "Persisting %d discovered transit stop interchange connections...",
+            len(interchanges),
+        )
         return StopInterchange.bulk_replace(interchanges)
 
     return run_sync_task(

@@ -17,6 +17,9 @@ from app.views.config import config_bp
 STARTUP_CACHE_BUST = uuid.uuid4().hex[:8]
 
 
+logger = logging.getLogger(__name__)
+
+
 def configure_logging(app: Optional[Flask] = None) -> None:
     """Configure system logging level and format from environment."""
     log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper().strip()
@@ -34,6 +37,7 @@ def configure_logging(app: Optional[Flask] = None) -> None:
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,
     )
     logging.getLogger().setLevel(level)
 
@@ -70,6 +74,14 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper().strip()
+    logger.info(
+        "Initialising %s v%s (log level: %s)...",
+        app.config.get("APP_NAME"),
+        app.config.get("VERSION"),
+        log_level_name,
+    )
+
     # Initialise SQLite database
     db.init_app(app)
 
@@ -98,8 +110,11 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
             from app.datasources.train_live import sync_swagger_schema
 
             sync_swagger_schema()
-        except Exception:
-            pass
+            logger.info("National Rail Darwin Swagger schema initialised.")
+        except Exception as exc:
+            logger.warning(
+                "Could not sync National Rail Darwin Swagger schema on startup: %s", exc
+            )
 
     @app.context_processor
     def inject_ingress_path() -> Dict[str, str]:

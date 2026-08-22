@@ -1,16 +1,19 @@
 """Database statistics and transit dataset background synchronisation views."""
 
-from typing import Any
 import io
+import logging
 import os
 import sqlite3
 import tempfile
+from typing import Any
 from flask import abort, current_app, jsonify, render_template, send_file
 
 from app.db import db, get_db_path, get_db_stats, get_sync_stats, init_db
 from app.sync import request_sync
 from app.sync.worker import SYNC_REGISTRY
 from app.views.config import config_bp
+
+logger = logging.getLogger(__name__)
 
 
 @config_bp.route("/db/data", methods=["GET"])
@@ -35,6 +38,7 @@ def db_stats() -> Any:
 @config_bp.route("/db/download", methods=["GET"])
 def download_db() -> Any:
     """Download the SQLite database file as an attachment."""
+    logger.info("SQLite database download requested from /config/db/download.")
     if db.obj is None:
         init_db(current_app)
 
@@ -44,6 +48,7 @@ def download_db() -> Any:
     try:
         if db.obj is not None and not db.obj.is_closed():
             db.obj.execute_sql("PRAGMA wal_checkpoint(PASSIVE)")
+            logger.info("Executed passive WAL checkpoint prior to database download.")
     except Exception:
         pass
 
@@ -147,6 +152,7 @@ def sync_db_table(table_name: str) -> Any:
             400,
         )
 
+    logger.info("Received request to queue manual synchronisation for '%s'.", norm_name)
     request_sync(norm_name)
     return jsonify(
         {

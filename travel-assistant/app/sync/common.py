@@ -55,12 +55,18 @@ def run_sync_task(
     """
     ensure_db_initialised(app)
     start_time = time.time()
+    logger.info("Starting synchronisation task for '%s'...", table_name)
 
     with db.connection_context():
         if client_check is not None:
             skip_message = client_check()
             if skip_message:
                 SyncMetadata.record_skipped(table_name, skip_message)
+                logger.warning(
+                    "Synchronisation task for '%s' skipped: %s",
+                    table_name,
+                    skip_message,
+                )
                 return {
                     "table": table_name,
                     "status": "skipped_no_credentials",
@@ -82,6 +88,13 @@ def run_sync_task(
                     f"Successfully synchronised {records_count} "
                     f"record(s) for '{table_name}'."
                 )
+
+            logger.info(
+                "Synchronisation task for '%s' completed successfully in %.2fs (%d record(s)).",
+                table_name,
+                duration,
+                records_count,
+            )
 
             return {
                 "table": table_name,
