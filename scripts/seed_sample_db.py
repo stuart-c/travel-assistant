@@ -388,7 +388,7 @@ def seed_database(db_path: str) -> None:
         timetable_weekend.save()
 
         timetable_darwin_auto = Timetable(
-            name="Stevenage to Cambridge",
+            name="London King's Cross to Cambridge",
             transport_type="rail",
             start_date=datetime.date(2026, 8, 14),
             end_date=datetime.date(2026, 8, 14),
@@ -406,22 +406,22 @@ def seed_database(db_path: str) -> None:
             {
                 "stops": [
                     {
-                        "id": "naptan:SVG",
-                        "name": "Stevenage",
+                        "id": "naptan:KGX",
+                        "name": "London King's Cross",
                         "type": "rail",
                         "indicator": "Station",
                         "icon": "train",
-                        "latitude": 51.9018,
-                        "longitude": -0.2065,
+                        "latitude": 51.5308,
+                        "longitude": -0.1238,
                     },
                     {
-                        "id": "naptan:HIT",
-                        "name": "Hitchin",
+                        "id": "naptan:FPK",
+                        "name": "Finsbury Park",
                         "type": "rail",
                         "indicator": "Station",
                         "icon": "train",
-                        "latitude": 51.9540,
-                        "longitude": -0.2640,
+                        "latitude": 51.5642,
+                        "longitude": -0.1065,
                     },
                     {
                         "id": "naptan:CBG",

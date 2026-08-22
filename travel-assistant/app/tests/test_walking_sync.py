@@ -565,17 +565,17 @@ def test_sync_walking_routes_rounds_up_producing_bidirectional(
         Location.create(
             id="ha:home",
             name="Home",
-            latitude=51.9144,
-            longitude=-0.1621,
+            latitude=51.5308,
+            longitude=-0.1238,
             ha=True,
         )
         Stop.create(
-            atco_code="210021202510",
-            naptan_code="hrtdwpja",
+            atco_code="490000077E",
+            naptan_code="490000077E",
             stop_type="bus",
-            name="Emperors Gate",
-            latitude=51.9161,
-            longitude=-0.1625,
+            name="King's Cross Station",
+            latitude=51.5314,
+            longitude=-0.1262,
         )
         Journey.create(
             name="Daily Commute",
@@ -583,8 +583,8 @@ def test_sync_walking_routes_rounds_up_producing_bidirectional(
             from_id="ha:home",
             from_name="Home",
             to_type="rail",
-            to_id="9100CBG",
-            to_name="Cambridge",
+            to_id="9100EUSTON",
+            to_name="London Euston",
         )
 
         # Forward: 185s (3.08m -> rounds up to 4 mins)
@@ -603,7 +603,7 @@ def test_sync_walking_routes_rounds_up_producing_bidirectional(
             assert len(routes) == 1
             r = routes[0]
             assert r.start_id == "ha:home"
-            assert r.finish_id == "naptan:hrtdwpja"
+            assert r.finish_id == "naptan:490000077E"
             assert r.time_needed_minutes == 4
             assert r.bidirectional is True
             assert r.auto_generated is True
@@ -619,17 +619,17 @@ def test_sync_walking_routes_concurrency_lock(app: Flask) -> None:
         Location.create(
             id="ha:home",
             name="Home",
-            latitude=51.9144,
-            longitude=-0.1621,
+            latitude=51.5308,
+            longitude=-0.1238,
             ha=True,
         )
         Stop.create(
-            atco_code="210021202510",
-            naptan_code="hrtdwpgp",
+            atco_code="490000077E",
+            naptan_code="490000077E",
             stop_type="bus",
-            name="Emperors Gate",
-            latitude=51.9164,
-            longitude=-0.1625,
+            name="King's Cross Station",
+            latitude=51.5314,
+            longitude=-0.1262,
         )
         Journey.create(
             name="Commute",
@@ -637,8 +637,8 @@ def test_sync_walking_routes_concurrency_lock(app: Flask) -> None:
             from_id="ha:home",
             from_name="Home",
             to_type="rail",
-            to_id="9100CBG",
-            to_name="Cambridge",
+            to_id="9100EUSTON",
+            to_name="London Euston",
         )
 
         fwd_resp = [{"legs": [{"duration": {"value": 210, "text": "4 mins"}}]}]

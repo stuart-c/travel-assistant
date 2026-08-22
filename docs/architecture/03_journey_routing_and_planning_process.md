@@ -38,8 +38,8 @@ The process operates **purely from SQLite database tables** and supports **two c
   2. Traverses timetable stop sequence matrices in `timetables` and transfers in `stop_interchanges` topologically (treating each timetable as a directed sequence of stops without fixing specific trip times).
   3. Finds all distinct non-cyclic corridor paths $C = (L_1, L_2, \dots, L_m)$ where $L_i$ represents a transit line, walking transfer, or platform interchange.
 * **Resulting Output**:
-  * **Corridor 1**: `Walk (Home → Sweyns Mead) → Bus SB1 → Interchange (Bus Stn → Rail Stn) → Thameslink Train (Stevenage → Cambridge) → Shuttle Bus → Office`
-  * **Corridor 2**: `Walk (Home → Emperors Gate) → Bus 38 → Interchange → Great Northern Train (Stevenage → Cambridge North) → Walk → Office`
+  * **Corridor 1**: `Walk (Home → King's Cross Stop E) → Bus 73 → Walk (Euston Stop C → Tech Campus)`
+  * **Corridor 2**: `Walk (Home → London King's Cross) → Train (King's Cross → London Euston) → Walk (Euston → Tech Campus)`
 
 ---
 
@@ -53,7 +53,8 @@ The process operates **purely from SQLite database tables** and supports **two c
      * Sets $t_{target} = T$, runs backward RAPTOR or evaluates candidate trips in reverse to find the latest valid departure from origin that guarantees arrival $\le T$.
   3. **"Time Window $[T_1, T_2]$" (Range-RAPTOR / rRAPTOR)**:
      * Evaluates trips departing within $[T_1, T_2]$, generating the Pareto-optimal set of options across the window.
-* **Resulting Output**: Exact minute-by-minute itinerary (e.g. *Depart 07:33 $\rightarrow$ 07:36 Bus SB1 $\rightarrow$ 07:59 Train $\rightarrow$ 08:40 Shuttle $\rightarrow$ Arrive 08:50*).
+* **Resulting Output**: Exact minute-by-minute itinerary (e.g. *Depart 08:00 $\rightarrow$ 08:08 Bus 73 $\rightarrow$ 08:22 Walk $\rightarrow$ Arrive 08:28*).
+
 
 ---
 
@@ -106,7 +107,8 @@ The transit graph $G = (V, E)$ is modelled with heterogeneous vertices and multi
 
 ### 4.1. Vertices ($V$)
 * **Location Nodes**: $V_{loc} = \{ v \mid v \in \text{Home Assistant Zones} \cup \text{Custom Places} \}$ (e.g. `ha:home`, `ha:office`).
-* **Transit Stop Nodes**: $V_{stop} = \{ v \mid v \in \text{NaPTAN Stops} \cup \text{Rail Stations} \}$ (e.g. `210021204507`, `9100STEVNGE`, `9100CAMBNTH`).
+* **Transit Stop Nodes**: $V_{stop} = \{ v \mid v \in \text{NaPTAN Stops} \cup \text{Rail Stations} \}$ (e.g. `490000077E`, `9100KNGX`, `9100EUSTON`).
+
 
 ### 4.2. Edges ($E$)
 1. **Access / Egress Walk Edges ($E_{access}$)**:
@@ -294,17 +296,15 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
 ```json
 {
   "journey_id": 1,
-  "corridor_id": "corridor_sb1_tl_shuttle",
-  "name": "Via Bus SB1, Thameslink Rail & Cambridge North Shuttle",
-  "summary": "Walk → Bus SB1 → Walk Interchange → Train → Shuttle Bus",
-  "estimated_duration_minutes": 75,
-  "transfers_count": 3,
+  "corridor_id": "corridor_walk_bus73_walk",
+  "name": "Via Walk, Bus 73 & Walk",
+  "summary": "Walk (8m) → Bus 73 (14m) → Walk (6m)",
+  "estimated_duration_minutes": 28,
+  "transfers_count": 0,
   "stages": [
-    { "mode": "walk", "from": "ha:home", "to": "atco:210021204507" },
-    { "mode": "bus", "line": "SB1", "from": "atco:210021204507", "to": "atco:210021200011" },
-    { "mode": "interchange", "from": "atco:210021200011", "to": "atco:9100STEVNGE" },
-    { "mode": "rail", "operator": "Thameslink", "from": "atco:9100STEVNGE", "to": "atco:9100CAMBDGE" },
-    { "mode": "shuttle", "line": "Shuttle Bus", "from": "atco:9100CAMBNTH", "to": "ha:office" }
+    { "mode": "walk", "from": "ha:home", "to": "atco:490000077E" },
+    { "mode": "bus", "line": "73", "from": "atco:490000077E", "to": "atco:490000077C" },
+    { "mode": "walk", "from": "atco:490000077C", "to": "ha:office" }
   ]
 }
 ```
@@ -314,61 +314,40 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
 {
   "journey_id": 1,
   "journey_name": "Morning Commute",
-  "departure_time": "07:33",
-  "arrival_time": "08:50",
-  "total_duration_minutes": 77,
-  "transfers_count": 3,
-  "robustness_score": "High (+9 min transfer slack)",
+  "departure_time": "08:00",
+  "arrival_time": "08:28",
+  "total_duration_minutes": 28,
+  "transfers_count": 0,
+  "robustness_score": "High (+5 min transfer slack)",
   "legs": [
     {
       "leg_index": 1,
       "mode": "walk",
       "origin": { "id": "ha:home", "name": "Home" },
-      "destination": { "id": "atco:210021204507", "name": "Sweyns Mead" },
-      "dep_time": "07:33",
-      "arr_time": "07:36",
-      "duration_minutes": 3
+      "destination": { "id": "atco:490000077E", "name": "King's Cross Station (Stop E)" },
+      "dep_time": "08:00",
+      "arr_time": "08:08",
+      "duration_minutes": 8
     },
     {
       "leg_index": 2,
       "mode": "bus",
-      "line": "SB1",
-      "operator": "Arriva",
-      "origin": { "id": "atco:210021204507", "name": "Sweyns Mead" },
-      "destination": { "id": "atco:210021200011", "name": "Stevenage Bus Station" },
-      "dep_time": "07:36",
-      "arr_time": "07:48",
-      "duration_minutes": 12
+      "line": "73",
+      "operator": "Arriva London",
+      "origin": { "id": "atco:490000077E", "name": "King's Cross Station (Stop E)" },
+      "destination": { "id": "atco:490000077C", "name": "Euston Station (Stop C)" },
+      "dep_time": "08:08",
+      "arr_time": "08:22",
+      "duration_minutes": 14
     },
     {
       "leg_index": 3,
-      "mode": "interchange",
-      "origin": { "id": "atco:210021200011", "name": "Stevenage Bus Station" },
-      "destination": { "id": "atco:9100STEVNGE", "name": "Stevenage Rail Station" },
-      "dep_time": "07:48",
-      "arr_time": "07:50",
-      "duration_minutes": 2
-    },
-    {
-      "leg_index": 4,
-      "mode": "rail",
-      "line": "Thameslink",
-      "headsign": "TL 9S02 to Cambridge",
-      "origin": { "id": "atco:9100STEVNGE", "name": "Stevenage Rail Station" },
-      "destination": { "id": "atco:9100CAMBDGE", "name": "Cambridge Rail Station" },
-      "dep_time": "07:59",
-      "arr_time": "08:35",
-      "duration_minutes": 36
-    },
-    {
-      "leg_index": 5,
-      "mode": "shuttle",
-      "line": "Shuttle Bus",
-      "origin": { "id": "atco:9100CAMBNTH", "name": "Cambridge North" },
-      "destination": { "id": "ha:office", "name": "Office" },
-      "dep_time": "08:40",
-      "arr_time": "08:50",
-      "duration_minutes": 10
+      "mode": "walk",
+      "origin": { "id": "atco:490000077C", "name": "Euston Station (Stop C)" },
+      "destination": { "id": "ha:office", "name": "Tech Campus" },
+      "dep_time": "08:22",
+      "arr_time": "08:28",
+      "duration_minutes": 6
     }
   ]
 }
@@ -379,21 +358,16 @@ $$\forall c \in \{D, N_{transfers}\}, A_c \le B_c \quad \text{and} \quad \exists
 ## 7. Concrete Traversal Traces for System Validation
 
 ### 7.1. Morning Commute Trace (`ha:home` $\rightarrow$ `ha:office`)
-* **Access Leg**: `ha:home` $\xrightarrow{walk\ 3m}$ Sweyns Mead Stop (`210021204507` / `hrtdwjag`).
-* **Bus Leg**: Sweyns Mead $\xrightarrow{Bus\ SB1\ (vj\_101)\ 07:36 \rightarrow 07:48}$ Stevenage Bus Station (`210021200011`).
-* **Spatial Interchange**: Bus Station $\xrightarrow{interchange\ 2m\ (102m)}$ Stevenage Rail Station (`9100STEVNGE`).
-* **Rail Leg**: Stevenage $\xrightarrow{Thameslink\ 07:59 \rightarrow 08:35}$ Cambridge Rail Station (`9100CAMBDGE`).
-* **Platform Transfer**: Cambridge $\xrightarrow{rail\ 5m}$ Cambridge North (`9100CAMBNTH`).
-* **Shuttle Leg**: Cambridge North $\xrightarrow{Shuttle\ 08:40 \rightarrow 08:50}$ Office (`ha:office`).
-* **Outcome**: Arrives at **08:50** (Target window 08:30–10:00 satisfied).
+* **Access Leg**: `ha:home` $\xrightarrow{walk\ 8m}$ King's Cross Station (Stop E) (`490000077E`).
+* **Bus Leg**: King's Cross Stop E $\xrightarrow{Bus\ 73\ 08:08 \rightarrow 08:22}$ Euston Station Stop C (`490000077C`).
+* **Egress Walk Leg**: Euston Station Stop C $\xrightarrow{walk\ 6m}$ Tech Campus (`ha:office`).
+* **Outcome**: Arrives at **08:28** (Target window 08:00–08:45 satisfied).
 
 ---
 
 ### 7.2. Evening Commute Trace (`ha:office` $\rightarrow$ `ha:home`)
-* **Egress Leg**: `ha:office` $\xrightarrow{walk\ 4m}$ Shuttle Stop (`ha:shuttle_bus`).
-* **Shuttle Leg**: Shuttle Stop $\xrightarrow{Shuttle\ 17:00 \rightarrow 17:10}$ Cambridge North (`atco:9100CAMBNTH`).
-* **Rail Leg**: Cambridge North $\xrightarrow{Train\ 17:21 \rightarrow 17:58}$ Stevenage Rail Station (`9100STEVNGE`).
-* **Spatial Interchange**: Stevenage Rail Station $\xrightarrow{interchange\ 2m}$ Bus Station Stop G (`210021200007`).
-* **Bus Leg**: Stevenage Bus Station $\xrightarrow{Bus\ SB1\ 18:15 \rightarrow 18:36}$ Sweyns Mead (`210021204580`).
-* **Walk Leg**: Sweyns Mead $\xrightarrow{walk\ 4m}$ `ha:home`.
-* **Outcome**: Departs at **16:56**, arrives at **18:40** (Target departure 16:00–18:00 satisfied).
+* **Access Walk Leg**: `ha:office` $\xrightarrow{walk\ 6m}$ Euston Station Stop C (`490000077C`).
+* **Bus Leg**: Euston Station Stop C $\xrightarrow{Bus\ 73\ 17:30 \rightarrow 17:44}$ King's Cross Station Stop E (`490000077E`).
+* **Egress Walk Leg**: King's Cross Station Stop E $\xrightarrow{walk\ 8m}$ `ha:home`.
+* **Outcome**: Departs at **17:24**, arrives at **17:52** (Target departure 17:00–18:00 satisfied).
+

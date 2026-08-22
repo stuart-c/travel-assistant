@@ -41,8 +41,8 @@ def seeded_planner(app: Flask):
         Location.create(
             id="ha:home",
             name="Home Residence",
-            latitude=51.9000,
-            longitude=-0.2000,
+            latitude=51.5360,
+            longitude=-0.1250,
             ha=True,
         )
         Location.create(
@@ -55,8 +55,8 @@ def seeded_planner(app: Flask):
         Location.create(
             id="custom:parents_house",
             name="Parents' Residence",
-            latitude=51.9050,
-            longitude=-0.2050,
+            latitude=51.5600,
+            longitude=-0.1000,
             ha=False,
         )
         Location.create(
@@ -69,37 +69,30 @@ def seeded_planner(app: Flask):
 
         # 2. Transit Stops
         Stop.create(
-            atco_code="210021204507",
-            naptan_code="hrtdwjag",
-            name="Sweyns Mead",
+            atco_code="490000077E",
+            naptan_code="490000077E",
+            name="King's Cross Station",
             stop_type="bus",
-            indicator="Stop A",
+            indicator="Stop E",
         )
         Stop.create(
-            atco_code="210021200011",
-            naptan_code="hrtdgata",
-            name="Stevenage Bus Station",
+            atco_code="490000077C",
+            naptan_code="490000077C",
+            name="Euston Station",
             stop_type="bus",
-            indicator="Stop G",
+            indicator="Stop C",
         )
         Stop.create(
-            atco_code="9100STEVNGE",
-            naptan_code="SVG",
-            name="Stevenage Rail Station",
+            atco_code="9100KNGX",
+            naptan_code="KGX",
+            name="London King's Cross",
             stop_type="rail",
             indicator="Station",
         )
         Stop.create(
-            atco_code="9100CAMBDGE",
-            naptan_code="CBG",
-            name="Cambridge Rail Station",
-            stop_type="rail",
-            indicator="Station",
-        )
-        Stop.create(
-            atco_code="9100CAMBNTH",
-            naptan_code="CMB",
-            name="Cambridge North Rail Station",
+            atco_code="9100FPK",
+            naptan_code="FPK",
+            name="Finsbury Park Rail Station",
             stop_type="rail",
             indicator="Station",
         )
@@ -124,8 +117,8 @@ def seeded_planner(app: Flask):
             start_id="ha:home",
             start_name="Home Residence",
             finish_type="bus",
-            finish_id="210021204507",
-            finish_name="Sweyns Mead",
+            finish_id="490000077E",
+            finish_name="King's Cross Station",
             time_needed_minutes=4,
             bidirectional=True,
         )
@@ -141,8 +134,8 @@ def seeded_planner(app: Flask):
         )
         Walking.create(
             start_type="rail",
-            start_id="9100CAMBNTH",
-            start_name="Cambridge North Rail Station",
+            start_id="9100FPK",
+            start_name="Finsbury Park Rail Station",
             finish_type="ha",
             finish_id="ha:work",
             finish_name="Tech Campus",
@@ -152,11 +145,11 @@ def seeded_planner(app: Flask):
 
         # 4. Nearby Stop Interchanges (Priority 2)
         StopInterchange.create(
-            from_stop_atco="210021200011",
-            from_stop_name="Stevenage Bus Station",
+            from_stop_atco="490000077C",
+            from_stop_name="Euston Station",
             from_stop_type="bus",
-            to_stop_atco="9100STEVNGE",
-            to_stop_name="Stevenage Rail Station",
+            to_stop_atco="9100EUSTON",
+            to_stop_name="London Euston",
             to_stop_type="rail",
             distance_metres=120,
             estimated_walk_minutes=2,
@@ -165,8 +158,8 @@ def seeded_planner(app: Flask):
         # 5. Station Platform Transfers (Priority 1 & Fallback)
         PlatformTransfer.create(
             location_type="rail",
-            location_id="9100STEVNGE",
-            location_name="Stevenage Rail Station",
+            location_id="9100EUSTON",
+            location_name="London Euston",
             from_platform="1",
             to_platform="4",
             transfer_time_minutes=3,
@@ -175,9 +168,9 @@ def seeded_planner(app: Flask):
         )
 
         # 6. Timetables
-        # Bus SB1: Sweyns Mead -> Stevenage Bus Station
+        # Bus 73: King's Cross Station -> Euston Station
         tt_bus = Timetable.create(
-            name="Bus SB1",
+            name="Bus 73",
             transport_type="bus",
             monday=True,
             tuesday=True,
@@ -193,22 +186,22 @@ def seeded_planner(app: Flask):
         tt_bus.set_content(
             TimetableContent(
                 stops=[
-                    TimetableStop(id="210021204507", name="Sweyns Mead", type="bus"),
                     TimetableStop(
-                        id="210021200011", name="Stevenage Bus Station", type="bus"
+                        id="490000077E", name="King's Cross Station", type="bus"
                     ),
+                    TimetableStop(id="490000077C", name="Euston Station", type="bus"),
                 ],
                 trips=[
                     TimetableTrip(
-                        id="sb1_01",
-                        headsign="Bus Station",
-                        operator="Arriva",
+                        id="bus73_01",
+                        headsign="Euston Station",
+                        operator="Arriva London",
                         times=[{"dep": "07:30"}, {"arr": "07:42"}],
                     ),
                     TimetableTrip(
-                        id="sb1_02",
-                        headsign="Bus Station",
-                        operator="Arriva",
+                        id="bus73_02",
+                        headsign="Euston Station",
+                        operator="Arriva London",
                         times=[{"dep": "08:00"}, {"arr": "08:12"}],
                     ),
                 ],
@@ -216,7 +209,7 @@ def seeded_planner(app: Flask):
         )
         tt_bus.save()
 
-        # Train Thameslink: Stevenage -> Cambridge -> Cambridge North
+        # Train Thameslink: London Euston -> Finsbury Park
         tt_train = Timetable.create(
             name="Thameslink",
             transport_type="rail",
@@ -234,36 +227,29 @@ def seeded_planner(app: Flask):
         tt_train.set_content(
             TimetableContent(
                 stops=[
+                    TimetableStop(id="9100EUSTON", name="London Euston", type="rail"),
                     TimetableStop(
-                        id="9100STEVNGE", name="Stevenage Rail Station", type="rail"
-                    ),
-                    TimetableStop(
-                        id="9100CAMBDGE", name="Cambridge Rail Station", type="rail"
-                    ),
-                    TimetableStop(
-                        id="9100CAMBNTH",
-                        name="Cambridge North Rail Station",
+                        id="9100FPK",
+                        name="Finsbury Park Rail Station",
                         type="rail",
                     ),
                 ],
                 trips=[
                     TimetableTrip(
                         id="tl_01",
-                        headsign="Cambridge North",
+                        headsign="Finsbury Park",
                         operator="Thameslink",
                         times=[
                             {"dep": "07:50"},
-                            {"arr": "08:25", "dep": "08:27"},
                             {"arr": "08:35"},
                         ],
                     ),
                     TimetableTrip(
                         id="tl_02",
-                        headsign="Cambridge North",
+                        headsign="Finsbury Park",
                         operator="Thameslink",
                         times=[
                             {"dep": "08:20"},
-                            {"arr": "08:55", "dep": "08:57"},
                             {"arr": "09:05"},
                         ],
                     ),
@@ -329,10 +315,12 @@ def test_resolve_endpoint_name(seeded_planner: Flask):
             resolve_endpoint_name("custom", "custom:parents_house")
             == "Parents' Residence"
         )
-        assert resolve_endpoint_name("bus", "210021204507") == "Sweyns Mead (Stop A)"
         assert (
-            resolve_endpoint_name("rail", "9100STEVNGE")
-            == "Stevenage Rail Station (Station)"
+            resolve_endpoint_name("bus", "490000077E")
+            == "King's Cross Station (Stop E)"
+        )
+        assert (
+            resolve_endpoint_name("rail", "9100KNGX") == "London King's Cross (Station)"
         )
         assert resolve_endpoint_name("custom", "nonexistent") == "nonexistent"
 
@@ -341,7 +329,7 @@ def test_transfer_resolution_hierarchy(seeded_planner: Flask):
     """Verify 3-tier transfer hierarchy: walking/platform_transfers -> stop_interchanges -> default 5 min."""
     with seeded_planner.app_context():
         # Priority 1: Exact match in walking table
-        walk_res = resolve_transfer_duration("ha", "ha:home", "bus", "210021204507")
+        walk_res = resolve_transfer_duration("ha", "ha:home", "bus", "490000077E")
         assert walk_res is not None
         assert walk_res[0] == 4
         assert walk_res[1] == "walk"
@@ -349,9 +337,9 @@ def test_transfer_resolution_hierarchy(seeded_planner: Flask):
         # Priority 1: Exact match in platform_transfers table
         plat_res = resolve_transfer_duration(
             "rail",
-            "9100STEVNGE",
+            "9100EUSTON",
             "rail",
-            "9100STEVNGE",
+            "9100EUSTON",
             from_platform="1",
             to_platform="4",
         )
@@ -361,7 +349,7 @@ def test_transfer_resolution_hierarchy(seeded_planner: Flask):
 
         # Priority 2: Nearby stop interchange in stop_interchanges table
         interchange_res = resolve_transfer_duration(
-            "bus", "210021200011", "rail", "9100STEVNGE"
+            "bus", "490000077C", "rail", "9100EUSTON"
         )
         assert interchange_res is not None
         assert interchange_res[0] == 2
@@ -369,9 +357,7 @@ def test_transfer_resolution_hierarchy(seeded_planner: Flask):
         assert interchange_res[2] == 120
 
         # Priority 3 Fallback: Default 5 min for unconfigured platform interchange
-        fallback_plat = resolve_transfer_duration(
-            "rail", "9100CAMBDGE", "rail", "9100CAMBDGE"
-        )
+        fallback_plat = resolve_transfer_duration("rail", "9100FPK", "rail", "9100FPK")
         assert fallback_plat is not None
         assert fallback_plat[0] == 5
         assert fallback_plat[1] == "platform_transfer"
@@ -533,16 +519,14 @@ def test_error_no_corridor_path(seeded_planner: Flask):
     """Verify NoCorridorPathError when no transit services connect the access stops."""
     with seeded_planner.app_context():
         with pytest.raises(NoCorridorPathError) as exc_info:
-            find_routes(
-                "bus", "210021204507", "rail", "9100EUSTON", days_of_week=["mon"]
-            )
+            find_routes("rail", "9100FPK", "rail", "9100MNCR", days_of_week=["mon"])
         assert exc_info.value.code == JourneyPlanningErrorCode.NO_CORRIDOR_PATH
 
 
 def test_error_no_services_on_day(seeded_planner: Flask):
-    """Verify NoServicesOnDayError or NoCorridorPathError on non-operating days (e.g. Sunday for Bus SB1)."""
+    """Verify NoServicesOnDayError or NoCorridorPathError on non-operating days (e.g. Sunday for Bus 73)."""
     with seeded_planner.app_context():
-        # Bus SB1 does not run on Sunday, Thameslink does. But Sweyns Mead only has Bus SB1.
+        # Bus 73 does not run on Sunday, Thameslink does. But King's Cross Station Stop E only has Bus 73.
         with pytest.raises((NoServicesOnDayError, NoCorridorPathError)):
             plan_journey(
                 from_type="ha",
@@ -611,9 +595,9 @@ def test_date_and_day_resolution_edge_cases(seeded_planner: Flask):
         with pytest.raises(NoCorridorPathError):
             find_routes(
                 "bus",
-                "210021204507",
+                "490000077E",
                 "bus",
-                "210021200011",
+                "490000077C",
                 target_date="2025-05-01",  # Before start_date
                 days_of_week=["mon"],
             )
@@ -666,10 +650,10 @@ def test_timetable_with_string_times(seeded_planner: Flask):
         tt_str.set_content(
             TimetableContent(
                 stops=[
-                    TimetableStop(id="210021204507", name="Sweyns Mead", type="bus"),
                     TimetableStop(
-                        id="210021200011", name="Stevenage Bus Station", type="bus"
+                        id="490000077E", name="King's Cross Station", type="bus"
                     ),
+                    TimetableStop(id="490000077C", name="Euston Station", type="bus"),
                 ],
                 trips=[
                     TimetableTrip(
@@ -685,9 +669,9 @@ def test_timetable_with_string_times(seeded_planner: Flask):
 
         it = plan_journey(
             from_type="bus",
-            from_id="210021204507",
+            from_id="490000077E",
             to_type="bus",
-            to_id="210021200011",
+            to_id="490000077C",
             timing_mode="depart",
             time_str="08:25",
             days_of_week=["mon"],
@@ -701,7 +685,7 @@ def test_pruning_pareto_dominance(seeded_planner: Flask):
     with seeded_planner.app_context():
         # Create a slow parallel bus line between same stops
         tt_slow = Timetable.create(
-            name="Slow Bus SB99",
+            name="Slow Bus 73X",
             transport_type="bus",
             monday=True,
             tuesday=True,
@@ -715,16 +699,16 @@ def test_pruning_pareto_dominance(seeded_planner: Flask):
         tt_slow.set_content(
             TimetableContent(
                 stops=[
-                    TimetableStop(id="210021204507", name="Sweyns Mead", type="bus"),
                     TimetableStop(
-                        id="210021200011", name="Stevenage Bus Station", type="bus"
+                        id="490000077E", name="King's Cross Station", type="bus"
                     ),
+                    TimetableStop(id="490000077C", name="Euston Station", type="bus"),
                 ],
                 trips=[
                     TimetableTrip(
-                        id="sb99_01",
-                        headsign="Bus Station Slow",
-                        operator="Arriva",
+                        id="slow_01",
+                        headsign="Euston Station Slow",
+                        operator="Arriva London",
                         times=[{"dep": "07:30"}, {"arr": "08:30"}],  # 60 min vs 12 min
                     )
                 ],
@@ -734,11 +718,11 @@ def test_pruning_pareto_dominance(seeded_planner: Flask):
 
         routes = find_routes(
             from_type="bus",
-            from_id="210021204507",
+            from_id="490000077E",
             to_type="bus",
-            to_id="210021200011",
+            to_id="490000077C",
             days_of_week=["mon"],
         )
-        # Should only retain the fastest non-dominated Bus SB1
+        # Should only retain the fastest non-dominated Bus 73
         assert len(routes) == 1
-        assert routes[0].legs[0].line_name == "Bus SB1"
+        assert routes[0].legs[0].line_name == "Bus 73"

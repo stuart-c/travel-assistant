@@ -191,9 +191,7 @@ class UITester:
         )
         r_loc_get = self.client.get("/config/locations/data")
         loc_data = (
-            r_loc_get.get_json().get("data", [])
-            if r_loc_get.status_code == 200
-            else []
+            r_loc_get.get_json().get("data", []) if r_loc_get.status_code == 200 else []
         )
         self.record(
             "Locations Grid.js Data Persistence",
@@ -230,9 +228,7 @@ class UITester:
         )
         r_tt_get = self.client.get("/config/timetables/data")
         tt_data = (
-            r_tt_get.get_json().get("data", [])
-            if r_tt_get.status_code == 200
-            else []
+            r_tt_get.get_json().get("data", []) if r_tt_get.status_code == 200 else []
         )
         self.record(
             "Timetables Grid.js Data Persistence",
@@ -265,9 +261,7 @@ class UITester:
         )
         r_tr_get = self.client.get("/config/transfers/data")
         plat_tr = (
-            r_tr_get.get_json().get("data", [])
-            if r_tr_get.status_code == 200
-            else []
+            r_tr_get.get_json().get("data", []) if r_tr_get.status_code == 200 else []
         )
         self.record(
             "Transfers Grid.js Data Persistence",
@@ -298,9 +292,7 @@ class UITester:
         )
         r_j_get = self.client.get("/config/journeys/data")
         j_data = (
-            r_j_get.get_json().get("data", [])
-            if r_j_get.status_code == 200
-            else []
+            r_j_get.get_json().get("data", []) if r_j_get.status_code == 200 else []
         )
         self.record(
             "Journeys Grid.js Data Persistence",
@@ -332,9 +324,7 @@ class UITester:
         )
         r_w_get = self.client.get("/config/walking/data")
         w_data = (
-            r_w_get.get_json().get("data", [])
-            if r_w_get.status_code == 200
-            else []
+            r_w_get.get_json().get("data", []) if r_w_get.status_code == 200 else []
         )
         self.record(
             "Walking Grid.js Data Persistence",
@@ -361,9 +351,7 @@ class UITester:
         )
         self.record(
             "Sync Datasets Grid.js Data & Human Labels",
-            r_sync_get.status_code == 200
-            and len(sync_data) >= 7
-            and has_human_titles,
+            r_sync_get.status_code == 200 and len(sync_data) >= 7 and has_human_titles,
             f"Verified {len(sync_data)} sync datasets with human labels",
         )
 
