@@ -21,7 +21,14 @@ def db_stats_data() -> Any:
     """Return database table statistics as JSON for Grid.js remote data loading."""
     stats = get_db_stats()
     tables = stats.get("tables", [])
-    return jsonify({"data": tables, "total": len(tables)})
+    return jsonify(
+        {
+            "data": tables,
+            "total": len(tables),
+            "file_size_bytes": stats.get("file_size_bytes", 0),
+            "file_size_formatted": stats.get("file_size_formatted", "0 B"),
+        }
+    )
 
 
 @config_bp.route("/db", methods=["GET"])

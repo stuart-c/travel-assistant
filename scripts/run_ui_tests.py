@@ -355,6 +355,31 @@ class UITester:
             f"Verified {len(sync_data)} sync datasets with human labels",
         )
 
+        # Database & Background Sync Refresh Controls & 1-Minute Auto-Refresh
+        r_db_html = self.client.get("/config/db").get_data(as_text=True)
+        r_sync_html = self.client.get("/config/sync").get_data(as_text=True)
+        r_db_js = self.client.get("/static/js/db.js").get_data(as_text=True)
+
+        has_db_refresh_btn = (
+            "refresh-db-btn" in r_db_html and "refresh-db-icon" in r_db_html
+        )
+        has_sync_refresh_btn = (
+            "refresh-sync-btn" in r_sync_html and "refresh-sync-icon" in r_sync_html
+        )
+        has_db_auto_refresh = "refreshDbData" in r_db_js and "60000" in r_db_js
+        has_sync_auto_refresh = (
+            "refreshSyncData" in sync_js_content and "60000" in sync_js_content
+        )
+
+        self.record(
+            "Database & Background Sync Refresh Controls",
+            has_db_refresh_btn
+            and has_sync_refresh_btn
+            and has_db_auto_refresh
+            and has_sync_auto_refresh,
+            "Verified refresh buttons and 1-minute auto-refresh in DB and Sync views",
+        )
+
         # 5. British English Compliance
         print("\n--- 5. Checking British English Standards ---")
         prohibited_us_words = [
