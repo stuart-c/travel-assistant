@@ -93,13 +93,21 @@ window.ConfigSave = (function () {
     if (!currentOptions || !currentOptions.endpoint || isSaving) return;
 
     const saveBtn = document.getElementById('config-save-btn');
-    const originalContent = saveBtn ? saveBtn.innerHTML : '';
+    const defaultSaveHtml =
+      '<span class="material-symbols-outlined text-base leading-none">save</span>\n            <span>Save Changes</span>';
+    const originalContent =
+      (saveBtn && saveBtn.getAttribute('data-original-html')) ||
+      (saveBtn ? saveBtn.innerHTML : '') ||
+      defaultSaveHtml;
 
     try {
       isSaving = true;
 
       // Set Save button to loading spinner state
       if (saveBtn) {
+        if (!saveBtn.getAttribute('data-original-html')) {
+          saveBtn.setAttribute('data-original-html', originalContent);
+        }
         saveBtn.disabled = true;
         saveBtn.innerHTML = `
           <span class="material-symbols-outlined text-base leading-none animate-spin">progress_activity</span>
@@ -125,6 +133,9 @@ window.ConfigSave = (function () {
       const result = await response.json().catch(() => ({}));
 
       if (response.ok && result.success) {
+        if (saveBtn) {
+          saveBtn.innerHTML = originalContent;
+        }
         if (window.ConfigDirtyManager) {
           window.ConfigDirtyManager.clearDirty();
         }
@@ -158,6 +169,9 @@ window.ConfigSave = (function () {
       }
     } finally {
       isSaving = false;
+      if (saveBtn && (!window.ConfigDirtyManager || !window.ConfigDirtyManager.isDirty())) {
+        saveBtn.innerHTML = originalContent;
+      }
     }
   }
 
