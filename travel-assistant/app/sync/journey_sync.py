@@ -104,9 +104,13 @@ def sync_journey_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
             Journey.select().where(Journey.calculated_routes.is_null())
         )
         if not pending_journeys:
-            logger.debug("No pending journeys without calculated routes.")
+            logger.info("No pending journeys requiring route calculation.")
             return 0
 
+        logger.info(
+            "Evaluating multi-modal topological route corridors for %d pending journey(s)...",
+            len(pending_journeys),
+        )
         calculated_count = 0
         for journey in pending_journeys:
             try:

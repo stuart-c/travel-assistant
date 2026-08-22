@@ -305,7 +305,16 @@ def sync_walking_routes(
                             }
 
             if not target_places:
+                logger.info(
+                    "No custom or Home Assistant journey endpoints found for walking stop discovery."
+                )
                 return 0
+
+            logger.info(
+                "Evaluating candidate transit stops within %.0fm for %d journey endpoint(s)...",
+                DEFAULT_WALK_RADIUS_METRES,
+                len(target_places),
+            )
 
             # 2. For each target place, find candidate stops within 500m
             added_records = 0
@@ -318,6 +327,12 @@ def sync_walking_routes(
 
                 candidate_stops = find_candidate_stops_for_location(
                     loc_lat, loc_lon, max_distance_m=DEFAULT_WALK_RADIUS_METRES
+                )
+                logger.info(
+                    "Found %d candidate transit stop(s) within %.0fm of '%s'. Computing walking durations...",
+                    len(candidate_stops),
+                    DEFAULT_WALK_RADIUS_METRES,
+                    loc_name,
                 )
 
                 for stop in candidate_stops:
@@ -380,6 +395,12 @@ def sync_walking_routes(
                         added_records += 1
                         if is_bus_stop:
                             bus_stops_added += 1
+                        logger.info(
+                            "Created bidirectional walking connection between '%s' and '%s' (%d min).",
+                            loc_name,
+                            st_name,
+                            fwd_min,
+                        )
                     else:
                         Walking.create(
                             start_type=loc_type,
@@ -406,11 +427,22 @@ def sync_walking_routes(
                         added_records += 2
                         if is_bus_stop:
                             bus_stops_added += 2
+                        logger.info(
+                            "Created directional walking connections between '%s' and '%s' (fwd: %d min, rev: %d min).",
+                            loc_name,
+                            st_name,
+                            fwd_min,
+                            rev_min,
+                        )
 
             if bus_stops_added > 0:
                 try:
                     from app.sync.worker import request_sync
 
+                    logger.info(
+                        "Triggering automatic bus timetable sync after discovering %d connected bus stop(s)...",
+                        bus_stops_added,
+                    )
                     request_sync("bus_timetables")
                 except Exception as sync_exc:
                     logger.warning(
@@ -438,6 +470,9 @@ def sync_walking_routes(
             try:
                 from app.sync.worker import request_sync
 
+                logger.info(
+                    "Triggering automatic journey routes calculation following walking discovery..."
+                )
                 request_sync("journey_routes")
             except Exception as sync_exc:
                 logger.warning(

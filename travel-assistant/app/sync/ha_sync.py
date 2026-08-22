@@ -29,8 +29,12 @@ def sync_ha_locations(app: Optional[Flask] = None) -> Dict[str, Any]:
         return None
 
     def _perform_sync() -> int:
+        logger.info("Fetching zone entities from Home Assistant Core API...")
         zones = client.fetch_zones()
         count = len(zones)
+        logger.info(
+            "Reconciling %d Home Assistant zone(s) into locations database...", count
+        )
 
         with db.atomic():
             # Build lookup of existing locations by ID and name

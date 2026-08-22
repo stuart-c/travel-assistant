@@ -1,5 +1,6 @@
 """Credentials configuration and validation endpoints."""
 
+import logging
 from typing import Any, Dict
 from flask import (
     flash,
@@ -13,6 +14,8 @@ from flask import (
 from app.models import Setting
 from app.validators import validate_service_credentials
 from app.views.config import config_bp
+
+logger = logging.getLogger(__name__)
 
 CREDENTIAL_FIELDS = [
     "bus_api_key",
@@ -49,6 +52,10 @@ def credentials() -> Any:
 
         if payload:
             Setting.bulk_set(payload, category="credentials")
+            logger.info(
+                "Saved API credentials configuration for fields: %s.",
+                ", ".join(payload.keys()),
+            )
         flash("API credentials saved successfully.", "success")
         return redirect(url_for("config.credentials"), code=303)
 
@@ -94,6 +101,13 @@ def validate_credentials() -> Any:
         service, merged_payload
     )
     status_code = 400 if message.startswith("Unknown service") else 200
+
+    logger.info(
+        "Credentials validation probe for '%s': valid=%s (%s).",
+        service,
+        is_valid,
+        message,
+    )
 
     response_body = {
         "valid": is_valid,

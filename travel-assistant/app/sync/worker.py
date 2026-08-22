@@ -88,7 +88,10 @@ class SyncWorker:
             daemon=True,
         )
         self._thread.start()
-        logger.info("Background sync worker started.")
+        logger.info(
+            "Background sync worker started (idle check interval: %ds).",
+            _IDLE_SLEEP_SECONDS,
+        )
 
     def stop(self, timeout: float = 5.0) -> None:
         """Signal the worker to stop and wait for completion."""
@@ -133,14 +136,19 @@ class SyncWorker:
                         if flag_set or overdue:
                             # Clear the flag atomically before running to deduplicate
                             SyncMetadata.clear_sync_requested(entry.table_name)
-                            logger.debug(
-                                "Running sync for '%s' (flag=%s, overdue=%s).",
+                            trigger_reason = (
+                                "on-demand request"
+                                if flag_set
+                                else "scheduled freshness expiry"
+                            )
+                            logger.info(
+                                "Executing background synchronisation for '%s' (trigger: %s).",
                                 entry.table_name,
-                                flag_set,
-                                overdue,
+                                trigger_reason,
                             )
                             result = entry.sync_fn()
                             status = result.get("status")
+                            duration = result.get("duration_seconds", 0.0)
                             if status == "error":
                                 logger.error(
                                     "Sync failed for '%s': %s",
@@ -154,9 +162,10 @@ class SyncWorker:
                                     result.get("message", "Missing credentials"),
                                 )
                             else:
-                                logger.debug(
-                                    "Sync complete for '%s': status=%s, records=%d.",
+                                logger.info(
+                                    "Completed background synchronisation for '%s' in %.2fs (status: %s, records: %d).",
                                     entry.table_name,
+                                    duration,
                                     status,
                                     result.get("records", 0),
                                 )
@@ -228,6 +237,7 @@ def request_sync(table_name: str) -> None:
     Safe to call even when the worker is not running — the flag will be picked up
     on the next worker start.
     """
+    logger.info("Queued on-demand synchronisation request for '%s'.", table_name)
     SyncMetadata.request_sync(table_name)
     with _worker_lock:
         if _worker_instance is not None and _worker_instance.is_running():

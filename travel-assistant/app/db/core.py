@@ -1,10 +1,13 @@
 """Database connection lifecycle, Peewee SQLite management, and schema initialisation."""
 
+import logging
 import os
 from typing import Any, Dict, List, Optional
 from flask import Flask, current_app
 from peewee import DatabaseProxy, SqliteDatabase
 from playhouse.flask_utils import FlaskDB
+
+logger = logging.getLogger(__name__)
 
 # Global database proxy for model bindings
 db = DatabaseProxy()
@@ -82,6 +85,7 @@ def create_sqlite_database(db_path: str) -> SqliteDatabase:
 
 def run_migrations(database: SqliteDatabase) -> None:
     """Execute schema migrations using SqliteMigrator if needed."""
+    logger.info("Verifying database tables and applying pending schema migrations...")
     from app.models.journey import Journey
     from app.models.location import Location
     from app.models.setting import Setting
@@ -333,10 +337,13 @@ def run_migrations(database: SqliteDatabase) -> None:
     except Exception:
         pass
 
+    logger.info("Database schema verification and migrations complete.")
+
 
 def init_db(app: Optional[Flask] = None) -> SqliteDatabase:
     """Initialise database, configure proxy, and create schema tables."""
     db_path = get_db_path(app)
+    logger.info("Initialising SQLite database at %s...", db_path)
     sqlite_db = create_sqlite_database(db_path)
     db.initialize(sqlite_db)
     sqlite_db.connect(reuse_if_open=True)
