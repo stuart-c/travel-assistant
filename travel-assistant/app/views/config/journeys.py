@@ -17,7 +17,7 @@ from app.views.config.common import (
 def _trigger_syncs_if_changed(
     stats: Dict[str, int], changeset: Dict[str, list[Any]]
 ) -> None:
-    """Queue targeted walking and bus timetable synchronisation when journeys are modified."""
+    """Queue targeted walking, timetable, and route synchronisation when journeys are modified."""
     modified_entries = changeset.get("added", []) + changeset.get("updated", [])
     if not modified_entries:
         return
@@ -43,6 +43,7 @@ def _trigger_syncs_if_changed(
             request_sync("walking")
         if has_bus_endpoint:
             request_sync("bus_timetables")
+        request_sync("journey_routes")
     except Exception:
         pass
 
@@ -87,9 +88,13 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "to_id": to_id,
         "to_name": to_name,
         "time_settings": cleaned_time_settings,
+        "calculated_routes": (
+            entry.get("calculated_routes")
+            if "calculated_routes" in entry
+            and entry.get("calculated_routes") is not None
+            else None
+        ),
     }
-    if "calculated_routes" in entry:
-        result["calculated_routes"] = entry.get("calculated_routes")
     if item_id is not None:
         result["id"] = item_id
 

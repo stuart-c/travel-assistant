@@ -854,10 +854,12 @@ def test_sync_registry_ordering() -> None:
         "train_timetables",
         "walking",
         "bus_timetables",
+        "journey_routes",
     ]
     walking_idx = table_order.index("walking")
     bus_tt_idx = table_order.index("bus_timetables")
-    assert walking_idx < bus_tt_idx
+    journey_routes_idx = table_order.index("journey_routes")
+    assert walking_idx < bus_tt_idx < journey_routes_idx
 
 
 def test_sync_metadata_record_error_logs_to_system_log(caplog: Any) -> None:

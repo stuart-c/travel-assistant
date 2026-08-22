@@ -15,6 +15,7 @@ from app.sync.transit_sync import (
     sync_stops,
     sync_train_timetables,
 )
+from app.sync.journey_sync import sync_journey_routes
 from app.sync.walking_sync import sync_walking_routes
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,8 @@ class SyncEntry:
 
 
 # Ordered list of sync operations. The loop processes entries in this order on each pass.
-# Dependencies are respected: stops and walking must precede bus timetables.
+# Dependencies are respected: stops and walking must precede bus timetables, and journey
+# route discovery runs after all underlying transit networks have been updated.
 SYNC_REGISTRY: List[SyncEntry] = [
     SyncEntry("bus_routes", sync_bus_routes, _SECONDS_PER_DAY),
     SyncEntry("stops", sync_stops, _SECONDS_PER_WEEK),
@@ -44,6 +46,7 @@ SYNC_REGISTRY: List[SyncEntry] = [
     SyncEntry("train_timetables", sync_train_timetables, _SECONDS_PER_DAY),
     SyncEntry("walking", sync_walking_routes, _SECONDS_PER_DAY),
     SyncEntry("bus_timetables", sync_bus_timetables, _SECONDS_PER_DAY),
+    SyncEntry("journey_routes", sync_journey_routes, _SECONDS_PER_HOUR),
 ]
 
 

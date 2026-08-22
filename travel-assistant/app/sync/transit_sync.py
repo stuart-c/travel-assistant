@@ -140,7 +140,7 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
         return count
 
-    return run_sync_task(
+    result = run_sync_task(
         table_name="train_timetables",
         sync_operation=_perform_sync,
         client_check=_check_credentials,
@@ -150,6 +150,19 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         ),
         app=app,
     )
+
+    if result.get("status") == "success":
+        try:
+            from app.sync.worker import request_sync
+
+            request_sync("journey_routes")
+        except Exception as sync_exc:
+            logger.warning(
+                "Failed to queue journey routes sync after train timetables: %s",
+                sync_exc,
+            )
+
+    return result
 
 
 def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
@@ -274,7 +287,7 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
         return count
 
-    return run_sync_task(
+    result = run_sync_task(
         table_name="bus_timetables",
         sync_operation=_perform_sync,
         client_check=_check_credentials,
@@ -286,6 +299,19 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
         ),
         app=app,
     )
+
+    if result.get("status") == "success":
+        try:
+            from app.sync.worker import request_sync
+
+            request_sync("journey_routes")
+        except Exception as sync_exc:
+            logger.warning(
+                "Failed to queue journey routes sync after bus timetables: %s",
+                sync_exc,
+            )
+
+    return result
 
 
 def populate_stops_rtree(database: Optional[Any] = None) -> int:
@@ -416,6 +442,7 @@ def sync_table(
 ) -> Dict[str, Any]:
     """Synchronise a specific transit dataset table by name."""
     from app.sync.ha_sync import sync_ha_locations
+    from app.sync.journey_sync import sync_journey_routes
     from app.sync.walking_sync import sync_walking_routes
     from app.sync.worker import SYNC_REGISTRY
 
@@ -436,6 +463,8 @@ def sync_table(
         return sync_bus_timetables(app=app)
     elif norm_name in ("walking", "walking_routes"):
         return sync_walking_routes(app=app, force=force)
+    elif norm_name in ("journey_routes", "journeys", "calculated_routes"):
+        return sync_journey_routes(app=app)
     else:
         err_msg = (
             f"Unknown or non-syncable table: '{norm_name}'. "

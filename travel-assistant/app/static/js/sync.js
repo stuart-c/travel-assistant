@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'train_timetables',
     'bus_timetables',
     'walking',
+    'journey_routes',
   ];
 
   function extractSyncableTables(tablesList) {
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'train_timetables': return 'train';
       case 'bus_timetables': return 'directions_bus';
       case 'walking': return 'directions_walk';
+      case 'journey_routes': return 'alt_route';
       default: return 'sync';
     }
   }
@@ -63,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'train_timetables': return 'Train Timetables (Darwin S3)';
       case 'bus_timetables': return 'Bus Timetables (BODS)';
       case 'walking': return 'Walking Connections';
+      case 'journey_routes': return 'Journey Routes (Calculated)';
       default: return name;
     }
   }
