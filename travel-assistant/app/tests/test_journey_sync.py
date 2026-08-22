@@ -512,3 +512,6 @@ def test_sync_journey_routes_logs_warning_on_unreachable_journey(
                 or "No viable routes" in msg
                 for msg in warnings
             )
+            assert not any(
+                "ha:ha:" in msg or "custom:custom:" in msg for msg in warnings
+            )

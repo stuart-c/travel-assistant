@@ -334,43 +334,133 @@ def find_routes(
         )
 
     candidate_templates: List[RouteTemplate] = []
-    paths: List[List[Tuple[str, str, Any]]] = []
+
+    # Build simple graph with minimum duration weights for shortest path discovery
+    simple_g = nx.DiGraph()
+    for u, v, k, data in G.edges(keys=True, data=True):
+        dur = data.get("duration", 1)
+        if simple_g.has_edge(u, v):
+            if dur < simple_g[u][v].get("weight", 9999):
+                simple_g[u][v]["weight"] = dur
+        else:
+            simple_g.add_edge(u, v, weight=dur)
+
+    raw_node_paths: List[List[str]] = []
     try:
-        simple_g = nx.DiGraph(G)
-        node_paths = list(
-            itertools.islice(
-                nx.shortest_simple_paths(simple_g, origin_node, dest_node),
-                max_routes * 10,
+        raw_node_paths.extend(
+            list(
+                itertools.islice(
+                    nx.shortest_simple_paths(
+                        simple_g, origin_node, dest_node, weight="weight"
+                    ),
+                    max_routes * 15,
+                )
             )
         )
-        for np in node_paths:
-            edge_seq = []
-            for i in range(len(np) - 1):
-                u, v = np[i], np[i + 1]
-                edge_keys = list(G.get_edge_data(u, v).keys())
-                edge_seq.append((u, v, edge_keys[0]))
-            paths.append(edge_seq)
     except Exception as e:
-        logger.warning("NetworkX shortest_simple_paths exception: %s", e)
-        paths = []
+        logger.debug("shortest_simple_paths main exception: %s", e)
 
-    if not paths:
+    # Search paths across all reachable origin access nodes to destination egress nodes
+    origin_targets = {make_node_key(w[2], w[3]) for w in origin_walks if len(w) >= 4}
+    dest_sources = {make_node_key(w[0], w[1]) for w in dest_walks if len(w) >= 2}
+
+    for o_target in origin_targets:
+        if o_target == origin_node or not simple_g.has_node(o_target):
+            continue
+        for d_source in dest_sources:
+            if d_source == dest_node or not simple_g.has_node(d_source):
+                continue
+            if nx.has_path(simple_g, o_target, d_source):
+                try:
+                    sub_paths = list(
+                        itertools.islice(
+                            nx.shortest_simple_paths(
+                                simple_g, o_target, d_source, weight="weight"
+                            ),
+                            3,
+                        )
+                    )
+                    for sp in sub_paths:
+                        full_np = [origin_node] + sp + [dest_node]
+                        raw_node_paths.append(full_np)
+                except Exception:
+                    pass
+
+    # Deduplicate node paths
+    seen_node_paths: Set[Tuple[str, ...]] = set()
+    node_paths: List[List[str]] = []
+    for np in raw_node_paths:
+        t_np = tuple(np)
+        if t_np not in seen_node_paths:
+            seen_node_paths.add(t_np)
+            node_paths.append(np)
+
+    if not node_paths:
         try:
             node_path = nx.shortest_path(G, origin_node, dest_node)
-            single_edge_path = []
-            for i in range(len(node_path) - 1):
-                u, v = node_path[i], node_path[i + 1]
-                edge_data = list(G.get_edge_data(u, v).keys())[0]
-                single_edge_path.append((u, v, edge_data))
-            paths = [single_edge_path]
+            node_paths = [node_path]
         except Exception:
-            paths = []
+            node_paths = []
 
-    if not paths:
+    if not node_paths:
         raise NoCorridorPathError(
             f"No viable corridor paths found connecting '{f_id}' to '{t_id}'.",
             {"from_id": f_id, "to_id": t_id},
         )
+
+    def _resolve_edge_sequences_for_path(
+        np: List[str],
+    ) -> List[List[Tuple[str, str, Any]]]:
+        """Expand a node path into candidate edge sequences preserving transit continuity."""
+        resolved_sequences: List[List[Tuple[str, str, Any]]] = [[]]
+
+        for i in range(len(np) - 1):
+            u, v = np[i], np[i + 1]
+            edge_data_dict = G.get_edge_data(u, v) or {}
+            if not edge_data_dict:
+                return []
+
+            next_sequences: List[List[Tuple[str, str, Any]]] = []
+            for seq in resolved_sequences:
+                prev_tt_id = None
+                if seq:
+                    last_u, last_v, last_k = seq[-1]
+                    last_edge_attr = G.edges[last_u, last_v, last_k]
+                    if last_edge_attr.get("leg_type") == "transit":
+                        prev_tt_id = last_edge_attr.get("timetable_id")
+
+                matching_tt_keys = [
+                    k
+                    for k, attr in edge_data_dict.items()
+                    if prev_tt_id is not None and attr.get("timetable_id") == prev_tt_id
+                ]
+
+                if matching_tt_keys:
+                    chosen_key = matching_tt_keys[0]
+                    next_sequences.append(seq + [(u, v, chosen_key)])
+                else:
+                    distinct_edge_keys = []
+                    seen_line_keys = set()
+                    for k, attr in edge_data_dict.items():
+                        tt_id = attr.get("timetable_id")
+                        line = attr.get("line_name")
+                        mode = attr.get("transport_mode")
+                        l_key = (attr.get("leg_type"), mode, tt_id, line)
+                        if l_key not in seen_line_keys:
+                            seen_line_keys.add(l_key)
+                            distinct_edge_keys.append(k)
+
+                    for k in distinct_edge_keys[:2]:
+                        next_sequences.append(seq + [(u, v, k)])
+
+            resolved_sequences = next_sequences[:10]
+
+        return resolved_sequences
+
+    paths: List[List[Tuple[str, str, Any]]] = []
+    for np in node_paths:
+        seqs = _resolve_edge_sequences_for_path(np)
+        paths.extend(seqs)
 
     # 5. Compress contiguous segments and assemble RouteTemplates
     corridor_idx = 1
@@ -510,7 +600,7 @@ def find_routes(
 def prune_route_templates(
     routes: List[RouteTemplate],
 ) -> List[RouteTemplate]:
-    """Apply the 4 formal pruning and Pareto-optimisation rules."""
+    """Apply Pareto optimisation and corridor diversity rules to preserve distinct viable route options."""
     if not routes:
         return []
 
@@ -521,7 +611,7 @@ def prune_route_templates(
         sig_elements = []
         for leg in r.legs:
             sig_elements.append(
-                f"{leg.leg_type}:{leg.from_id}->{leg.to_id}:{leg.timetable_id or ''}"
+                f"{leg.leg_type}:{leg.from_id}->{leg.to_id}:{leg.timetable_id or leg.line_name or ''}"
             )
         signature = "|".join(sig_elements)
         if signature in seen_signatures:
@@ -529,39 +619,49 @@ def prune_route_templates(
         seen_signatures.add(signature)
         unique_routes.append(r)
 
-    non_dominated: List[RouteTemplate] = []
-    for candidate in unique_routes:
-        is_dominated = False
-        for other in unique_routes:
-            if candidate is other:
-                continue
-            if (
-                other.total_duration_est_minutes <= candidate.total_duration_est_minutes
-                and other.transfer_count <= candidate.transfer_count
-                and (
-                    other.total_duration_est_minutes
-                    < candidate.total_duration_est_minutes
-                    or other.transfer_count < candidate.transfer_count
-                )
-            ):
-                is_dominated = True
-                break
-        if not is_dominated:
-            non_dominated.append(candidate)
+    # Group by corridor fingerprint (distinct access stop, initial transit line, final transit line)
+    corridor_best: Dict[Tuple[str, str, str], RouteTemplate] = {}
+    for r in unique_routes:
+        transit_legs = [leg for leg in r.legs if leg.leg_type == "transit"]
+        first_transit = (
+            transit_legs[0].line_name or str(transit_legs[0].timetable_id)
+            if transit_legs
+            else "walk"
+        )
+        last_transit = (
+            transit_legs[-1].line_name or str(transit_legs[-1].timetable_id)
+            if transit_legs
+            else "walk"
+        )
+        access_stop = r.legs[0].to_id if len(r.legs) > 1 else "direct"
+        fp = (access_stop, first_transit, last_transit)
 
-    if not non_dominated:
-        non_dominated = unique_routes
+        if (
+            fp not in corridor_best
+            or r.total_duration_est_minutes
+            < corridor_best[fp].total_duration_est_minutes
+        ):
+            corridor_best[fp] = r
 
-    fastest_duration = min(r.total_duration_est_minutes for r in non_dominated)
+    diverse_candidates = list(corridor_best.values())
+
+    fastest_duration = min(r.total_duration_est_minutes for r in unique_routes)
+    max_acceptable_duration = max(fastest_duration * 1.5, fastest_duration + 35)
+
     filtered = [
         r
-        for r in non_dominated
-        if r.total_duration_est_minutes
-        <= max(fastest_duration * 1.5, fastest_duration + 30)
+        for r in diverse_candidates
+        if r.total_duration_est_minutes <= max_acceptable_duration
     ]
 
-    filtered.sort(key=lambda r: (r.total_duration_est_minutes, r.transfer_count))
-    return filtered or non_dominated
+    filtered.sort(
+        key=lambda r: (
+            r.total_duration_est_minutes,
+            r.transfer_count,
+            r.stages_count,
+        )
+    )
+    return filtered or unique_routes
 
 
 __all__ = [

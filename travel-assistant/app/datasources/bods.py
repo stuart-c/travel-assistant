@@ -964,102 +964,102 @@ class BodsClient(BaseDataSource):
                 if not master_stops or not corr_trips:
                     continue
 
-            # Filter by target stops if requested
-            if target_codes is not None:
-                covers_target = any(
-                    s.upper().strip() in target_codes for s in master_stops
-                )
-                if not covers_target:
-                    continue
+                # Filter by target stops if requested
+                if target_codes is not None:
+                    covers_target = any(
+                        s.upper().strip() in target_codes for s in master_stops
+                    )
+                    if not covers_target:
+                        continue
 
-            stops_list: List[Dict[str, Any]] = []
-            for s_ref in master_stops:
-                st_meta = stops_map.get(s_ref) or lookup.get(s_ref.upper()) or {}
-                stops_list.append(
+                stops_list: List[Dict[str, Any]] = []
+                for s_ref in master_stops:
+                    st_meta = stops_map.get(s_ref) or lookup.get(s_ref.upper()) or {}
+                    stops_list.append(
+                        {
+                            "id": s_ref,
+                            "name": st_meta.get("name") or s_ref,
+                            "type": "bus",
+                            "indicator": st_meta.get("indicator") or "Bus Stop",
+                            "icon": "directions_bus",
+                            "latitude": st_meta.get("latitude"),
+                            "longitude": st_meta.get("longitude"),
+                        }
+                    )
+
+                first_name = stops_list[0]["name"] if stops_list else "Origin"
+                last_name = stops_list[-1]["name"] if stops_list else "Destination"
+                first_id = stops_list[0]["id"] if stops_list else ""
+                last_id = stops_list[-1]["id"] if stops_list else ""
+
+                if corr["is_circular"] or (
+                    first_id and last_id and first_id == last_id and len(stops_list) > 1
+                ):
+                    timetable_name = f"Bus {l_name}: {first_name} (Circular)"
+                else:
+                    timetable_name = f"Bus {l_name}: {first_name} to {last_name}"
+
+                # Align each trip's times onto the master stop sequence
+                aligned_trips: List[Dict[str, Any]] = []
+                seen_trip_ids: Set[str] = set()
+
+                # Sort trips chronologically
+                sorted_trips = sorted(corr_trips, key=lambda t: t.get("dep_sec", 0))
+
+                for idx, t in enumerate(sorted_trips):
+                    tid = t.get("id") or f"trip_{idx + 1}"
+                    if tid in seen_trip_ids:
+                        continue
+                    seen_trip_ids.add(tid)
+
+                    aligned_times = _align_times_to_master(
+                        t["stops"], t["times"], master_stops
+                    )
+                    aligned_trips.append(
+                        {
+                            "id": tid,
+                            "headsign": f"{l_name} to {last_name}".strip(),
+                            "operator": t.get("operator", ""),
+                            "times": aligned_times,
+                        }
+                    )
+
+                # Determine start and end date
+                start_date = corr_trips[0].get("start_date")
+                end_date = corr_trips[0].get("end_date")
+
+                (
+                    mon,
+                    tue,
+                    wed,
+                    thu,
+                    fri,
+                    sat,
+                    sun,
+                    bh,
+                ) = days_tuple
+
+                timetables.append(
                     {
-                        "id": s_ref,
-                        "name": st_meta.get("name") or s_ref,
-                        "type": "bus",
-                        "indicator": st_meta.get("indicator") or "Bus Stop",
-                        "icon": "directions_bus",
-                        "latitude": st_meta.get("latitude"),
-                        "longitude": st_meta.get("longitude"),
+                        "name": timetable_name,
+                        "transport_type": "bus",
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "monday": mon,
+                        "tuesday": tue,
+                        "wednesday": wed,
+                        "thursday": thu,
+                        "friday": fri,
+                        "saturday": sat,
+                        "sunday": sun,
+                        "bank_holiday": bh,
+                        "auto_added": True,
+                        "content": {
+                            "stops": stops_list,
+                            "trips": aligned_trips,
+                        },
                     }
                 )
-
-            first_name = stops_list[0]["name"] if stops_list else "Origin"
-            last_name = stops_list[-1]["name"] if stops_list else "Destination"
-            first_id = stops_list[0]["id"] if stops_list else ""
-            last_id = stops_list[-1]["id"] if stops_list else ""
-
-            if corr["is_circular"] or (
-                first_id and last_id and first_id == last_id and len(stops_list) > 1
-            ):
-                timetable_name = f"Bus {l_name}: {first_name} (Circular)"
-            else:
-                timetable_name = f"Bus {l_name}: {first_name} to {last_name}"
-
-            # Align each trip's times onto the master stop sequence
-            aligned_trips: List[Dict[str, Any]] = []
-            seen_trip_ids: Set[str] = set()
-
-            # Sort trips chronologically
-            sorted_trips = sorted(corr_trips, key=lambda t: t.get("dep_sec", 0))
-
-            for idx, t in enumerate(sorted_trips):
-                tid = t.get("id") or f"trip_{idx + 1}"
-                if tid in seen_trip_ids:
-                    continue
-                seen_trip_ids.add(tid)
-
-                aligned_times = _align_times_to_master(
-                    t["stops"], t["times"], master_stops
-                )
-                aligned_trips.append(
-                    {
-                        "id": tid,
-                        "headsign": f"{l_name} to {last_name}".strip(),
-                        "operator": t.get("operator", ""),
-                        "times": aligned_times,
-                    }
-                )
-
-            # Determine start and end date
-            start_date = corr_trips[0].get("start_date")
-            end_date = corr_trips[0].get("end_date")
-
-            (
-                mon,
-                tue,
-                wed,
-                thu,
-                fri,
-                sat,
-                sun,
-                bh,
-            ) = days_tuple
-
-            timetables.append(
-                {
-                    "name": timetable_name,
-                    "transport_type": "bus",
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "monday": mon,
-                    "tuesday": tue,
-                    "wednesday": wed,
-                    "thursday": thu,
-                    "friday": fri,
-                    "saturday": sat,
-                    "sunday": sun,
-                    "bank_holiday": bh,
-                    "auto_added": True,
-                    "content": {
-                        "stops": stops_list,
-                        "trips": aligned_trips,
-                    },
-                }
-            )
 
         return timetables
 

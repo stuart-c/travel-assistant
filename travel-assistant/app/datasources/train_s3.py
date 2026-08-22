@@ -192,6 +192,75 @@ class TrainS3Client(BaseDataSource):
                 provider=self.provider_name,
             ) from e
 
+    def get_latest_timetable_keys_by_day_profile(
+        self, prefix: str = "PPTimetable/"
+    ) -> List[str]:
+        """Find the latest Darwin XML timetable snapshot keys for each day profile (weekday, saturday, sunday)."""
+        if not self.bucket_name:
+            raise DataSourceConfigError(
+                "S3 bucket name is not configured.", provider=self.provider_name
+            )
+
+        try:
+            client = self.get_client()
+            resp = client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
+
+            matching_keys: List[str] = []
+            for obj in resp.get("Contents", []):
+                k = obj.get("Key", "")
+                if (
+                    k.endswith("_v8.xml.gz")
+                    or k.endswith(".xml.gz")
+                    or k.endswith(".xml")
+                ):
+                    matching_keys.append(k)
+
+            if not matching_keys:
+                return []
+
+            matching_keys.sort()
+
+            profile_keys: Dict[str, str] = {}
+            for k in reversed(matching_keys):
+                fname = k.split("/")[-1]
+                datestr = fname[:8]
+                try:
+                    import datetime as dt
+
+                    d = dt.datetime.strptime(datestr, "%Y%m%d").date()
+                    weekday = d.weekday()
+                    if weekday <= 4:
+                        prof = "weekday"
+                    elif weekday == 5:
+                        prof = "saturday"
+                    else:
+                        prof = "sunday"
+
+                    if prof not in profile_keys:
+                        profile_keys[prof] = k
+                except Exception:
+                    pass
+
+            if profile_keys:
+                return list(profile_keys.values())
+            return [matching_keys[-1]]
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code in ("403", "AccessDenied", "InvalidAccessKeyId"):
+                raise DataSourceAuthError(
+                    f"AWS S3 authentication failed ({error_code}).",
+                    provider=self.provider_name,
+                ) from e
+            raise DataSourceError(
+                f"S3 error listing timetable snapshots: {str(e)}",
+                provider=self.provider_name,
+            ) from e
+        except BotoCoreError as e:
+            raise DataSourceConnectionError(
+                f"AWS connection error: {str(e)}", provider=self.provider_name
+            ) from e
+
     def get_latest_timetable_key(self, prefix: str = "PPTimetable/") -> Optional[str]:
         """Find the latest Darwin XML timetable snapshot key in the S3 bucket."""
         if not self.bucket_name:
@@ -585,9 +654,44 @@ class TrainS3Client(BaseDataSource):
         prefix: str = "PPTimetable/",
         stop_lookup: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch and parse all train timetables from the Darwin S3 bucket snapshot."""
-        snapshot_bytes = self.download_timetable_snapshot(key=key, prefix=prefix)
-        return self.parse_darwin_timetables(snapshot_bytes, stop_lookup=stop_lookup)
+        """Fetch and parse train timetables from the Darwin S3 bucket snapshot(s)."""
+        if key:
+            snapshot_bytes = self.download_timetable_snapshot(key=key, prefix=prefix)
+            return self.parse_darwin_timetables(snapshot_bytes, stop_lookup=stop_lookup)
+
+        keys = self.get_latest_timetable_keys_by_day_profile(prefix=prefix)
+        if not keys:
+            snapshot_bytes = self.download_timetable_snapshot(prefix=prefix)
+            return self.parse_darwin_timetables(snapshot_bytes, stop_lookup=stop_lookup)
+
+        timetables_by_key: Dict[Tuple[str, Tuple[bool, ...]], Dict[str, Any]] = {}
+        for target_key in keys:
+            try:
+                snapshot_bytes = self.download_timetable_snapshot(
+                    key=target_key, prefix=prefix
+                )
+                parsed = self.parse_darwin_timetables(
+                    snapshot_bytes, stop_lookup=stop_lookup
+                )
+                for tt in parsed:
+                    name = tt.get("name", "")
+                    days_tuple = (
+                        bool(tt.get("monday")),
+                        bool(tt.get("tuesday")),
+                        bool(tt.get("wednesday")),
+                        bool(tt.get("thursday")),
+                        bool(tt.get("friday")),
+                        bool(tt.get("saturday")),
+                        bool(tt.get("sunday")),
+                        bool(tt.get("bank_holiday")),
+                    )
+                    tt_key = (name, days_tuple)
+                    if tt_key not in timetables_by_key:
+                        timetables_by_key[tt_key] = tt
+            except Exception:
+                continue
+
+        return list(timetables_by_key.values())
 
 
 TOC_NAMES: Dict[str, str] = {

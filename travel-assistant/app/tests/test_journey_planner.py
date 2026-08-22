@@ -857,3 +857,261 @@ def test_find_routes_with_prefixed_stop_interchanges(app: Flask):
         assert r.legs[2].leg_type == "interchange"
         assert r.legs[3].leg_type == "transit"
         assert r.legs[4].leg_type == "walk"
+
+
+def test_find_routes_multiple_corridor_options(app: Flask) -> None:
+    """Test find_routes returns multiple diverse route options via different access stops."""
+    with app.app_context():
+        # Clear previous data
+        Walking.delete().execute()
+        Timetable.delete().execute()
+        StopInterchange.delete().execute()
+        Location.delete().execute()
+
+        Location.create(
+            id="ha:home", name="Home", latitude=51.53, longitude=-0.12, ha=True
+        )
+        Location.create(
+            id="ha:office", name="Office", latitude=52.23, longitude=0.14, ha=True
+        )
+
+        # Walking to Stop A (Sweyns Mead) and Stop B (Emperor's Head)
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="atco:STOP_SWEYNS",
+            finish_name="Sweyns Mead",
+            time_needed_minutes=3,
+            bidirectional=True,
+        )
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="atco:STOP_EMPEROR",
+            finish_name="Emperor's Head",
+            time_needed_minutes=4,
+            bidirectional=True,
+        )
+        # Egress walking from Station North to Office
+        Walking.create(
+            start_type="rail",
+            start_id="atco:9100CAMBNTH",
+            start_name="Cambridge North",
+            finish_type="ha",
+            finish_id="ha:office",
+            finish_name="Office",
+            time_needed_minutes=5,
+            bidirectional=True,
+        )
+
+        # Bus Line SB1 from Sweyns Mead to Station
+        tt_sb1 = Timetable.create(
+            name="Bus SB1: Woodcock Road to Bus Station",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_sb1.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="atco:STOP_SWEYNS", name="Sweyns Mead", type="bus"
+                    ),
+                    TimetableStop(
+                        id="atco:9100STEVNGE",
+                        name="Stevenage Rail Station",
+                        type="rail",
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="sb1_1", times=[{"dep": "07:30"}, {"arr": "07:45"}]
+                    )
+                ],
+            )
+        )
+        tt_sb1.save()
+
+        # Bus Line 38 from Emperor's Head to Station
+        tt_38 = Timetable.create(
+            name="Bus 38: Emperor's Head to Bus Station",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_38.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="atco:STOP_EMPEROR", name="Emperor's Head", type="bus"
+                    ),
+                    TimetableStop(
+                        id="atco:9100STEVNGE",
+                        name="Stevenage Rail Station",
+                        type="rail",
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="b38_1", times=[{"dep": "07:32"}, {"arr": "07:48"}]
+                    )
+                ],
+            )
+        )
+        tt_38.save()
+
+        # Train Line from Stevenage to Cambridge North
+        tt_train = Timetable.create(
+            name="Great Northern: Stevenage to Cambridge North",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_train.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="atco:9100STEVNGE",
+                        name="Stevenage Rail Station",
+                        type="rail",
+                    ),
+                    TimetableStop(
+                        id="atco:9100CAMBNTH", name="Cambridge North", type="rail"
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(id="gn_1", times=[{"dep": "08:00"}, {"arr": "08:40"}])
+                ],
+            )
+        )
+        tt_train.save()
+
+        routes = find_routes(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:office",
+            days_of_week=["mon", "tue", "wed", "thu", "fri"],
+        )
+
+        assert len(routes) >= 2
+        route_names = [r.name for r in routes]
+        assert any("SB1" in n for n in route_names)
+        assert any("38" in n for n in route_names)
+
+
+def test_find_routes_direct_train_continuity(app: Flask) -> None:
+    """Test find_routes maintains single direct train across intermediate stations."""
+    with app.app_context():
+        Walking.delete().execute()
+        Timetable.delete().execute()
+        StopInterchange.delete().execute()
+        Location.delete().execute()
+
+        Location.create(
+            id="ha:home", name="Home", latitude=51.53, longitude=-0.12, ha=True
+        )
+        Location.create(
+            id="ha:office", name="Office", latitude=52.23, longitude=0.14, ha=True
+        )
+
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="rail",
+            finish_id="atco:9100STEVNGE",
+            finish_name="Stevenage Station",
+            time_needed_minutes=5,
+            bidirectional=True,
+        )
+        Walking.create(
+            start_type="rail",
+            start_id="atco:9100CAMBDGE",
+            start_name="Cambridge Station",
+            finish_type="ha",
+            finish_id="ha:office",
+            finish_name="Office",
+            time_needed_minutes=5,
+            bidirectional=True,
+        )
+
+        # 1. Shorter train: Stevenage to Hitchin
+        tt_short = Timetable.create(
+            name="Short Train: Stevenage to Hitchin",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_short.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="atco:9100STEVNGE", name="Stevenage", type="rail"),
+                    TimetableStop(id="atco:9100HITCHIN", name="Hitchin", type="rail"),
+                ],
+                trips=[
+                    TimetableTrip(id="st_1", times=[{"dep": "08:00"}, {"arr": "08:08"}])
+                ],
+            )
+        )
+        tt_short.save()
+
+        # 2. Long direct train: Stevenage -> Hitchin -> Cambridge
+        tt_direct = Timetable.create(
+            name="Direct Train: Stevenage to Cambridge",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_direct.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="atco:9100STEVNGE", name="Stevenage", type="rail"),
+                    TimetableStop(id="atco:9100HITCHIN", name="Hitchin", type="rail"),
+                    TimetableStop(id="atco:9100CAMBDGE", name="Cambridge", type="rail"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="dt_1",
+                        times=[{"dep": "08:00"}, {"arr": "08:08"}, {"arr": "08:45"}],
+                    )
+                ],
+            )
+        )
+        tt_direct.save()
+
+        routes = find_routes(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:office",
+            days_of_week=["mon"],
+        )
+
+        assert len(routes) >= 1
+        r = routes[0]
+        # Should be: Walk -> Single Direct Train -> Walk (3 legs total)
+        transit_legs = [leg for leg in r.legs if leg.leg_type == "transit"]
+        assert len(transit_legs) == 1
+        assert transit_legs[0].from_name == "Stevenage"
+        assert transit_legs[0].to_name == "Cambridge"
+        assert transit_legs[0].timetable_id == tt_direct.id
