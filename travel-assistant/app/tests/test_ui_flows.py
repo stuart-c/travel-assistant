@@ -298,6 +298,35 @@ def test_journeys_grid_data_binding_and_save(client: FlaskClient) -> None:
     assert any(j.get("name") == "Library Study Session" for j in updated_j)
 
 
+def test_journeys_modal_tabs_rendered(client: FlaskClient) -> None:
+    """Verify that Journey modal dialogue renders both Journey Details and Calculated Routes tabs and panels."""
+    response = client.get("/config/journeys")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Verify tab buttons
+    tab_details = soup.find("button", id="journey-tab-details")
+    assert tab_details is not None
+    assert "Journey Details" in tab_details.get_text()
+
+    tab_routes = soup.find("button", id="journey-tab-routes")
+    assert tab_routes is not None
+    assert "Calculated Routes" in tab_routes.get_text()
+    assert tab_routes.has_attr("disabled")
+
+    # Verify tab panels
+    panel_details = soup.find("div", id="journey-panel-details")
+    assert panel_details is not None
+
+    panel_routes = soup.find("div", id="journey-panel-routes")
+    assert panel_routes is not None
+    assert "hidden" in panel_routes.get("class", [])
+
+    pre_content = soup.find("pre", id="journey-calculated-routes-content")
+    assert pre_content is not None
+
+
 def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
     """Test walking Grid.js JSON script embedding and form submission."""
     _seed_sample_data()

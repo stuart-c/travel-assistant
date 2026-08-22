@@ -552,6 +552,43 @@ def seed_database(db_path: str) -> None:
                     }
                 ]
             )
+            if j.name == "Daily Office Commute":
+                j.set_calculated_routes(
+                    [
+                        {
+                            "corridor_id": "corridor_walk_bus73_walk",
+                            "name": "Via Walk, Bus 73 & Walk",
+                            "summary": "Walk (8m) → Bus 73 (14m) → Walk (6m)",
+                            "estimated_duration_minutes": 28,
+                            "transfers_count": 0,
+                            "legs": [
+                                {
+                                    "stage_index": 1,
+                                    "mode": "walk",
+                                    "from_name": "Home",
+                                    "to_name": "King's Cross Station (Stop E)",
+                                    "duration_minutes": 8,
+                                },
+                                {
+                                    "stage_index": 2,
+                                    "mode": "bus",
+                                    "line": "73",
+                                    "operator": "Arriva London",
+                                    "from_name": "King's Cross Station (Stop E)",
+                                    "to_name": "Euston Station (Stop C)",
+                                    "duration_minutes": 14,
+                                },
+                                {
+                                    "stage_index": 3,
+                                    "mode": "walk",
+                                    "from_name": "Euston Station (Stop C)",
+                                    "to_name": "Tech Campus",
+                                    "duration_minutes": 6,
+                                },
+                            ],
+                        }
+                    ]
+                )
             j.save()
 
         # 8. Seed Walking Routes

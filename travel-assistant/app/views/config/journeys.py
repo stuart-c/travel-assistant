@@ -88,6 +88,8 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "to_name": to_name,
         "time_settings": cleaned_time_settings,
     }
+    if "calculated_routes" in entry:
+        result["calculated_routes"] = entry.get("calculated_routes")
     if item_id is not None:
         result["id"] = item_id
 

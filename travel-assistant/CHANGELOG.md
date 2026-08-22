@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added `calculated_routes` JSON column to the `Journey` model and SQLite `journeys` table with automated schema migration, and added a 2-tab navigation interface (**Journey Details** and **Calculated Routes**) in the Journey modal dialogue that displays raw calculated route paths when data is present and automatically clears the field upon modifying journey details.
 - Added comprehensive technical architecture specification (`docs/architecture/03_journey_routing_and_planning_process.md`) defining the programmatic, multi-modal routing and itinerary planning process using pure SQLite database data (RAPTOR search engine, dual-mode topological corridor discovery and time-dependent trip scheduling, multi-criteria Pareto frontier ranking, and hierarchical transfer resolution).
 - Added weekly background synchronisation process and `stop_interchanges` table discovering nearby transit stop interchanges within 250 metres across all transport modes using SQLite R*Tree geospatial indexing on British National Grid `easting` and `northing` coordinates. Includes the `StopInterchange` model, `sync_stop_interchanges` pipeline, automated re-sync trigger upon `stops` ingest, and full integration into `SYNC_REGISTRY` and `/config/sync`.
 

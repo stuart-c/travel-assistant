@@ -486,3 +486,109 @@ def test_config_journeys_pagination_and_sorting(
     assert resp_desc.status_code == 200
     data_desc = resp_desc.get_json()
     assert data_desc["data"][0]["name"] == "Journey L"
+
+
+def test_journey_calculated_routes_lifecycle(
+    app: Flask, sample_station: Stop, sample_custom_location: Location
+) -> None:
+    """Test Journey model calculated_routes setter, getter, and dictionary serialisation."""
+    with app.app_context():
+        sample_routes = [
+            {
+                "corridor_id": "corridor_1",
+                "name": "Via Rail and Bus",
+                "duration_minutes": 45,
+                "legs": [
+                    {
+                        "stage_index": 1,
+                        "mode": "rail",
+                        "from_name": "London Waterloo",
+                        "to_name": "London King's Cross",
+                    }
+                ],
+            }
+        ]
+
+        journey = Journey.create(
+            name="Commute Route",
+            from_type="custom",
+            from_id=str(sample_custom_location.id),
+            from_name=sample_custom_location.name,
+            to_type="rail",
+            to_id=sample_station.naptan_code or sample_station.atco_code,
+            to_name=sample_station.name,
+        )
+        journey.set_calculated_routes(sample_routes)
+        journey.save()
+
+        retrieved = Journey.get_by_id(journey.id)
+        assert retrieved.calculated_routes is not None
+        routes_data = retrieved.get_calculated_routes()
+        assert len(routes_data) == 1
+        assert routes_data[0]["corridor_id"] == "corridor_1"
+
+        data = retrieved.to_dict()
+        assert data["calculated_routes"] == sample_routes
+
+        # Test string input parsing in setter
+        retrieved.set_calculated_routes('[{"corridor_id": "corridor_2"}]')
+        assert retrieved.get_calculated_routes()[0]["corridor_id"] == "corridor_2"
+
+        # Test clearing calculated_routes
+        retrieved.set_calculated_routes(None)
+        assert retrieved.get_calculated_routes() is None
+
+
+def test_journey_calculated_routes_cleared_on_edit_save(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Test that saving journey edits clears the calculated_routes field."""
+    with app.app_context():
+        journey = Journey.create(
+            name="Original Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            time_settings=[],
+            calculated_routes=[{"route_id": 1, "description": "Direct Walk"}],
+        )
+        journey_id = journey.id
+
+    # Verify calculated_routes is present in GET data
+    resp = client.get("/config/journeys/data")
+    assert resp.status_code == 200
+    loaded = resp.get_json()["data"]
+    target = next(j for j in loaded if j["id"] == journey_id)
+    assert target["calculated_routes"] is not None
+    assert len(target["calculated_routes"]) == 1
+
+    # Edit journey via /config/journeys/data with calculated_routes: null (as submitted by dialogue)
+    update_payload = {
+        "added": [],
+        "updated": [
+            {
+                "id": journey_id,
+                "name": "Updated Commute",
+                "from_type": "ha",
+                "from_id": "ha:home",
+                "from_name": "Home",
+                "to_type": "ha",
+                "to_id": "ha:work",
+                "to_name": "Work",
+                "time_settings": [],
+                "calculated_routes": None,
+            }
+        ],
+        "deleted": [],
+    }
+    save_resp = client.post("/config/journeys/data", json=update_payload)
+    assert save_resp.status_code == 200
+
+    # Verify calculated_routes is now cleared in database
+    with app.app_context():
+        updated_journey = Journey.get_by_id(journey_id)
+        assert updated_journey.name == "Updated Commute"
+        assert updated_journey.get_calculated_routes() is None
