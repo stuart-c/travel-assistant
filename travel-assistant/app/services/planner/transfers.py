@@ -82,8 +82,11 @@ def resolve_endpoint_name(endpoint_type: str, endpoint_id: str) -> str:
         or raw_id.startswith("custom:")
     ):
         try:
-            loc = Location.get_or_none(Location.id == raw_id) or Location.get_or_none(
-                Location.id == norm
+            loc = (
+                Location.get_or_none(Location.id == raw_id)
+                or Location.get_or_none(Location.id == norm)
+                or Location.get_or_none(Location.id == f"ha:{norm}")
+                or Location.get_or_none(Location.id == f"custom:{norm}")
             )
             if loc:
                 return loc.name

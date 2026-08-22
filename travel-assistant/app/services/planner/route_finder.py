@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import datetime
+import itertools
 import logging
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx as nx
 
@@ -116,12 +117,17 @@ def find_routes(
         tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
     ]
 
+    def make_node_key(node_type: str, raw_id: str) -> str:
+        """Create standardised graph node identifier formatted as '{type}:{normalised_id}'."""
+        t = str(node_type).strip().lower()
+        return f"{t}:{normalise_id(raw_id)}"
+
     # 3. Build NetworkX Transit Graph
     G = nx.MultiDiGraph()
-    origin_node = f"{f_type}:{f_id}"
-    dest_node = f"{t_type}:{t_id}"
-    G.add_node(origin_node, node_type=f_type, id=f_id)
-    G.add_node(dest_node, node_type=t_type, id=t_id)
+    origin_node = make_node_key(f_type, f_id)
+    dest_node = make_node_key(t_type, t_id)
+    G.add_node(origin_node, node_type=f_type, id=normalise_id(f_id))
+    G.add_node(dest_node, node_type=t_type, id=normalise_id(t_id))
 
     # Add direct walk if present
     if direct_walk:
@@ -143,13 +149,14 @@ def find_routes(
 
     # Add origin walking access edges
     for _, _, target_type, target_id, walk_min, kind in origin_walks:
-        target_node = f"{target_type}:{target_id}"
-        G.add_node(target_node, node_type=target_type, id=target_id)
+        norm_target_id = normalise_id(target_id)
+        target_node = make_node_key(target_type, target_id)
+        G.add_node(target_node, node_type=target_type, id=norm_target_id)
         if target_node != origin_node:
             G.add_edge(
                 origin_node,
                 target_node,
-                key=f"walk_orig_{target_id}",
+                key=f"walk_orig_{norm_target_id}",
                 leg_type=kind,
                 transport_mode="walk",
                 duration=walk_min,
@@ -164,13 +171,14 @@ def find_routes(
 
     # Add destination walking egress edges
     for source_type, source_id, _, _, walk_min, kind in dest_walks:
-        source_node = f"{source_type}:{source_id}"
-        G.add_node(source_node, node_type=source_type, id=source_id)
+        norm_source_id = normalise_id(source_id)
+        source_node = make_node_key(source_type, source_id)
+        G.add_node(source_node, node_type=source_type, id=norm_source_id)
         if source_node != dest_node:
             G.add_edge(
                 source_node,
                 dest_node,
-                key=f"walk_dest_{source_id}",
+                key=f"walk_dest_{norm_source_id}",
                 leg_type=kind,
                 transport_mode="walk",
                 duration=walk_min,
@@ -198,10 +206,10 @@ def find_routes(
             to_st_type = s_to.get("type", tt.transport_type)
             to_st_id = s_to.get("id", "")
 
-            u_node = f"{from_st_type}:{from_st_id}"
-            v_node = f"{to_st_type}:{to_st_id}"
-            G.add_node(u_node, node_type=from_st_type, id=from_st_id)
-            G.add_node(v_node, node_type=to_st_type, id=to_st_id)
+            u_node = make_node_key(from_st_type, from_st_id)
+            v_node = make_node_key(to_st_type, to_st_id)
+            G.add_node(u_node, node_type=from_st_type, id=normalise_id(from_st_id))
+            G.add_node(v_node, node_type=to_st_type, id=normalise_id(to_st_id))
 
             est_duration = 3 if tt.transport_type == "bus" else 5
             trips = content_dict.get("trips", [])
@@ -247,26 +255,44 @@ def find_routes(
             )
 
     # Add stop interchanges and platform transfers
-    stop_interchanges = list(StopInterchange.select())
-    for si in stop_interchanges:
-        u_node = f"{si.from_stop_type}:{si.from_stop_atco}"
-        v_node = f"{si.to_stop_type}:{si.to_stop_atco}"
-        if G.has_node(u_node) and G.has_node(v_node):
-            G.add_edge(
-                u_node,
-                v_node,
-                key=f"interchange_{si.id}",
-                leg_type="interchange",
-                transport_mode="walk",
-                duration=si.estimated_walk_minutes,
-                distance_m=si.distance_metres,
-                timetable_id=None,
-                line_name=None,
-                operator_name=None,
-                stops_count=1,
-                from_name=si.from_stop_name,
-                to_name=si.to_stop_name,
+    stops_in_g = {d.get("id") for _, d in G.nodes(data=True) if d.get("id")}
+    all_stop_keys = set()
+    for sid in stops_in_g:
+        if sid:
+            all_stop_keys.add(sid)
+            all_stop_keys.add(normalise_id(sid))
+            all_stop_keys.add(f"atco:{normalise_id(sid)}")
+            all_stop_keys.add(f"naptan:{normalise_id(sid)}")
+
+    stop_keys_list = list(all_stop_keys)
+    chunk_size = 400
+    for i in range(0, len(stop_keys_list), chunk_size):
+        chunk = stop_keys_list[i : i + chunk_size]
+        interchanges = list(
+            StopInterchange.select().where(
+                StopInterchange.from_stop_atco.in_(chunk)
+                & StopInterchange.to_stop_atco.in_(stop_keys_list)
             )
+        )
+        for si in interchanges:
+            u_node = make_node_key(si.from_stop_type, si.from_stop_atco)
+            v_node = make_node_key(si.to_stop_type, si.to_stop_atco)
+            if G.has_node(u_node) and G.has_node(v_node):
+                G.add_edge(
+                    u_node,
+                    v_node,
+                    key=f"interchange_{si.id}",
+                    leg_type="interchange",
+                    transport_mode="walk",
+                    duration=si.estimated_walk_minutes,
+                    distance_m=si.distance_metres,
+                    timetable_id=None,
+                    line_name=None,
+                    operator_name=None,
+                    stops_count=1,
+                    from_name=si.from_stop_name,
+                    to_name=si.to_stop_name,
+                )
 
     # Add same-station rail platform transfers for nodes with same ATCO/CRS code
     rail_nodes = [n for n, d in G.nodes(data=True) if d.get("node_type") == "rail"]
@@ -278,7 +304,7 @@ def find_routes(
                 if normalise_id(u_id) == normalise_id(v_id):
                     trans_info = resolve_transfer_duration("rail", u_id, "rail", v_id)
                     if trans_info:
-                        dur, kind, _ = trans_info
+                        dur, kind, dist_m = trans_info
                         G.add_edge(
                             u,
                             v,
@@ -286,7 +312,7 @@ def find_routes(
                             leg_type=kind,
                             transport_mode="walk",
                             duration=dur,
-                            distance_m=None,
+                            distance_m=dist_m,
                             timetable_id=None,
                             line_name=None,
                             operator_name=None,
@@ -308,12 +334,24 @@ def find_routes(
         )
 
     candidate_templates: List[RouteTemplate] = []
+    paths: List[List[Tuple[str, str, Any]]] = []
     try:
-        paths = list(
-            nx.all_simple_edge_paths(G, origin_node, dest_node, cutoff=max_stages * 4)
+        simple_g = nx.DiGraph(G)
+        node_paths = list(
+            itertools.islice(
+                nx.shortest_simple_paths(simple_g, origin_node, dest_node),
+                max_routes * 10,
+            )
         )
+        for np in node_paths:
+            edge_seq = []
+            for i in range(len(np) - 1):
+                u, v = np[i], np[i + 1]
+                edge_keys = list(G.get_edge_data(u, v).keys())
+                edge_seq.append((u, v, edge_keys[0]))
+            paths.append(edge_seq)
     except Exception as e:
-        logger.warning("NetworkX all_simple_edge_paths exception: %s", e)
+        logger.warning("NetworkX shortest_simple_paths exception: %s", e)
         paths = []
 
     if not paths:

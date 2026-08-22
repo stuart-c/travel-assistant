@@ -726,3 +726,134 @@ def test_pruning_pareto_dominance(seeded_planner: Flask):
         # Should only retain the fastest non-dominated Bus 73
         assert len(routes) == 1
         assert routes[0].legs[0].line_name == "Bus 73"
+
+
+def test_find_routes_with_prefixed_stop_interchanges(app: Flask):
+    """Test that stop interchanges correctly connect prefixed Darwin rail stops with unprefixed bus stops."""
+    with app.app_context():
+        # Clean existing test data
+        Walking.delete().execute()
+        StopInterchange.delete().execute()
+        Timetable.delete().execute()
+        Stop.delete().execute()
+        Location.delete().execute()
+
+        # Endpoints
+        Location.create(
+            id="ha:home", name="Home", latitude=51.5, longitude=-0.1, ha=True
+        )
+        Location.create(
+            id="ha:work", name="Work", latitude=51.6, longitude=-0.2, ha=True
+        )
+
+        # Stops
+        Stop.create(atco_code="490000001A", name="Bus Origin", stop_type="bus")
+        Stop.create(atco_code="490000001B", name="Bus Interchange", stop_type="bus")
+        Stop.create(atco_code="9100RAIL1", name="Rail Station 1", stop_type="rail")
+        Stop.create(atco_code="9100RAIL2", name="Rail Station 2", stop_type="rail")
+
+        # Access & Egress
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="490000001A",
+            finish_name="Bus Origin",
+            time_needed_minutes=5,
+            bidirectional=True,
+        )
+        Walking.create(
+            start_type="ha",
+            start_id="ha:work",
+            start_name="Work",
+            finish_type="rail",
+            finish_id="atco:9100RAIL2",
+            finish_name="Rail Station 2",
+            time_needed_minutes=4,
+            bidirectional=True,
+        )
+
+        # Bus timetable
+        tt_bus = Timetable.create(
+            name="Bus Route 1",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_bus.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="490000001A", name="Bus Origin", type="bus"),
+                    TimetableStop(id="490000001B", name="Bus Interchange", type="bus"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="b1",
+                        times=[{"dep": "08:00"}, {"arr": "08:15"}],
+                    )
+                ],
+            )
+        )
+        tt_bus.save()
+
+        # Rail timetable with atco: prefix
+        tt_rail = Timetable.create(
+            name="Train Line 1",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_rail.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="atco:9100RAIL1", name="Rail Station 1", type="rail"
+                    ),
+                    TimetableStop(
+                        id="atco:9100RAIL2", name="Rail Station 2", type="rail"
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="r1",
+                        times=[{"dep": "08:25"}, {"arr": "08:50"}],
+                    )
+                ],
+            )
+        )
+        tt_rail.save()
+
+        # Stop interchange with raw ATCO codes (no atco: prefix)
+        StopInterchange.create(
+            from_stop_type="bus",
+            from_stop_atco="490000001B",
+            from_stop_name="Bus Interchange",
+            to_stop_type="rail",
+            to_stop_atco="9100RAIL1",
+            to_stop_name="Rail Station 1",
+            estimated_walk_minutes=3,
+            distance_metres=150,
+        )
+
+        routes = find_routes(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:work",
+            days_of_week=["mon"],
+        )
+        assert len(routes) >= 1
+        r = routes[0]
+        assert len(r.legs) == 5
+        assert r.legs[0].leg_type == "walk"
+        assert r.legs[1].leg_type == "transit"
+        assert r.legs[2].leg_type == "interchange"
+        assert r.legs[3].leg_type == "transit"
+        assert r.legs[4].leg_type == "walk"

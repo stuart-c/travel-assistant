@@ -469,3 +469,46 @@ def test_journey_changeset_triggers_sync_and_resets_routes(
 
             new_j = Journey.get(Journey.name == "New Journey")
             assert new_j.calculated_routes is None
+
+
+def test_sync_journey_routes_logs_warning_on_unreachable_journey(
+    seeded_transit_network: None, app: Flask, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that calculating routes for unreachable journey logs informative warning."""
+    with app.app_context():
+        import logging
+
+        Journey.create(
+            name="Impossible Commute",
+            from_type="custom",
+            from_id="custom:isolated_spot",
+            from_name="Isolated Island",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            time_settings=[
+                {
+                    "mode": "depart",
+                    "days": ["mon"],
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                }
+            ],
+            calculated_routes=None,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            res = sync_journey_routes(app=app)
+            assert res["status"] == "success"
+            assert res["records"] == 0
+
+            # Check that warning log was produced
+            warnings = [
+                rec.message for rec in caplog.records if rec.levelno >= logging.WARNING
+            ]
+            assert any(
+                "Impossible Commute" in msg
+                or "No route corridor" in msg
+                or "No viable routes" in msg
+                for msg in warnings
+            )
