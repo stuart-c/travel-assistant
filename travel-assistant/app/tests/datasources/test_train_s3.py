@@ -311,21 +311,21 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
     xml_content = """<?xml version="1.0" encoding="UTF-8"?>
 <PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
   <Journey rid="20260817111111" trainId="1T44" toc="TL" ssd="2026-08-17" isPassengerSvc="true">
-    <OR tpl="STEVNG" act="TB" ptd="06:48"/>
-    <IP tpl="HITCHIN" pta="06:54" ptd="06:55"/>
+    <OR tpl="KGX" act="TB" ptd="06:48"/>
+    <IP tpl="FPK" pta="06:54" ptd="06:55"/>
     <DT tpl="CAMBDGE" act="TF" pta="07:49"/>
   </Journey>
   <Journey rid="20260817222222" trainId="2P22" toc="GN" ssd="2026-08-17" isPassengerSvc="true">
-    <OR tpl="STEVNG" act="TB" ptd="07:20"/>
-    <IP tpl="HITCHIN" pta="07:26" ptd="07:27"/>
+    <OR tpl="KGX" act="TB" ptd="07:20"/>
+    <IP tpl="FPK" pta="07:26" ptd="07:27"/>
     <DT tpl="CAMBDGE" act="TF" pta="08:19"/>
   </Journey>
   <Journey rid="20260817333333" trainId="0Z99" toc="ZZ" ssd="2026-08-17" isPassengerSvc="false">
-    <OR tpl="STEVNG" ptd="05:00"/>
+    <OR tpl="KGX" ptd="05:00"/>
     <DT tpl="CAMBDGE" pta="05:30"/>
   </Journey>
   <Journey rid="20260817444444" trainId="EMPTY" toc="TL" isPassengerSvc="true">
-    <OR tpl="STEVNG" ptd="08:00"/>
+    <OR tpl="KGX" ptd="08:00"/>
   </Journey>
 </PportTimetable>"""
 
@@ -334,16 +334,16 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
 
     # 1. Parse with cached stop lookup using canonical NaPTAN ATCO IDs
     stop_lookup = {
-        "STEVNG": {
-            "id": "9100STEVNGE",
-            "name": "Stevenage",
+        "KGX": {
+            "id": "9100KNGX",
+            "name": "London King's Cross",
             "type": "rail",
             "indicator": "Station",
             "icon": "train",
         },
-        "HITCHIN": {
-            "id": "9100HITCHIN",
-            "name": "Hitchin",
+        "FPK": {
+            "id": "9100FPK",
+            "name": "Finsbury Park",
             "type": "rail",
             "indicator": "Station",
             "icon": "train",
@@ -360,7 +360,7 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
     timetables = client.parse_darwin_timetables(gz_bytes, stop_lookup=stop_lookup)
     assert len(timetables) == 1
     tt = timetables[0]
-    assert tt["name"] == "Stevenage to Cambridge"
+    assert tt["name"] == "London King's Cross to Cambridge"
     assert tt["transport_type"] == "rail"
     assert tt["auto_added"] is True
     assert str(tt["start_date"]) == "2026-08-17"
@@ -368,10 +368,10 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
 
     content = tt["content"]
     assert len(content["stops"]) == 3
-    assert content["stops"][0]["id"] == "9100STEVNGE"
-    assert content["stops"][0]["name"] == "Stevenage"
-    assert content["stops"][1]["id"] == "9100HITCHIN"
-    assert content["stops"][1]["name"] == "Hitchin"
+    assert content["stops"][0]["id"] == "9100KNGX"
+    assert content["stops"][0]["name"] == "London King's Cross"
+    assert content["stops"][1]["id"] == "9100FPK"
+    assert content["stops"][1]["name"] == "Finsbury Park"
     assert content["stops"][2]["id"] == "9100CAMBDGE"
     assert content["stops"][2]["name"] == "Cambridge"
 
@@ -453,29 +453,29 @@ def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
 <PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
   <!-- Weekday (Friday 2026-08-14) -->
   <Journey rid="20260814111111" trainId="1W01" toc="TL" ssd="2026-08-14" isPassengerSvc="true">
-    <OR tpl="STEVNG" ptd="07:00"/>
+    <OR tpl="KGX" ptd="07:00"/>
     <DT tpl="CAMBDGE" pta="07:50"/>
   </Journey>
   <!-- Duplicate Weekday (Thursday 2026-08-13) with same trainId -->
   <Journey rid="20260813111111" trainId="1W01" toc="TL" ssd="2026-08-13" isPassengerSvc="true">
-    <OR tpl="STEVNG" ptd="07:00"/>
+    <OR tpl="KGX" ptd="07:00"/>
     <DT tpl="CAMBDGE" pta="07:50"/>
   </Journey>
   <!-- Saturday (2026-08-15) -->
   <Journey rid="20260815222222" trainId="1S01" toc="TL" ssd="2026-08-15" isPassengerSvc="true">
-    <OR tpl="STEVNG" ptd="08:00"/>
+    <OR tpl="KGX" ptd="08:00"/>
     <DT tpl="CAMBDGE" pta="08:50"/>
   </Journey>
   <!-- Sunday (2026-08-16) -->
   <Journey rid="20260816333333" trainId="1U01" toc="TL" ssd="2026-08-16" isPassengerSvc="true">
-    <OR tpl="STEVNG" ptd="09:00"/>
+    <OR tpl="KGX" ptd="09:00"/>
     <DT tpl="CAMBDGE" pta="09:50"/>
   </Journey>
 </PportTimetable>"""
 
     client = TrainS3Client(bucket_name="rail-bucket")
     stop_lookup = {
-        "STEVNG": {"id": "9100STEVNGE", "name": "Stevenage", "type": "rail"},
+        "KGX": {"id": "9100KNGX", "name": "London King's Cross", "type": "rail"},
         "CAMBDGE": {"id": "9100CAMBDGE", "name": "Cambridge", "type": "rail"},
     }
     timetables = client.parse_darwin_timetables(
@@ -490,7 +490,7 @@ def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
     sun_tt = next((t for t in timetables if t["sunday"]), None)
 
     assert wd_tt is not None
-    assert wd_tt["name"] == "Stevenage to Cambridge (Mon-Fri)"
+    assert wd_tt["name"] == "London King's Cross to Cambridge (Mon-Fri)"
     assert wd_tt["monday"] is True
     assert wd_tt["friday"] is True
     assert wd_tt["saturday"] is False
@@ -501,7 +501,7 @@ def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
     assert wd_tt["content"]["trips"][0]["headsign"] == "TL 1W01"
 
     assert sat_tt is not None
-    assert sat_tt["name"] == "Stevenage to Cambridge (Sat)"
+    assert sat_tt["name"] == "London King's Cross to Cambridge (Sat)"
     assert sat_tt["monday"] is False
     assert sat_tt["friday"] is False
     assert sat_tt["saturday"] is True
@@ -511,7 +511,7 @@ def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
     assert sat_tt["content"]["trips"][0]["headsign"] == "TL 1S01"
 
     assert sun_tt is not None
-    assert sun_tt["name"] == "Stevenage to Cambridge (Sun)"
+    assert sun_tt["name"] == "London King's Cross to Cambridge (Sun)"
     assert sun_tt["monday"] is False
     assert sun_tt["friday"] is False
     assert sun_tt["saturday"] is False

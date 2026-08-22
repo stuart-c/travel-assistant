@@ -78,3 +78,7 @@ This repository is a self-contained Home Assistant add-on application and is not
 - **Never create backward-compatibility aliases, wrappers, or fallbacks** when refactoring, replacing, or removing classes, models, functions, or endpoints.
 - When replacing a model or function (e.g. `BusStop` / `Station` -> `Stop`), update all call sites, imports, database schemas, and unit tests directly, and delete obsolete identifiers entirely.
 - Avoid introducing legacy aliases as they add dead code and unnecessary complexity.
+
+## 7. Location Privacy & London Public Data Standard
+All documentation examples, architecture walkthroughs, test suites, datasource mock fixtures (BODS, Darwin, Google Maps, Home Assistant), and sample database entries **MUST** be based on generic London public transport locations and landmarks (e.g. London King's Cross, London Euston, Old Street, TfL bus routes) rather than personal, residential, or private locations.
+

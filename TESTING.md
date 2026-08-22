@@ -43,6 +43,10 @@ The sample dataset includes:
 * **Transfers**: Within-station platform and stand transfer times.
 * **Journeys**: Configured multi-leg travel routes with target arrival times.
 
+### Location Privacy & Test Data Standard
+All test fixtures, mock data, unit tests, and documentation runbooks **MUST** exclusively use generic London public transport locations and landmarks (e.g. King's Cross, St Pancras, Euston, Old Street, and TfL bus routes) to ensure complete location privacy.
+
+
 ---
 
 ## 3. Antigravity `/browser` UI Test Runbooks

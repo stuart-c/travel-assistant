@@ -288,7 +288,7 @@ def test_post_timetables_with_dual_arrival_departure_timings(
             "content": {
                 "stops": [
                     {"id": "naptan:KGX", "name": "Kings Cross", "type": "rail"},
-                    {"id": "naptan:SVG", "name": "Stevenage", "type": "rail"},
+                    {"id": "naptan:FPK", "name": "Finsbury Park", "type": "rail"},
                     {"id": "naptan:PBO", "name": "Peterborough", "type": "rail"},
                 ],
                 "trips": [
@@ -422,7 +422,7 @@ def test_post_timetables_preserves_auto_added_records(client: FlaskClient) -> No
     )
     auto_tt.set_content(
         {
-            "stops": [{"id": "SVG", "name": "Stevenage", "type": "rail"}],
+            "stops": [{"id": "FPK", "name": "Finsbury Park", "type": "rail"}],
             "trips": [{"id": "trip_auto", "toc": "TL", "times": ["08:00"]}],
         }
     )

@@ -196,26 +196,27 @@ def test_bods_fetch_routes_general_exception(mock_get: MagicMock) -> None:
 
 SAMPLE_TRANSXCHANGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <TransXChange xmlns="http://www.transxchange.org.uk/"
-              CreationDateTime="2026-08-17T12:00:00"
+              CreationDateTime="2026-08-20T10:00:00"
+              ModificationDateTime="2026-08-20T10:00:00"
               SchemaVersion="2.4">
   <Operators>
     <Operator id="O1">
       <NationalOperatorCode>ARRI</NationalOperatorCode>
-      <OperatorShortName>Arriva</OperatorShortName>
+      <OperatorShortName>Arriva London</OperatorShortName>
     </Operator>
   </Operators>
   <StopPoints>
     <AnnotatedStopPointRef>
       <StopPointRef>049000001</StopPointRef>
-      <CommonName>Stevenage Bus Station</CommonName>
-      <Indicator>Stop A</Indicator>
-      <LocalityName>Stevenage</LocalityName>
+      <CommonName>King's Cross Station</CommonName>
+      <Indicator>Stop E</Indicator>
+      <LocalityName>Camden</LocalityName>
     </AnnotatedStopPointRef>
     <AnnotatedStopPointRef>
       <StopPointRef>049000002</StopPointRef>
-      <CommonName>Hitchin High Street</CommonName>
-      <Indicator>Stop B</Indicator>
-      <LocalityName>Hitchin</LocalityName>
+      <CommonName>Euston Station</CommonName>
+      <Indicator>Stop C</Indicator>
+      <LocalityName>Camden</LocalityName>
     </AnnotatedStopPointRef>
   </StopPoints>
   <JourneyPatternSections>
@@ -233,10 +234,10 @@ SAMPLE_TRANSXCHANGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
   </JourneyPatternSections>
   <Services>
     <Service>
-      <ServiceCode>PB00010</ServiceCode>
+      <ServiceCode>PB00073</ServiceCode>
       <Lines>
         <Line id="L1">
-          <LineName>10</LineName>
+          <LineName>73</LineName>
         </Line>
       </Lines>
       <OperatingPeriod>
@@ -256,8 +257,8 @@ SAMPLE_TRANSXCHANGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
         </BankHolidayOperation>
       </OperatingProfile>
       <StandardService>
-        <Origin>Stevenage</Origin>
-        <Destination>Hitchin</Destination>
+        <Origin>King's Cross</Origin>
+        <Destination>Euston</Destination>
         <JourneyPattern id="JP_1">
           <JourneyPatternSectionRefs>JPS_1</JourneyPatternSectionRefs>
         </JourneyPattern>
@@ -267,14 +268,14 @@ SAMPLE_TRANSXCHANGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <VehicleJourneys>
     <VehicleJourney>
       <VehicleJourneyCode>VJ_1</VehicleJourneyCode>
-      <ServiceRef>PB00010</ServiceRef>
+      <ServiceRef>PB00073</ServiceRef>
       <JourneyPatternRef>JP_1</JourneyPatternRef>
       <DepartureTime>08:30:00</DepartureTime>
       <OperatorRef>O1</OperatorRef>
     </VehicleJourney>
     <VehicleJourney>
       <VehicleJourneyCode>VJ_2</VehicleJourneyCode>
-      <ServiceRef>PB00010</ServiceRef>
+      <ServiceRef>PB00073</ServiceRef>
       <JourneyPatternRef>JP_1</JourneyPatternRef>
       <DepartureTime>09:30:00</DepartureTime>
       <OperatorRef>O1</OperatorRef>
@@ -292,7 +293,7 @@ def test_bods_parse_transxchange_xml() -> None:
     )
     assert len(timetables) == 1
     tt = timetables[0]
-    assert tt["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
+    assert tt["name"] == "Bus 73: King's Cross Station to Euston Station"
     assert tt["transport_type"] == "bus"
     assert tt["auto_added"] is True
     assert tt["monday"] is True
@@ -302,12 +303,12 @@ def test_bods_parse_transxchange_xml() -> None:
     assert tt["bank_holiday"] is False
     assert len(tt["content"]["stops"]) == 2
     assert tt["content"]["stops"][0]["id"] == "049000001"
-    assert tt["content"]["stops"][0]["name"] == "Stevenage Bus Station"
+    assert tt["content"]["stops"][0]["name"] == "King's Cross Station"
     assert tt["content"]["stops"][1]["id"] == "049000002"
     assert len(tt["content"]["trips"]) == 2
     assert tt["content"]["trips"][0]["times"] == ["08:30", "08:45"]
     assert tt["content"]["trips"][1]["times"] == ["09:30", "09:45"]
-    assert tt["content"]["trips"][0]["operator"] == "Arriva"
+    assert tt["content"]["trips"][0]["operator"] == "Arriva London"
 
 
 def test_bods_parse_transxchange_xml_unmatched_stops() -> None:
@@ -344,9 +345,7 @@ def test_bods_parse_transxchange_dataset_zip() -> None:
         target_stop_codes={"049000002"},
     )
     assert len(timetables) == 1
-    assert (
-        timetables[0]["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
-    )
+    assert timetables[0]["name"] == "Bus 73: King's Cross Station to Euston Station"
 
 
 def test_bods_parse_transxchange_dataset_corrupted_zip() -> None:
@@ -440,7 +439,7 @@ def test_bods_fetch_timetables_success(
         admin_areas=["049"],
     )
     assert len(tts) == 1
-    assert tts[0]["name"] == "Bus 10: Stevenage Bus Station to Hitchin High Street"
+    assert tts[0]["name"] == "Bus 73: King's Cross Station to Euston Station"
     mock_get.assert_called_once_with(
         "https://data.bus-data.dft.gov.uk/api/v1/dataset",
         params={
@@ -586,26 +585,26 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
   <Operators>
     <Operator id="O1">
       <OperatorCode>ARRI</OperatorCode>
-      <OperatorShortName>Arriva</OperatorShortName>
+      <OperatorShortName>Arriva London</OperatorShortName>
     </Operator>
   </Operators>
   <StopPoints>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_A</StopPointRef>
-      <CommonName>Stevenage Bus Station</CommonName>
-      <Indicator>Stop G</Indicator>
+      <CommonName>King's Cross Station</CommonName>
+      <Indicator>Stop E</Indicator>
     </AnnotatedStopPointRef>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_B</StopPointRef>
-      <CommonName>Chells Way</CommonName>
+      <CommonName>Pentonville Road</CommonName>
     </AnnotatedStopPointRef>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_C</StopPointRef>
-      <CommonName>Woodcock Road</CommonName>
+      <CommonName>Islington Green</CommonName>
     </AnnotatedStopPointRef>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_D</StopPointRef>
-      <CommonName>Sweyns Mead</CommonName>
+      <CommonName>Angel Station</CommonName>
     </AnnotatedStopPointRef>
   </StopPoints>
   <JourneyPatternSections>
@@ -646,9 +645,9 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
   </JourneyPatternSections>
   <Services>
     <Service>
-      <ServiceCode>SER_SB1</ServiceCode>
+      <ServiceCode>SER_73</ServiceCode>
       <Lines>
-        <Line id="L1"><LineName>SB1</LineName></Line>
+        <Line id="L1"><LineName>73</LineName></Line>
       </Lines>
       <OperatingPeriod>
         <StartDate>2026-08-01</StartDate>
@@ -660,8 +659,8 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
         </RegularDayType>
       </OperatingProfile>
       <StandardService>
-        <Origin>Stevenage</Origin>
-        <Destination>Stevenage</Destination>
+        <Origin>King's Cross</Origin>
+        <Destination>King's Cross</Destination>
         <JourneyPattern id="JP_SHORT">
           <JourneyPatternSectionRefs>JPS_SHORT</JourneyPatternSectionRefs>
         </JourneyPattern>
@@ -674,21 +673,21 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
   <VehicleJourneys>
     <VehicleJourney>
       <VehicleJourneyCode>VJ_EARLY_FULL</VehicleJourneyCode>
-      <ServiceRef>SER_SB1</ServiceRef>
+      <ServiceRef>SER_73</ServiceRef>
       <JourneyPatternRef>JP_FULL</JourneyPatternRef>
       <DepartureTime>06:00:00</DepartureTime>
       <OperatorRef>O1</OperatorRef>
     </VehicleJourney>
     <VehicleJourney>
       <VehicleJourneyCode>VJ_DAY_SHORT</VehicleJourneyCode>
-      <ServiceRef>SER_SB1</ServiceRef>
+      <ServiceRef>SER_73</ServiceRef>
       <JourneyPatternRef>JP_SHORT</JourneyPatternRef>
       <DepartureTime>07:50:00</DepartureTime>
       <OperatorRef>O1</OperatorRef>
     </VehicleJourney>
     <VehicleJourney>
       <VehicleJourneyCode>VJ_PEAK_FULL</VehicleJourneyCode>
-      <ServiceRef>SER_SB1</ServiceRef>
+      <ServiceRef>SER_73</ServiceRef>
       <JourneyPatternRef>JP_FULL</JourneyPatternRef>
       <DepartureTime>08:30:00</DepartureTime>
       <OperatorRef>O1</OperatorRef>
@@ -702,7 +701,7 @@ def test_bods_parse_multi_pattern_transxchange_consolidation() -> None:
     )
     assert len(timetables) == 1
     tt = timetables[0]
-    assert tt["name"] == "Bus SB1: Stevenage Bus Station (Circular)"
+    assert tt["name"] == "Bus 73: King's Cross Station (Circular)"
 
     stops = tt["content"]["stops"]
     assert len(stops) == 5
@@ -736,11 +735,11 @@ def test_bods_parse_vehicle_journey_operating_profile_override():
   <StopPoints>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_A</StopPointRef>
-      <CommonName>Stevenage Station</CommonName>
+      <CommonName>King's Cross Station</CommonName>
     </AnnotatedStopPointRef>
     <AnnotatedStopPointRef>
       <StopPointRef>STOP_B</StopPointRef>
-      <CommonName>Hitchin Town Centre</CommonName>
+      <CommonName>Euston Station</CommonName>
     </AnnotatedStopPointRef>
   </StopPoints>
   <JourneyPatternSections>
@@ -754,8 +753,8 @@ def test_bods_parse_vehicle_journey_operating_profile_override():
   </JourneyPatternSections>
   <Services>
     <Service>
-      <ServiceCode>SER_100</ServiceCode>
-      <Lines><Line id="L1"><LineName>100</LineName></Line></Lines>
+      <ServiceCode>SER_73</ServiceCode>
+      <Lines><Line id="L1"><LineName>73</LineName></Line></Lines>
       <OperatingPeriod><StartDate>2026-08-01</StartDate></OperatingPeriod>
       <OperatingProfile>
         <RegularDayType>
@@ -763,8 +762,8 @@ def test_bods_parse_vehicle_journey_operating_profile_override():
         </RegularDayType>
       </OperatingProfile>
       <StandardService>
-        <Origin>Stevenage</Origin>
-        <Destination>Hitchin</Destination>
+        <Origin>King's Cross</Origin>
+        <Destination>Euston</Destination>
         <JourneyPattern id="JP_1">
           <JourneyPatternSectionRefs>JPS_1</JourneyPatternSectionRefs>
         </JourneyPattern>

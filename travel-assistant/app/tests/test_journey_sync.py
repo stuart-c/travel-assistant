@@ -34,22 +34,22 @@ def seeded_transit_network(app: Flask):
         Location.create(
             id="ha:home",
             name="Home Residence",
-            latitude=51.9000,
-            longitude=-0.2000,
+            latitude=51.5360,
+            longitude=-0.1250,
             ha=True,
         )
         Location.create(
             id="ha:work",
             name="Tech Campus",
-            latitude=52.2300,
-            longitude=0.1500,
+            latitude=51.5200,
+            longitude=-0.0800,
             ha=True,
         )
         Location.create(
             id="custom:parents_house",
             name="Parents' Residence",
-            latitude=51.9050,
-            longitude=-0.2050,
+            latitude=51.5600,
+            longitude=-0.1000,
             ha=False,
         )
         Location.create(
@@ -62,40 +62,40 @@ def seeded_transit_network(app: Flask):
 
         # 2. Transit Stops
         Stop.create(
-            atco_code="210021204507",
-            naptan_code="hrtdwjag",
-            name="Sweyns Mead",
+            atco_code="490000077E",
+            naptan_code="490000077E",
+            name="King's Cross Station",
             stop_type="bus",
-            indicator="Stop A",
-            easting=524100,
-            northing=225300,
+            indicator="Stop E",
+            easting=530200,
+            northing=183100,
         )
         Stop.create(
-            atco_code="210021200011",
-            naptan_code="hrtdgata",
-            name="Stevenage Bus Station",
+            atco_code="490000077C",
+            naptan_code="490000077C",
+            name="Euston Station",
             stop_type="bus",
-            indicator="Stop G",
-            easting=524200,
-            northing=225400,
+            indicator="Stop C",
+            easting=529500,
+            northing=182700,
         )
         Stop.create(
-            atco_code="9100STEVNGE",
-            naptan_code="SVG",
-            name="Stevenage Rail Station",
+            atco_code="9100KNGX",
+            naptan_code="KGX",
+            name="London King's Cross",
             stop_type="rail",
             indicator="Station",
-            easting=524300,
-            northing=225500,
+            easting=530300,
+            northing=183200,
         )
         Stop.create(
-            atco_code="9100CAMBNTH",
-            naptan_code="CMB",
-            name="Cambridge North Rail Station",
+            atco_code="9100FPK",
+            naptan_code="FPK",
+            name="Finsbury Park Rail Station",
             stop_type="rail",
             indicator="Station",
-            easting=547500,
-            northing=261000,
+            easting=531400,
+            northing=186800,
         )
 
         # 3. Walking Connections
@@ -104,8 +104,8 @@ def seeded_transit_network(app: Flask):
             start_id="ha:home",
             start_name="Home Residence",
             finish_type="bus",
-            finish_id="210021204507",
-            finish_name="Sweyns Mead",
+            finish_id="490000077E",
+            finish_name="King's Cross Station",
             time_needed_minutes=4,
             bidirectional=True,
         )
@@ -121,8 +121,8 @@ def seeded_transit_network(app: Flask):
         )
         Walking.create(
             start_type="rail",
-            start_id="9100CAMBNTH",
-            start_name="Cambridge North Rail Station",
+            start_id="9100FPK",
+            start_name="Finsbury Park Rail Station",
             finish_type="ha",
             finish_id="ha:work",
             finish_name="Tech Campus",
@@ -132,11 +132,11 @@ def seeded_transit_network(app: Flask):
 
         # 4. Stop Interchanges
         StopInterchange.create(
-            from_stop_atco="210021200011",
-            from_stop_name="Stevenage Bus Station",
+            from_stop_atco="490000077C",
+            from_stop_name="Euston Station",
             from_stop_type="bus",
-            to_stop_atco="9100STEVNGE",
-            to_stop_name="Stevenage Rail Station",
+            to_stop_atco="9100EUSTON",
+            to_stop_name="London Euston",
             to_stop_type="rail",
             distance_metres=120,
             estimated_walk_minutes=2,
@@ -144,7 +144,7 @@ def seeded_transit_network(app: Flask):
 
         # 5. Timetables
         tt_bus = Timetable.create(
-            name="Bus SB1",
+            name="Bus 73",
             transport_type="bus",
             monday=True,
             tuesday=True,
@@ -160,16 +160,16 @@ def seeded_transit_network(app: Flask):
         tt_bus.set_content(
             TimetableContent(
                 stops=[
-                    TimetableStop(id="210021204507", name="Sweyns Mead", type="bus"),
                     TimetableStop(
-                        id="210021200011", name="Stevenage Bus Station", type="bus"
+                        id="490000077E", name="King's Cross Station", type="bus"
                     ),
+                    TimetableStop(id="490000077C", name="Euston Station", type="bus"),
                 ],
                 trips=[
                     TimetableTrip(
-                        id="sb1_01",
-                        headsign="Bus Station",
-                        operator="Arriva",
+                        id="bus73_01",
+                        headsign="Euston Station",
+                        operator="Arriva London",
                         times=[{"dep": "07:30"}, {"arr": "07:42"}],
                     ),
                 ],
@@ -194,19 +194,17 @@ def seeded_transit_network(app: Flask):
         tt_train.set_content(
             TimetableContent(
                 stops=[
+                    TimetableStop(id="9100EUSTON", name="London Euston", type="rail"),
                     TimetableStop(
-                        id="9100STEVNGE", name="Stevenage Rail Station", type="rail"
-                    ),
-                    TimetableStop(
-                        id="9100CAMBNTH",
-                        name="Cambridge North Rail Station",
+                        id="9100FPK",
+                        name="Finsbury Park Rail Station",
                         type="rail",
                     ),
                 ],
                 trips=[
                     TimetableTrip(
                         id="gn_01",
-                        headsign="Cambridge North",
+                        headsign="Finsbury Park",
                         operator="Great Northern",
                         times=[{"dep": "07:50"}, {"arr": "08:25"}],
                     ),

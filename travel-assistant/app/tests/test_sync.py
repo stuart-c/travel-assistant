@@ -225,12 +225,12 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
 
         # Create a rail stop
         Stop.create(
-            atco_code="9100STEVNG",
-            naptan_code="SVG",
-            name="Stevenage",
+            atco_code="9100KNGX",
+            naptan_code="KGX",
+            name="London King's Cross",
             stop_type="rail",
-            latitude=51.9018,
-            longitude=-0.2065,
+            latitude=51.5308,
+            longitude=-0.1238,
         )
 
         # Create an existing custom timetable
@@ -253,7 +253,7 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
 
         mock_parsed = [
             {
-                "name": "Stevenage to Cambridge",
+                "name": "London King's Cross to Cambridge",
                 "transport_type": "rail",
                 "auto_added": True,
                 "monday": True,
@@ -267,8 +267,8 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
                 "content": {
                     "stops": [
                         {
-                            "id": "9100STEVNGE",
-                            "name": "Stevenage",
+                            "id": "9100KNGX",
+                            "name": "London King's Cross",
                             "type": "rail",
                             "indicator": "Station",
                             "icon": "train",
@@ -307,7 +307,7 @@ def test_sync_train_timetables_success_and_preservation(app: Flask) -> None:
             assert len(custom_recs) == 1
             assert custom_recs[0].name == "My Custom Bus"
             assert len(auto_recs) == 1
-            assert auto_recs[0].name == "Stevenage to Cambridge"
+            assert auto_recs[0].name == "London King's Cross to Cambridge"
             assert auto_recs[0].get_content()["trips"][0]["toc"] == "TL"
 
 
@@ -407,18 +407,18 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
                 {
                     "atco_code": "049000001",
                     "naptan_code": "hrtaaaa",
-                    "name": "Stevenage Bus Station",
+                    "name": "King's Cross Station",
                     "stop_type": "bus",
-                    "latitude": 51.901,
-                    "longitude": -0.201,
+                    "latitude": 51.5302,
+                    "longitude": -0.1225,
                 },
                 {
                     "atco_code": "049000002",
                     "naptan_code": "hrtbbbb",
-                    "name": "Hitchin High Street",
+                    "name": "Euston Station",
                     "stop_type": "bus",
-                    "latitude": 51.950,
-                    "longitude": -0.278,
+                    "latitude": 51.5281,
+                    "longitude": -0.1325,
                 },
                 {
                     "atco_code": "670000001",
@@ -438,7 +438,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
             start_name="Home",
             finish_type="bus",
             finish_id="naptan:hrtaaaa",
-            finish_name="Stevenage Bus Station",
+            finish_name="King's Cross Station",
             time_needed_minutes=5,
         )
 
@@ -447,7 +447,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
             name="Daily Commute",
             from_type="bus",
             from_id="atco:049000002",
-            from_name="Hitchin High Street",
+            from_name="Euston Station",
             to_type="custom",
             to_id="custom:2",
             to_name="Work",
@@ -461,7 +461,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
             content={"stops": [], "trips": []},
         )
         Timetable.create(
-            name="Stevenage to London King's Cross",
+            name="London King's Cross to Cambridge",
             transport_type="rail",
             auto_added=True,
             content={"stops": [], "trips": []},
@@ -475,7 +475,7 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
 
         mock_bods_timetables = [
             {
-                "name": "Bus 10: Stevenage to Hitchin",
+                "name": "Bus 73: King's Cross to Euston",
                 "transport_type": "bus",
                 "start_date": datetime.date(2026, 1, 1),
                 "end_date": datetime.date(2026, 12, 31),
@@ -492,20 +492,20 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
                     "stops": [
                         {
                             "id": "049000001",
-                            "name": "Stevenage Bus Station",
+                            "name": "King's Cross Station",
                             "type": "bus",
                         },
                         {
                             "id": "049000002",
-                            "name": "Hitchin High Street",
+                            "name": "Euston Station",
                             "type": "bus",
                         },
                     ],
                     "trips": [
                         {
                             "id": "vj_1",
-                            "headsign": "10 to Hitchin",
-                            "operator": "Arriva",
+                            "headsign": "73 to Euston",
+                            "operator": "Arriva London",
                             "times": ["08:30", "08:45"],
                         },
                     ],
@@ -542,8 +542,8 @@ def test_sync_bus_timetables_success_and_preservation(app: Flask) -> None:
         assert len(all_tt) == 3
         names = {t.name for t in all_tt}
         assert "My Custom Timetable" in names
-        assert "Stevenage to London King's Cross" in names
-        assert "Bus 10: Stevenage to Hitchin" in names
+        assert "London King's Cross to Cambridge" in names
+        assert "Bus 73: King's Cross to Euston" in names
         assert "Old Bus 99" not in names
 
 
