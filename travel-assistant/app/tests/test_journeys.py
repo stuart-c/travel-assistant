@@ -1,6 +1,7 @@
 """Unit tests for Journeys configuration page, SQLite model, and location search."""
 
 import pytest
+from bs4 import BeautifulSoup
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -592,3 +593,28 @@ def test_journey_calculated_routes_cleared_on_edit_save(
         updated_journey = Journey.get_by_id(journey_id)
         assert updated_journey.name == "Updated Commute"
         assert updated_journey.get_calculated_routes() is None
+
+
+def test_journeys_calculated_routes_dag_view(client: FlaskClient) -> None:
+    """Test that Journeys configuration template includes vis-network script and DAG container."""
+    resp = client.get("/config/journeys")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Verify vis-network CDN script is included
+    vis_scripts = [
+        s.get("src", "")
+        for s in soup.find_all("script")
+        if "vis-network" in s.get("src", "")
+    ]
+    assert len(vis_scripts) == 1
+    assert "vis-network.min.js" in vis_scripts[0]
+
+    # Verify DAG container, fit button, and mode legend exist
+    dag_container = soup.find("div", id="journey-routes-dag-container")
+    assert dag_container is not None
+    fit_btn = soup.find("button", id="journey-routes-fit-btn")
+    assert fit_btn is not None
+    empty_state = soup.find("div", id="journey-routes-empty-state")
+    assert empty_state is not None
