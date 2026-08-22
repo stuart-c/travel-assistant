@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed obsolete `rail_references` table, model (`RailReference`), datasource client (`RailReferencesClient`), and background sync task (`sync_rail_references`), as NaPTAN no longer provides the legacy `RailReferences.csv` endpoint and multi-modal transit linking is handled directly via the unified `stops` table and Darwin station resolvers. A migration automatically drops any legacy `rail_references` database tables on startup.
 
 ### Changed
+- Synchronised project documentation across README, `travel-assistant/DOCS.md`, architecture specifications (`03_journey_routing_and_planning_process.md`), and `/browser` testing runbooks (`docs/testing/05_journeys.md`, `02_locations.md`, `06_ingress_and_theme.md`) to reflect the tabbed Journey modal dialogue, calculated routes inspection, completed Journey Planner library service, and British English language standards.
 - Removed hardcoded `KNOWN_TIPLOCS` dictionary in `TrainS3Client` and standardised train timetable stop generation to use canonical NaPTAN ATCO codes (`9100...`) mapped dynamically from Darwin XML TIPLOC codes and NaPTAN rail stop lookups, eliminating CRS stop ID mismatches across multi-modal `stop_interchanges` and shuttle bus timetables.
 
 ### Fixed
@@ -205,7 +206,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated `Timetable` database model and schema table `timetables` to support timetable name, optional start and end date validity ranges, and individual day operating flags (`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`, `bank_holiday`).
-- Redesigned Timetables configuration page (`/config/timetables`) and modal dialog with day selection toggles, quick-select helper buttons (*All*, *Weekdays*, *Weekends*, *Clear*), date range pickers with validation, and support for adding and editing timetable entries.
+- Redesigned Timetables configuration page (`/config/timetables`) and modal dialogue with day selection toggles, quick-select helper buttons (*All*, *Weekdays*, *Weekends*, *Clear*), date range pickers with validation, and support for adding and editing timetable entries.
 - Standardised page container width across the entire application to `max-w-5xl`, eliminating layout shifting between the Overview dashboard and Configuration pages.
 - Standardised status badge and pill styling across all pages to `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold` with consistent dark-mode ring borders.
 - Established strict button sizing tiers: Medium (`rounded-xl px-4 py-2 text-sm font-semibold`) for primary/secondary actions, and Compact (`rounded-lg px-3 py-1.5 text-xs font-semibold`) for table rows and inline actions.

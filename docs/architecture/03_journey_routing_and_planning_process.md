@@ -59,7 +59,7 @@ The process operates **purely from SQLite database tables** and supports **two c
 
 ## 3. Database Data Model & Source Mapping
 
-The planning process utilizes six core tables in `travel_assistant.db`:
+The planning process organises and utilises six core tables in `travel_assistant.db`:
 
 ```
                                ┌───────────────────────────┐
@@ -102,7 +102,7 @@ The planning process utilizes six core tables in `travel_assistant.db`:
 
 ## 4. Multi-Modal Network Topology & Transfer Model
 
-The transit graph $G = (V, E)$ is modeled with heterogeneous vertices and multi-type directed edges:
+The transit graph $G = (V, E)$ is modelled with heterogeneous vertices and multi-type directed edges:
 
 ### 4.1. Vertices ($V$)
 * **Location Nodes**: $V_{loc} = \{ v \mid v \in \text{Home Assistant Zones} \cup \text{Custom Places} \}$ (e.g. `ha:home`, `ha:office`).
@@ -138,7 +138,7 @@ flowchart TD
     MultiModalDFS --> CorridorPrune[Prune Cycles & Subsumed Corridors]
     CorridorPrune --> RouteOutput([Output: Available Structural Routes 1, 2, 3])
 
-    PlanMode --> InitRAPTOR[Initialize RAPTOR Rounds k=0..K]
+    PlanMode --> InitRAPTOR[Initialise RAPTOR Rounds k=0..K]
     InitRAPTOR --> ScanTrips[Scan Vehicle Journeys in Time Window]
     ScanTrips --> RelaxTransfers[Relax Footpaths & Platform Interchanges]
     RelaxTransfers --> ParetoFrontier[Pareto Frontier Ranking & Buffer Scoring]
