@@ -22,12 +22,16 @@ from app.services.planner import (
     NoCorridorPathError,
     NoServicesOnDayError,
     NoTripsInWindowError,
+    RouteLeg,
     RouteTemplate,
     ScheduledItinerary,
     find_routes,
     format_minutes_to_time,
+    get_leg_mode,
+    is_valid_leg_sequence,
     parse_time_to_minutes,
     plan_journey,
+    prune_route_templates,
     resolve_endpoint_name,
     resolve_transfer_duration,
 )
@@ -1344,3 +1348,224 @@ def test_find_routes_transfer_preference_and_direct_dropoff(app: Flask) -> None:
             assert final_leg.to_id == "office" or final_leg.to_id == "ha:office"
             assert final_leg.leg_type == "transit"
             assert final_leg.transport_mode == "bus"
+
+
+def _make_test_leg(
+    leg_type: str = "transit",
+    transport_mode: str = "bus",
+    stage_index: int = 1,
+    step_index: int = 1,
+    from_id: str = "A",
+    to_id: str = "B",
+) -> RouteLeg:
+    """Helper to construct lightweight RouteLeg for testing."""
+    return RouteLeg(
+        stage_index=stage_index,
+        step_index=step_index,
+        leg_type=leg_type,
+        from_type="bus" if transport_mode == "bus" else "rail",
+        from_id=from_id,
+        from_name=f"Stop {from_id}",
+        to_type="bus" if transport_mode == "bus" else "rail",
+        to_id=to_id,
+        to_name=f"Stop {to_id}",
+        duration_minutes=5,
+        transport_mode=transport_mode,
+    )
+
+
+def test_is_valid_leg_sequence_walking_rules():
+    """Verify Rule 1: Walking cannot be followed by more walking."""
+    # Empty list is invalid
+    assert not is_valid_leg_sequence([])
+
+    # Single walk leg is valid (direct walking journey)
+    walk_single = [_make_test_leg(leg_type="walk", transport_mode="walk")]
+    assert is_valid_leg_sequence(walk_single)
+
+    # Consecutive walking legs: walk -> walk (invalid)
+    consecutive_walk = [
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+    ]
+    assert not is_valid_leg_sequence(consecutive_walk)
+
+    # Walk -> Interchange (both are walking mode, invalid)
+    walk_and_interchange = [
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(leg_type="interchange", transport_mode="walk"),
+    ]
+    assert not is_valid_leg_sequence(walk_and_interchange)
+
+    # Platform transfer -> Walk (invalid)
+    transfer_and_walk = [
+        _make_test_leg(leg_type="platform_transfer", transport_mode="walk"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+    ]
+    assert not is_valid_leg_sequence(transfer_and_walk)
+
+    # Walk -> Transit -> Walk (valid)
+    walk_transit_walk = [
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(leg_type="transit", transport_mode="bus"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+    ]
+    assert is_valid_leg_sequence(walk_transit_walk)
+
+    # Walk -> Bus -> Interchange -> Rail -> Walk (valid, interleaved walks)
+    valid_multi_modal = [
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(leg_type="transit", transport_mode="bus"),
+        _make_test_leg(leg_type="interchange", transport_mode="walk"),
+        _make_test_leg(leg_type="transit", transport_mode="rail"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+    ]
+    assert is_valid_leg_sequence(valid_multi_modal)
+
+    # Bus -> Walk -> Walk -> Rail (consecutive walks in middle, invalid)
+    walks_in_middle = [
+        _make_test_leg(leg_type="transit", transport_mode="bus"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(leg_type="interchange", transport_mode="walk"),
+        _make_test_leg(leg_type="transit", transport_mode="rail"),
+    ]
+    assert not is_valid_leg_sequence(walks_in_middle)
+
+
+def test_is_valid_leg_sequence_same_mode_rules():
+    """Verify Rule 2: Maximum of 3 of the same mode in a row."""
+    # 1 of mode (valid)
+    assert is_valid_leg_sequence([_make_test_leg(transport_mode="bus")])
+
+    # 2 of same mode in a row (valid)
+    assert is_valid_leg_sequence(
+        [
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+        ]
+    )
+
+    # 3 of same mode in a row (valid)
+    assert is_valid_leg_sequence(
+        [
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+        ]
+    )
+
+    # 4 of same mode in a row (invalid)
+    assert not is_valid_leg_sequence(
+        [
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+        ]
+    )
+
+    # 4 rail legs in a row (invalid)
+    assert not is_valid_leg_sequence(
+        [
+            _make_test_leg(transport_mode="rail"),
+            _make_test_leg(transport_mode="rail"),
+            _make_test_leg(transport_mode="rail"),
+            _make_test_leg(transport_mode="rail"),
+        ]
+    )
+
+    # 3 bus legs, followed by walk, followed by 3 bus legs (valid, reset by walk)
+    interleaved_same_mode = [
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(leg_type="walk", transport_mode="walk"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+    ]
+    assert is_valid_leg_sequence(interleaved_same_mode)
+
+    # 3 rail legs, followed by 3 bus legs (valid, different modes)
+    rail_then_bus = [
+        _make_test_leg(transport_mode="rail"),
+        _make_test_leg(transport_mode="rail"),
+        _make_test_leg(transport_mode="rail"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+        _make_test_leg(transport_mode="bus"),
+    ]
+    assert is_valid_leg_sequence(rail_then_bus)
+
+
+def test_get_leg_mode_resolution():
+    """Verify get_leg_mode correctly identifies walking and transit modes."""
+    leg_walk = _make_test_leg(leg_type="walk", transport_mode="walk")
+    assert get_leg_mode(leg_walk) == "walk"
+
+    leg_interchange = _make_test_leg(leg_type="interchange", transport_mode="")
+    assert get_leg_mode(leg_interchange) == "walk"
+
+    leg_platform = _make_test_leg(leg_type="platform_transfer", transport_mode="")
+    assert get_leg_mode(leg_platform) == "walk"
+
+    leg_bus = _make_test_leg(leg_type="transit", transport_mode="bus")
+    assert get_leg_mode(leg_bus) == "bus"
+
+    leg_rail = _make_test_leg(leg_type="transit", transport_mode="rail")
+    assert get_leg_mode(leg_rail) == "rail"
+
+
+def test_prune_route_templates_filters_invalid_sequences():
+    """Verify prune_route_templates discards templates violating sequence rules."""
+    valid_template = RouteTemplate(
+        corridor_id="valid_1",
+        name="Valid Corridor",
+        summary_text="Walk → Bus → Walk",
+        primary_mode="bus",
+        total_duration_est_minutes=20,
+        transfer_count=0,
+        stages_count=3,
+        legs=[
+            _make_test_leg(leg_type="walk", transport_mode="walk"),
+            _make_test_leg(leg_type="transit", transport_mode="bus"),
+            _make_test_leg(leg_type="walk", transport_mode="walk"),
+        ],
+    )
+
+    invalid_walk_template = RouteTemplate(
+        corridor_id="invalid_walk",
+        name="Invalid Walk Corridor",
+        summary_text="Walk → Walk → Bus",
+        primary_mode="bus",
+        total_duration_est_minutes=25,
+        transfer_count=0,
+        stages_count=3,
+        legs=[
+            _make_test_leg(leg_type="walk", transport_mode="walk"),
+            _make_test_leg(leg_type="walk", transport_mode="walk"),
+            _make_test_leg(leg_type="transit", transport_mode="bus"),
+        ],
+    )
+
+    invalid_four_buses_template = RouteTemplate(
+        corridor_id="invalid_buses",
+        name="Invalid 4 Buses",
+        summary_text="Bus → Bus → Bus → Bus",
+        primary_mode="bus",
+        total_duration_est_minutes=40,
+        transfer_count=3,
+        stages_count=4,
+        legs=[
+            _make_test_leg(transport_mode="bus", from_id="1", to_id="2"),
+            _make_test_leg(transport_mode="bus", from_id="2", to_id="3"),
+            _make_test_leg(transport_mode="bus", from_id="3", to_id="4"),
+            _make_test_leg(transport_mode="bus", from_id="4", to_id="5"),
+        ],
+    )
+
+    pruned = prune_route_templates(
+        [valid_template, invalid_walk_template, invalid_four_buses_template]
+    )
+    assert len(pruned) == 1
+    assert pruned[0].corridor_id == "valid_1"

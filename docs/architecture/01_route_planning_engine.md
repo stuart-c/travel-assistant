@@ -145,7 +145,7 @@ If no continuous path connects $\mathcal{S}_{\text{orig}}$ to $\mathcal{S}_{\tex
 
 ## 4. Pruning, Deduplication & Optimisation Rules
 
-The engine applies four formal pruning rules in sequence to eliminate redundant, illogical, or strictly inferior route options:
+The engine applies formal pruning and modal sequence validation rules to eliminate redundant, illogical, or strictly inferior route options:
 
 ### Rule 1: Last Possible Interchange Point
 When transferring from Route 1 to Route 2 where Route 1 serves stops $[A, B, C, D, E]$ and Route 2 serves stops $[C, D, E, F, G]$, the transfer **MUST occur at Stop $E$** (the furthest common stop along the travel direction).
@@ -170,6 +170,12 @@ with at least one strict inequality across all active Journey time windows. Domi
 
 ### Rule 4: Senseless Detour Threshold
 Any candidate route whose estimated total travel duration exceeds **1.5$\times$ the duration of the fastest alternative** (or adds more than **30 minutes** without offering unique time-window coverage) is pruned as a senseless geographic detour.
+
+### Rule 5: No Consecutive Walking
+Walking legs cannot be followed immediately by more walking legs (`walk` $\rightarrow$ `walk` is strictly prohibited, including intermediate stop interchanges or platform transfers). Every intermediate walk must be preceded and followed by a transit leg. Single direct walking journeys remain valid.
+
+### Rule 6: Maximum of 3 Consecutive Legs of the Same Transport Mode
+A route corridor cannot contain 4 or more consecutive legs of the identical transport mode in a row (e.g. a sequence of 4 consecutive bus legs or 4 consecutive train legs without an intervening mode is rejected).
 
 ---
 

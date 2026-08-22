@@ -21,7 +21,12 @@ from app.services.planner.models import (
     ScheduledItinerary,
 )
 from app.services.planner.raptor import plan_journey
-from app.services.planner.route_finder import find_routes, prune_route_templates
+from app.services.planner.route_finder import (
+    find_routes,
+    get_leg_mode,
+    is_valid_leg_sequence,
+    prune_route_templates,
+)
 from app.services.planner.transfers import (
     DAY_NAME_TO_CODE,
     VALID_DAYS,
@@ -40,6 +45,8 @@ __all__ = [
     "find_routes",
     "plan_journey",
     "prune_route_templates",
+    "is_valid_leg_sequence",
+    "get_leg_mode",
     # Models
     "RouteTemplate",
     "RouteLeg",
