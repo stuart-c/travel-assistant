@@ -54,8 +54,8 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
                 )
                 candidate_routes.extend(routes)
             except JourneyPlanningError as err:
-                logger.debug(
-                    "No route corridor for journey %d (%s) on days %s: %s",
+                logger.warning(
+                    "No route corridor for journey %d ('%s') on days %s: %s",
                     journey.id,
                     journey.name,
                     days,
@@ -72,8 +72,8 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
             )
             candidate_routes.extend(routes)
         except JourneyPlanningError as err:
-            logger.debug(
-                "No route corridor for journey %d (%s) across all days: %s",
+            logger.warning(
+                "No route corridor for journey %d ('%s') across all days: %s",
                 journey.id,
                 journey.name,
                 err.message,
@@ -121,6 +121,16 @@ def sync_journey_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
                         len(routes),
                         journey.id,
                         journey.name,
+                    )
+                else:
+                    logger.warning(
+                        "No viable routes could be calculated for journey %d ('%s') between %s:%s and %s:%s.",
+                        journey.id,
+                        journey.name,
+                        journey.from_type,
+                        journey.from_id,
+                        journey.to_type,
+                        journey.to_id,
                     )
             except Exception as exc:
                 logger.warning(
