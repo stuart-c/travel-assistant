@@ -77,7 +77,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabRoutes = document.getElementById('journey-tab-routes');
   const panelDetails = document.getElementById('journey-panel-details');
   const panelRoutes = document.getElementById('journey-panel-routes');
-  const calculatedRoutesContent = document.getElementById('journey-calculated-routes-content');
+  const dagContainer = document.getElementById('journey-routes-dag-container');
+  const routesSummaryText = document.getElementById('journey-routes-summary-text');
+  const routesEmptyState = document.getElementById('journey-routes-empty-state');
+  const routesFitBtn = document.getElementById('journey-routes-fit-btn');
 
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
   const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
@@ -568,9 +571,414 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Modal Tabs & Calculated Routes Management ---
   let isRoutesTabEnabled = false;
+  let currentNetwork = null;
+  let activeJourneyItem = null;
 
-  function setRoutesTabState(enabled, content = null) {
+  const MODE_CONFIG = {
+    walk: {
+      colour: '#64748b',
+      label: 'Walk',
+      dashes: [4, 4],
+      icon: 'directions_walk',
+    },
+    bus: {
+      colour: '#d97706',
+      label: 'Bus',
+      dashes: false,
+      icon: 'directions_bus',
+    },
+    rail: {
+      colour: '#4f46e5',
+      label: 'Train',
+      dashes: false,
+      icon: 'train',
+    },
+    train: {
+      colour: '#4f46e5',
+      label: 'Train',
+      dashes: false,
+      icon: 'train',
+    },
+    metro: {
+      colour: '#059669',
+      label: 'Metro',
+      dashes: false,
+      icon: 'subway',
+    },
+    tram: {
+      colour: '#ea580c',
+      label: 'Tram',
+      dashes: false,
+      icon: 'tram',
+    },
+    ferry: {
+      colour: '#0891b2',
+      label: 'Ferry',
+      dashes: false,
+      icon: 'directions_boat',
+    },
+    air: {
+      colour: '#9333ea',
+      label: 'Flight',
+      dashes: false,
+      icon: 'flight',
+    },
+    interchange: {
+      colour: '#64748b',
+      label: 'Interchange',
+      dashes: [2, 2],
+      icon: 'swap_horiz',
+    },
+    platform_transfer: {
+      colour: '#64748b',
+      label: 'Transfer',
+      dashes: [2, 2],
+      icon: 'transfer_within_a_station',
+    },
+    custom: {
+      colour: '#0284c7',
+      label: 'Transit',
+      dashes: false,
+      icon: 'pin_drop',
+    },
+  };
+
+  function getModeConfig(mode, legType) {
+    const key = String(mode || legType || 'custom').toLowerCase();
+    return MODE_CONFIG[key] || MODE_CONFIG.custom;
+  }
+
+  function isDarkMode() {
+    return (
+      document.documentElement.classList.contains('dark') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    );
+  }
+
+  function createEdgeTooltip(leg) {
+    const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
+    const modeName = leg.transport_mode
+      ? leg.transport_mode.charAt(0).toUpperCase() + leg.transport_mode.slice(1)
+      : leg.leg_type === 'walk'
+      ? 'Walking'
+      : 'Transit';
+    const lineHeading = leg.line_name ? `${modeName} ${leg.line_name}` : modeName;
+
+    const parts = [];
+    parts.push(
+      `<div style="font-weight: 700; margin-bottom: 4px; color: ${modeCfg.colour}; font-size: 13px;">${escapeHtml(
+        lineHeading
+      )}</div>`
+    );
+
+    if (leg.operator_name) {
+      parts.push(
+        `<div style="margin-bottom: 2px;"><strong>Operator:</strong> ${escapeHtml(
+          leg.operator_name
+        )}</div>`
+      );
+    }
+    if (leg.duration_minutes !== undefined && leg.duration_minutes !== null) {
+      parts.push(
+        `<div style="margin-bottom: 2px;"><strong>Duration:</strong> ~${leg.duration_minutes} min${
+          leg.duration_minutes === 1 ? '' : 's'
+        }</div>`
+      );
+    }
+    if (leg.distance_m) {
+      const distKm = (leg.distance_m / 1000).toFixed(1);
+      const distStr = leg.distance_m >= 1000 ? `${distKm} km` : `${leg.distance_m} m`;
+      parts.push(
+        `<div style="margin-bottom: 2px;"><strong>Distance:</strong> ${distStr}</div>`
+      );
+    }
+    if (leg.stops_count) {
+      parts.push(
+        `<div style="margin-bottom: 2px;"><strong>Stops:</strong> ${leg.stops_count} intermediate</div>`
+      );
+    }
+    parts.push(
+      `<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed rgba(148, 163, 184, 0.4); font-size: 11px; opacity: 0.85;">${escapeHtml(
+        leg.from_name || 'Start'
+      )} &rarr; ${escapeHtml(leg.to_name || 'End')}</div>`
+    );
+
+    const tooltipEl = document.createElement('div');
+    tooltipEl.innerHTML = parts.join('');
+    return tooltipEl;
+  }
+
+  function renderJourneyRoutesDag(routesData, item) {
+    if (currentNetwork) {
+      currentNetwork.destroy();
+      currentNetwork = null;
+    }
+
+    if (!dagContainer) return;
+
+    // Parse routes
+    let routes = [];
+    if (typeof routesData === 'string') {
+      try {
+        routes = JSON.parse(routesData);
+      } catch (e) {
+        routes = [];
+      }
+    } else if (Array.isArray(routesData)) {
+      routes = routesData;
+    } else if (routesData && typeof routesData === 'object') {
+      routes = [routesData];
+    }
+
+    if (!routes || routes.length === 0) {
+      if (routesEmptyState) routesEmptyState.classList.remove('hidden');
+      if (routesSummaryText) {
+        routesSummaryText.textContent = 'No calculated routes available for this journey.';
+      }
+      return;
+    }
+
+    if (routesEmptyState) routesEmptyState.classList.add('hidden');
+    if (routesSummaryText) {
+      const count = routes.length;
+      routesSummaryText.textContent = `${count} topological route corridor${
+        count === 1 ? '' : 's'
+      } discovered connecting origin to destination.`;
+    }
+
+    const dark = isDarkMode();
+    const nodesMap = new Map();
+    const edgesList = [];
+    const edgeKeySet = new Set();
+
+    const originName = (item && item.from_name) || 'Origin';
+    const destName = (item && item.to_name) || 'Destination';
+    const originId = (item && item.from_id) || '';
+    const destId = (item && item.to_id) || '';
+
+    // 1. Fixed Origin Node (Top)
+    nodesMap.set('NODE_ORIGIN', {
+      id: 'NODE_ORIGIN',
+      label: `🚩 ${originName}\n(Start)`,
+      title: `Origin: ${originName}${originId ? ` (${originId})` : ''}`,
+      shape: 'box',
+      margin: { top: 10, bottom: 10, left: 14, right: 14 },
+      shapeProperties: { borderRadius: 10 },
+      color: {
+        background: dark ? '#064e3b' : '#ecfdf5',
+        border: dark ? '#34d399' : '#10b981',
+        highlight: {
+          background: dark ? '#065f46' : '#d1fae5',
+          border: '#10b981',
+        },
+        hover: {
+          background: dark ? '#065f46' : '#d1fae5',
+          border: '#10b981',
+        },
+      },
+      font: {
+        color: dark ? '#ecfdf5' : '#065f46',
+        bold: { color: dark ? '#ffffff' : '#064e3b' },
+        size: 13,
+        face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      },
+      borderWidth: 2,
+      shadow: {
+        enabled: true,
+        color: dark ? 'rgba(0,0,0,0.5)' : 'rgba(16,185,129,0.15)',
+        size: 6,
+        x: 0,
+        y: 2,
+      },
+    });
+
+    // 2. Fixed Destination Node (Bottom)
+    nodesMap.set('NODE_DESTINATION', {
+      id: 'NODE_DESTINATION',
+      label: `🏁 ${destName}\n(End)`,
+      title: `Destination: ${destName}${destId ? ` (${destId})` : ''}`,
+      shape: 'box',
+      margin: { top: 10, bottom: 10, left: 14, right: 14 },
+      shapeProperties: { borderRadius: 10 },
+      color: {
+        background: dark ? '#4c0519' : '#fff1f2',
+        border: dark ? '#fb7185' : '#f43f5e',
+        highlight: {
+          background: dark ? '#881337' : '#ffe4e6',
+          border: '#f43f5e',
+        },
+        hover: {
+          background: dark ? '#881337' : '#ffe4e6',
+          border: '#f43f5e',
+        },
+      },
+      font: {
+        color: dark ? '#ffe4e6' : '#881337',
+        bold: { color: dark ? '#ffffff' : '#4c0519' },
+        size: 13,
+        face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      },
+      borderWidth: 2,
+      shadow: {
+        enabled: true,
+        color: dark ? 'rgba(0,0,0,0.5)' : 'rgba(244,63,94,0.15)',
+        size: 6,
+        x: 0,
+        y: 2,
+      },
+    });
+
+    function getStopNodeId(id, name, type) {
+      if (!id && !name) return 'stop_unknown';
+      return `stop_${type || 'loc'}_${id || name}`;
+    }
+
+    function addStopNode(nodeId, name, type) {
+      if (nodesMap.has(nodeId)) return;
+      nodesMap.set(nodeId, {
+        id: nodeId,
+        label: `🚏 ${name || 'Stop'}`,
+        title: `Stop: ${name || 'Stop'}${type ? ` (${type})` : ''}`,
+        shape: 'box',
+        margin: { top: 8, bottom: 8, left: 12, right: 12 },
+        shapeProperties: { borderRadius: 8 },
+        color: {
+          background: dark ? '#1e293b' : '#f8fafc',
+          border: dark ? '#475569' : '#cbd5e1',
+          highlight: {
+            background: dark ? '#334155' : '#e2e8f0',
+            border: dark ? '#94a3b8' : '#64748b',
+          },
+          hover: {
+            background: dark ? '#334155' : '#e2e8f0',
+            border: dark ? '#94a3b8' : '#64748b',
+          },
+        },
+        font: {
+          color: dark ? '#f1f5f9' : '#1e293b',
+          size: 12,
+          face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        },
+        borderWidth: 1.5,
+        shadow: {
+          enabled: true,
+          color: dark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
+          size: 4,
+          x: 0,
+          y: 1,
+        },
+      });
+    }
+
+    // 3. Process each route corridor and its legs
+    routes.forEach(route => {
+      if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
+
+      const legs = route.legs;
+      legs.forEach((leg, index) => {
+        let fromNodeId;
+        if (
+          index === 0 ||
+          leg.from_id === originId ||
+          leg.from_name === originName
+        ) {
+          fromNodeId = 'NODE_ORIGIN';
+        } else {
+          fromNodeId = getStopNodeId(leg.from_id, leg.from_name, leg.from_type);
+          addStopNode(fromNodeId, leg.from_name, leg.from_type);
+        }
+
+        let toNodeId;
+        if (
+          index === legs.length - 1 ||
+          leg.to_id === destId ||
+          leg.to_name === destName
+        ) {
+          toNodeId = 'NODE_DESTINATION';
+        } else {
+          toNodeId = getStopNodeId(leg.to_id, leg.to_name, leg.to_type);
+          addStopNode(toNodeId, leg.to_name, leg.to_type);
+        }
+
+        const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
+        const edgeKey = `${fromNodeId}->${toNodeId}:${leg.transport_mode || leg.leg_type}:${leg.line_name || ''}:${leg.operator_name || ''}`;
+
+        if (!edgeKeySet.has(edgeKey)) {
+          edgeKeySet.add(edgeKey);
+          edgesList.push({
+            id: `edge_${edgeKeySet.size}`,
+            from: fromNodeId,
+            to: toNodeId,
+            arrows: {
+              to: {
+                enabled: true,
+                scaleFactor: 0.85,
+              },
+            },
+            width: 2.5,
+            color: {
+              color: modeCfg.colour,
+              highlight: modeCfg.colour,
+              hover: modeCfg.colour,
+              opacity: 0.9,
+            },
+            dashes: modeCfg.dashes,
+            title: createEdgeTooltip(leg),
+            smooth: {
+              type: 'cubicBezier',
+              forceDirection: 'vertical',
+              roundness: 0.35,
+            },
+          });
+        }
+      });
+    });
+
+    if (typeof vis === 'undefined' || !vis.Network) {
+      console.warn('vis-network library not loaded.');
+      return;
+    }
+
+    const networkData = {
+      nodes: new vis.DataSet(Array.from(nodesMap.values())),
+      edges: new vis.DataSet(edgesList),
+    };
+
+    const networkOptions = {
+      layout: {
+        hierarchical: {
+          enabled: true,
+          direction: 'UD', // Vertical DAG layout (top to bottom)
+          sortMethod: 'directed',
+          levelSeparation: 90,
+          nodeSpacing: 180,
+          shakeTowards: 'leaves',
+        },
+      },
+      physics: {
+        enabled: false,
+      },
+      interaction: {
+        hover: true,
+        hoverConnectedEdges: true,
+        selectConnectedEdges: true,
+        tooltipDelay: 80,
+        zoomView: true,
+        dragView: true,
+        dragNodes: true,
+      },
+    };
+
+    currentNetwork = new vis.Network(dagContainer, networkData, networkOptions);
+    currentNetwork.once('afterDrawing', () => {
+      if (currentNetwork) currentNetwork.fit();
+    });
+  }
+
+  function setRoutesTabState(enabled, content = null, item = null) {
     isRoutesTabEnabled = Boolean(enabled);
+    activeJourneyItem = item;
+
     if (tabRoutes) {
       tabRoutes.disabled = !isRoutesTabEnabled;
       if (isRoutesTabEnabled) {
@@ -582,20 +990,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    if (calculatedRoutesContent) {
-      if (content !== null && content !== undefined) {
-        if (typeof content === 'string') {
-          try {
-            const parsed = JSON.parse(content);
-            calculatedRoutesContent.textContent = JSON.stringify(parsed, null, 2);
-          } catch (e) {
-            calculatedRoutesContent.textContent = content;
-          }
-        } else {
-          calculatedRoutesContent.textContent = JSON.stringify(content, null, 2);
-        }
-      } else {
-        calculatedRoutesContent.textContent = '';
+    if (isRoutesTabEnabled && content) {
+      renderJourneyRoutesDag(content, item);
+    } else {
+      if (currentNetwork) {
+        currentNetwork.destroy();
+        currentNetwork = null;
       }
     }
   }
@@ -614,6 +1014,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabDetails) {
         tabDetails.className =
           'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
+      }
+
+      // Re-fit diagram when tab becomes visible
+      if (currentNetwork) {
+        requestAnimationFrame(() => {
+          if (currentNetwork) currentNetwork.fit();
+        });
       }
     } else {
       if (panelRoutes) panelRoutes.classList.add('hidden');
@@ -637,6 +1044,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (tabDetails) tabDetails.addEventListener('click', () => switchTab('details'));
   if (tabRoutes) tabRoutes.addEventListener('click', () => switchTab('routes'));
+
+  if (routesFitBtn) {
+    routesFitBtn.addEventListener('click', () => {
+      if (currentNetwork) {
+        currentNetwork.fit({
+          animation: {
+            duration: 350,
+            easingFunction: 'easeInOutQuad',
+          },
+        });
+      }
+    });
+  }
+
+  // Observe theme changes to adapt DAG colours dynamically
+  const themeObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (
+        mutation.attributeName === 'class' &&
+        isRoutesTabEnabled &&
+        activeJourneyItem &&
+        activeJourneyItem.calculated_routes
+      ) {
+        renderJourneyRoutesDag(activeJourneyItem.calculated_routes, activeJourneyItem);
+      }
+    });
+  });
+  themeObserver.observe(document.documentElement, { attributes: true });
 
   // --- Modal Open / Close Handlers ---
   function openAddModal() {
@@ -696,7 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
       !(Array.isArray(item.calculated_routes) && item.calculated_routes.length === 0) &&
       !(typeof item.calculated_routes === 'object' && Object.keys(item.calculated_routes).length === 0);
 
-    setRoutesTabState(hasRoutesContent, hasRoutesContent ? item.calculated_routes : null);
+    setRoutesTabState(hasRoutesContent, hasRoutesContent ? item.calculated_routes : null, item);
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -704,6 +1139,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeModal() {
+    if (currentNetwork) {
+      currentNetwork.destroy();
+      currentNetwork = null;
+    }
+    activeJourneyItem = null;
     if (modal && typeof modal.close === 'function') {
       modal.close();
     }

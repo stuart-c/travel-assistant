@@ -323,8 +323,11 @@ def test_journeys_modal_tabs_rendered(client: FlaskClient) -> None:
     assert panel_routes is not None
     assert "hidden" in panel_routes.get("class", [])
 
-    pre_content = soup.find("pre", id="journey-calculated-routes-content")
-    assert pre_content is not None
+    dag_container = soup.find("div", id="journey-routes-dag-container")
+    assert dag_container is not None
+
+    fit_btn = soup.find("button", id="journey-routes-fit-btn")
+    assert fit_btn is not None
 
 
 def test_walking_grid_data_binding_and_save(client: FlaskClient) -> None:
