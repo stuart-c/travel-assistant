@@ -7,39 +7,26 @@ import logging
 import os
 import sys
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from flask import Flask, render_template, jsonify, request
 
 from app import db
+from app.logging_config import GunicornLogger, StaticAccessLogFilter, configure_logging
 from app.sync import request_sync, start_background_worker
 from app.views.config import config_bp
+
+__all__ = [
+    "app",
+    "create_app",
+    "GunicornLogger",
+    "StaticAccessLogFilter",
+    "configure_logging",
+]
 
 STARTUP_CACHE_BUST = uuid.uuid4().hex[:8]
 
 
 logger = logging.getLogger(__name__)
-
-
-def configure_logging(app: Optional[Flask] = None) -> None:
-    """Configure system logging level and format from environment."""
-    log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper().strip()
-    log_level_map = {
-        "TRACE": logging.DEBUG,
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "NOTICE": logging.INFO,
-        "WARNING": logging.WARNING,
-        "ERROR": logging.ERROR,
-        "FATAL": logging.CRITICAL,
-        "CRITICAL": logging.CRITICAL,
-    }
-    level = log_level_map.get(log_level_name, logging.INFO)
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        force=True,
-    )
-    logging.getLogger().setLevel(level)
 
 
 class IngressMiddleware:

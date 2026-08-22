@@ -15,4 +15,5 @@ exec gunicorn \
     --access-logfile - \
     --error-logfile - \
     --log-level "${LOG_LEVEL:-info}" \
+    --logger-class "app.main.GunicornLogger" \
     "app.main:app"
