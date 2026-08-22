@@ -25,6 +25,9 @@ window.ConfigDirtyManager = (function () {
 
   function updateUI() {
     const { badge, saveBtn, discardBtn } = getElements();
+    const defaultSaveHtml =
+      '<span class="material-symbols-outlined text-base leading-none">save</span>\n            <span>Save Changes</span>';
+
     if (dirty) {
       if (badge) {
         badge.classList.remove('hidden');
@@ -42,6 +45,10 @@ window.ConfigDirtyManager = (function () {
         saveBtn.disabled = false;
         saveBtn.className =
           'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white hover:bg-sky-500 shadow-sm transition-all cursor-pointer';
+        if (!window.ConfigSave || !window.ConfigSave.isSaving || !window.ConfigSave.isSaving()) {
+          saveBtn.innerHTML =
+            saveBtn.getAttribute('data-original-html') || defaultSaveHtml;
+        }
       }
     } else {
       if (badge) {
@@ -56,6 +63,10 @@ window.ConfigDirtyManager = (function () {
         saveBtn.disabled = true;
         saveBtn.className =
           'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed transition-all';
+        if (!window.ConfigSave || !window.ConfigSave.isSaving || !window.ConfigSave.isSaving()) {
+          saveBtn.innerHTML =
+            saveBtn.getAttribute('data-original-html') || defaultSaveHtml;
+        }
       }
     }
   }
@@ -112,6 +123,11 @@ window.ConfigDirtyManager = (function () {
       sidebar,
       toggleIcon,
     } = getElements();
+
+    // Cache initial Save button HTML if present
+    if (saveBtn && !saveBtn.getAttribute('data-original-html')) {
+      saveBtn.setAttribute('data-original-html', saveBtn.innerHTML);
+    }
 
     // Bind navigation interceptors
     document.querySelectorAll('.config-nav-link').forEach((link) => {

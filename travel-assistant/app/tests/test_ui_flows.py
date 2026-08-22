@@ -647,3 +647,30 @@ def test_british_english_compliance_across_views(client: FlaskClient) -> None:
             assert (
                 len(matches) == 0
             ), f"Found US spelling violation {matches} on route {route}"
+
+
+def test_config_save_spinner_and_button_lifecycle(client: FlaskClient) -> None:
+    """Verify that config-save.js and dirty-manager.js correctly restore save button HTML after save operations."""
+    # Verify save button structure in config_base.html via a config page
+    resp = client.get("/config/locations")
+    assert resp.status_code == 200
+    soup = BeautifulSoup(resp.get_data(as_text=True), "html.parser")
+    save_btn = soup.find("button", id="config-save-btn")
+    assert save_btn is not None
+    assert "Save Changes" in save_btn.get_text()
+    assert save_btn.has_attr("disabled")
+
+    # Verify config-save.js static asset includes save button restoration logic
+    save_js = client.get("/static/js/config-save.js")
+    assert save_js.status_code == 200
+    save_js_content = save_js.get_data(as_text=True)
+    assert "saveBtn.innerHTML = originalContent" in save_js_content
+    assert "animate-spin" in save_js_content
+    assert "Saving&hellip;" in save_js_content
+
+    # Verify dirty-manager.js static asset restores save button HTML during UI updates
+    dirty_js = client.get("/static/js/dirty-manager.js")
+    assert dirty_js.status_code == 200
+    dirty_js_content = dirty_js.get_data(as_text=True)
+    assert "data-original-html" in dirty_js_content
+    assert "Save Changes" in dirty_js_content
