@@ -174,8 +174,8 @@ Any candidate route whose estimated total travel duration exceeds **1.5$\times$ 
 ### Rule 5: No Consecutive Walking
 Walking legs cannot be followed immediately by more walking legs (`walk` $\rightarrow$ `walk` is strictly prohibited, including intermediate stop interchanges or platform transfers). Every intermediate walk must be preceded and followed by a transit leg. Single direct walking journeys remain valid.
 
-### Rule 6: Maximum of 3 Consecutive Legs of the Same Transport Mode
-A route corridor cannot contain 4 or more consecutive legs of the identical transport mode in a row (e.g. a sequence of 4 consecutive bus legs or 4 consecutive train legs without an intervening mode is rejected).
+### Rule 6: Maximum of 2 Consecutive Legs of the Same Transport Mode
+A route corridor cannot contain 3 or more consecutive legs of the identical transport mode in a row (e.g. a sequence of 3 consecutive bus legs or 3 consecutive train legs without an intervening mode is rejected).
 
 ---
 
