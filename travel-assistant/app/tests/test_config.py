@@ -1473,3 +1473,36 @@ def test_config_timetables_pagination_and_sorting(
     assert resp_sort_desc.status_code == 200
     desc_data = resp_sort_desc.get_json()
     assert desc_data["data"][0]["name"] == "Timetable Schedule O"
+
+
+def test_db_page_and_data_refresh(client: FlaskClient) -> None:
+    """Test GET /config/db renders refresh button and /config/db/data returns size metrics."""
+    resp = client.get("/config/db")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="refresh-db-btn"' in html
+    assert 'id="refresh-db-icon"' in html
+
+    data_resp = client.get("/config/db/data")
+    assert data_resp.status_code == 200
+    data = data_resp.get_json()
+    assert "data" in data
+    assert "total" in data
+    assert "file_size_bytes" in data
+    assert "file_size_formatted" in data
+
+
+def test_sync_page_and_data_refresh(client: FlaskClient) -> None:
+    """Test GET /config/sync renders refresh button and returns syncable datasets."""
+    resp = client.get("/config/sync")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="refresh-sync-btn"' in html
+    assert 'id="refresh-sync-icon"' in html
+
+    data_resp = client.get("/config/sync/data")
+    assert data_resp.status_code == 200
+    data = data_resp.get_json()
+    assert "data" in data
+    assert "total" in data
+    assert isinstance(data["data"], list)

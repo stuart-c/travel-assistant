@@ -10,7 +10,19 @@
 {% endblock %}
 
 {% block action_bar %}
-<!-- Read-only sync page: Save/Discard action bar omitted -->
+<div class="flex items-center gap-2.5">
+  <!-- Refresh Sync Button -->
+  <button 
+    type="button" 
+    id="refresh-sync-btn" 
+    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/60 shadow-xs transition-colors cursor-pointer"
+    title="Refresh background synchronisation status"
+    aria-label="Refresh background synchronisation status"
+  >
+    <span class="material-symbols-outlined text-base leading-none" id="refresh-sync-icon">refresh</span>
+    <span>Refresh</span>
+  </button>
+</div>
 {% endblock %}
 
 {% block config_content %}

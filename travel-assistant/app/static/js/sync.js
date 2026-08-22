@@ -11,9 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const emptyState = document.getElementById('grid-empty-state');
   const ingressPath = container.dataset.ingressPath || '';
   const toastBox = document.getElementById('sync-toast-box');
-  const syncAllBtn = document.getElementById('sync-all-btn');
-  const syncAllIcon = document.getElementById('sync-all-icon');
-  const syncAllText = document.getElementById('sync-all-text');
+  const refreshBtn = document.getElementById('refresh-sync-btn');
+  const refreshIcon = document.getElementById('refresh-sync-icon');
 
   const dataUrl = (gridContainer && gridContainer.getAttribute('data-data-url')) || '/config/sync/data';
 
@@ -175,6 +174,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }).forceRender();
   }
 
+  async function refreshSyncData(isManual = false) {
+    if (isManual) {
+      if (refreshBtn) refreshBtn.disabled = true;
+      if (refreshIcon) refreshIcon.classList.add('animate-spin');
+    }
+
+    try {
+      const response = await fetch(dataUrl, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const json = await response.json();
+
+      stagedTables = extractSyncableTables(Array.isArray(json.data) ? json.data : []);
+      syncGridDisplay();
+    } catch (err) {
+      console.error('Failed to refresh dataset synchronisation status:', err);
+    } finally {
+      if (isManual) {
+        if (refreshBtn) refreshBtn.disabled = false;
+        if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+      }
+    }
+  }
+
   // Fetch remote data then render — loading/error UI managed by GridLoader
   GridLoader.load(dataUrl, gridContainer, {
     label: 'sync status',
@@ -186,12 +210,24 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
+  // Manual refresh trigger
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      refreshSyncData(true);
+    });
+  }
+
   // Periodic interval to refresh relative timestamp displays every 30 seconds
   setInterval(() => {
     if (stagedTables.length > 0) {
       syncGridDisplay();
     }
   }, 30000);
+
+  // Automatic background refresh every minute (60,000 ms)
+  setInterval(() => {
+    refreshSyncData(false);
+  }, 60000);
 
   function updateMetrics(stats) {
     if (!stats) return;
