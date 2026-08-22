@@ -686,12 +686,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function getStopIcon(type, name) {
     const t = String(type || '').toLowerCase();
     const n = String(name || '').toLowerCase();
-    if (t === 'rail' || t === 'train' || n.includes('rail') || n.includes('station')) return '🚆';
-    if (t === 'bus') return '🚌';
-    if (t === 'metro' || t === 'subway') return '🚇';
-    if (t === 'tram') return '🚋';
-    if (t === 'ferry') return '⛴️';
-    if (t === 'air' || t === 'flight') return '✈️';
+    if (t === 'bus' || n.includes('bus')) return '🚌';
+    if (t === 'rail' || t === 'train' || n.includes('rail') || n.includes('train')) return '🚆';
+    if (t === 'metro' || t === 'subway' || n.includes('underground') || n.includes('tube') || n.includes('metro')) return '🚇';
+    if (t === 'tram' || n.includes('tram')) return '🚋';
+    if (t === 'ferry' || n.includes('ferry') || n.includes('pier')) return '⛴️';
+    if (t === 'air' || t === 'flight' || n.includes('airport')) return '✈️';
+    if (n.includes('station')) return '🚆';
     return '🚏';
   }
 
@@ -849,14 +850,15 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     }
 
-    // 1. Process routes to extract node sequences and raw node metadata
-    const processedRoutes = [];
+    // 1. Process routes to extract actual directed legs and stop metadata
     const stopMetadataMap = new Map(); // nodeId -> { name, type, id }
+    const rawDirectedEdges = []; // array of { from, to, leg }
+    const routeNodeSequences = [];
 
     routes.forEach((route) => {
       if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
       const legs = route.legs;
-      const rawSequence = [];
+      const sequence = [];
 
       legs.forEach((leg, index) => {
         const isFirstLeg = index === 0;
@@ -890,122 +892,75 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        if (rawSequence.length === 0) {
-          rawSequence.push(fromNodeId);
-        } else if (rawSequence[rawSequence.length - 1] !== fromNodeId) {
-          rawSequence.push(fromNodeId);
+        if (sequence.length === 0) {
+          sequence.push(fromNodeId);
+        } else if (sequence[sequence.length - 1] !== fromNodeId) {
+          sequence.push(fromNodeId);
+        }
+        if (sequence[sequence.length - 1] !== toNodeId) {
+          sequence.push(toNodeId);
         }
 
-        if (rawSequence[rawSequence.length - 1] !== toNodeId) {
-          rawSequence.push(toNodeId);
+        if (fromNodeId !== toNodeId) {
+          rawDirectedEdges.push({
+            from: fromNodeId,
+            to: toNodeId,
+            leg: leg,
+          });
         }
       });
 
-      if (rawSequence[0] !== 'NODE_ORIGIN') {
-        rawSequence.unshift('NODE_ORIGIN');
-      }
-      if (rawSequence[rawSequence.length - 1] !== 'NODE_DESTINATION') {
-        rawSequence.push('NODE_DESTINATION');
+      if (sequence[0] !== 'NODE_ORIGIN') sequence.unshift('NODE_ORIGIN');
+      if (sequence[sequence.length - 1] !== 'NODE_DESTINATION') {
+        sequence.push('NODE_DESTINATION');
       }
 
-      // Filter consecutive duplicate node IDs in the sequence
-      const cleanSequence = rawSequence.filter(
-        (nodeId, idx) => idx === 0 || nodeId !== rawSequence[idx - 1]
-      );
-
-      processedRoutes.push({
-        route,
-        legs,
-        sequence: cleanSequence,
-      });
+      routeNodeSequences.push(sequence);
     });
 
-    if (processedRoutes.length === 0) {
+    if (rawDirectedEdges.length === 0) {
       if (routesEmptyState) routesEmptyState.classList.remove('hidden');
       return;
     }
 
-    // 2. Compute normalized topological progress for intermediate nodes
-    const nodeProgressSums = new Map();
-    const nodeProgressCounts = new Map();
-
-    processedRoutes.forEach(({ sequence }) => {
-      const len = sequence.length;
-      sequence.forEach((nodeId, idx) => {
-        if (nodeId === 'NODE_ORIGIN' || nodeId === 'NODE_DESTINATION') return;
-        const progress = len > 2 ? idx / (len - 1) : 0.5;
-        nodeProgressSums.set(
-          nodeId,
-          (nodeProgressSums.get(nodeId) || 0) + progress
-        );
-        nodeProgressCounts.set(
-          nodeId,
-          (nodeProgressCounts.get(nodeId) || 0) + 1
-        );
-      });
-    });
-
-    const intermediateNodes = Array.from(stopMetadataMap.keys());
-    const nodeAvgProgress = new Map();
-    intermediateNodes.forEach((nodeId) => {
-      const sum = nodeProgressSums.get(nodeId) || 0.5;
-      const count = nodeProgressCounts.get(nodeId) || 1;
-      nodeAvgProgress.set(nodeId, sum / count);
-    });
-
-    // Sort intermediate nodes by average topological progress along the journey
-    intermediateNodes.sort((a, b) => {
-      const pA = nodeAvgProgress.get(a) || 0;
-      const pB = nodeAvgProgress.get(b) || 0;
-      return pA - pB;
-    });
-
-    // Build forward DAG adjacency list
-    const forwardAdj = new Map();
-    intermediateNodes.forEach((n) => forwardAdj.set(n, new Set()));
-    forwardAdj.set('NODE_ORIGIN', new Set());
-
-    processedRoutes.forEach(({ sequence }) => {
-      for (let i = 0; i < sequence.length - 1; i++) {
-        const u = sequence[i];
-        const v = sequence[i + 1];
-        if (u === v || u === 'NODE_DESTINATION' || v === 'NODE_ORIGIN') continue;
-
-        if (v === 'NODE_DESTINATION' || u === 'NODE_ORIGIN') {
-          if (forwardAdj.has(u)) forwardAdj.get(u).add(v);
-        } else {
-          const pU = nodeAvgProgress.get(u) || 0;
-          const pV = nodeAvgProgress.get(v) || 0;
-          if (pU <= pV + 0.0001) {
-            if (forwardAdj.has(u)) forwardAdj.get(u).add(v);
-          }
-        }
-      }
-    });
-
-    // Assign topological levels: NODE_ORIGIN is 0
+    // 2. Compute topological longest-path levels on the actual route directed graph
     const nodeLevels = new Map();
     nodeLevels.set('NODE_ORIGIN', 0);
 
-    intermediateNodes.forEach((v) => {
-      let maxParentLevel = 0;
-      if (forwardAdj.get('NODE_ORIGIN') && forwardAdj.get('NODE_ORIGIN').has(v)) {
-        maxParentLevel = Math.max(maxParentLevel, 0);
-      }
-      intermediateNodes.forEach((u) => {
-        if (forwardAdj.get(u) && forwardAdj.get(u).has(v)) {
-          const uLvl = nodeLevels.get(u);
-          if (uLvl !== undefined) {
-            maxParentLevel = Math.max(maxParentLevel, uLvl);
-          }
+    const allNodeIds = Array.from(
+      new Set(['NODE_ORIGIN', 'NODE_DESTINATION', ...stopMetadataMap.keys()])
+    );
+    allNodeIds.forEach((id) => {
+      if (id !== 'NODE_ORIGIN') nodeLevels.set(id, 1);
+    });
+
+    // Relaxation loop using actual directed route edges
+    let changed = true;
+    let iterations = 0;
+    const maxIterations = Math.max(15, allNodeIds.length * 2);
+
+    while (changed && iterations < maxIterations) {
+      changed = false;
+      iterations++;
+
+      rawDirectedEdges.forEach(({ from, to }) => {
+        if (to === 'NODE_ORIGIN') return;
+        const fromLevel = nodeLevels.get(from) ?? 0;
+        const toLevel = nodeLevels.get(to) ?? 1;
+        if (toLevel < fromLevel + 1) {
+          nodeLevels.set(to, fromLevel + 1);
+          changed = true;
         }
       });
-      nodeLevels.set(v, maxParentLevel + 1);
-    });
+    }
 
     // Compact intermediate levels into strictly consecutive levels (no vertical gaps)
     const usedLevels = Array.from(
-      new Set(Array.from(nodeLevels.values()).filter((l) => l > 0))
+      new Set(
+        Array.from(stopMetadataMap.keys())
+          .map((id) => nodeLevels.get(id))
+          .filter((l) => l !== undefined && l > 0)
+      )
     ).sort((a, b) => a - b);
 
     const levelCompactor = new Map();
@@ -1013,10 +968,10 @@ document.addEventListener('DOMContentLoaded', () => {
       levelCompactor.set(lvl, idx + 1);
     });
 
-    intermediateNodes.forEach((v) => {
-      const oldLvl = nodeLevels.get(v);
+    stopMetadataMap.forEach((_, nodeId) => {
+      const oldLvl = nodeLevels.get(nodeId);
       if (oldLvl !== undefined && levelCompactor.has(oldLvl)) {
-        nodeLevels.set(v, levelCompactor.get(oldLvl));
+        nodeLevels.set(nodeId, levelCompactor.get(oldLvl));
       }
     });
 
@@ -1146,51 +1101,49 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Build Aggregated Edges Map (Strictly Downward, Consolidated, No Overlaps)
     const edgesMap = new Map();
 
-    processedRoutes.forEach(({ legs, sequence }) => {
-      for (let i = 0; i < sequence.length - 1; i++) {
-        const fromNodeId = sequence[i];
-        const toNodeId = sequence[i + 1];
-        if (fromNodeId === toNodeId) continue;
+    rawDirectedEdges.forEach(({ from, to, leg }) => {
+      const fromLevel = nodeLevels.get(from) ?? 0;
+      const toLevel = nodeLevels.get(to) ?? destLevel;
 
-        const fromLevel = nodeLevels.get(fromNodeId) || 0;
-        const toLevel = nodeLevels.get(toNodeId) || destLevel;
+      // STRICT RULE: Only include edges pointing downwards (toLevel > fromLevel)
+      if (toLevel <= fromLevel) return;
 
-        // STRICT RULE: Only include edges pointing downwards (toLevel > fromLevel)
-        if (toLevel <= fromLevel) continue;
+      const edgeKey = `${from}->${to}`;
 
-        const leg = legs[i] || legs[legs.length - 1] || {};
-        const edgeKey = `${fromNodeId}->${toNodeId}`;
-
-        if (edgesMap.has(edgeKey)) {
-          const existing = edgesMap.get(edgeKey);
-          if (leg.line_name) existing.lines.add(leg.line_name);
-          if (leg.operator_name) existing.operators.add(leg.operator_name);
-          if (
-            leg.duration_minutes &&
-            (!existing.minDuration || leg.duration_minutes < existing.minDuration)
-          ) {
-            existing.minDuration = leg.duration_minutes;
-          }
-        } else {
-          const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
-          const lines = new Set();
-          if (leg.line_name) lines.add(leg.line_name);
-          const operators = new Set();
-          if (leg.operator_name) operators.add(leg.operator_name);
-
-          edgesMap.set(edgeKey, {
-            id: `edge_${fromNodeId}_${toNodeId}`,
-            from: fromNodeId,
-            to: toNodeId,
-            fromLevel,
-            toLevel,
-            leg: leg,
-            lines: lines,
-            operators: operators,
-            minDuration: leg.duration_minutes || null,
-            modeCfg: modeCfg,
-          });
+      if (edgesMap.has(edgeKey)) {
+        const existing = edgesMap.get(edgeKey);
+        if (leg.line_name) existing.lines.add(leg.line_name);
+        if (leg.operator_name) existing.operators.add(leg.operator_name);
+        if (
+          leg.duration_minutes &&
+          (!existing.minDuration || leg.duration_minutes < existing.minDuration)
+        ) {
+          existing.minDuration = leg.duration_minutes;
         }
+        // If one of the parallel paths is a transit mode (bus/train), prefer transit over walk
+        if (existing.leg.leg_type === 'walk' && leg.leg_type !== 'walk') {
+          existing.leg = leg;
+          existing.modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
+        }
+      } else {
+        const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
+        const lines = new Set();
+        if (leg.line_name) lines.add(leg.line_name);
+        const operators = new Set();
+        if (leg.operator_name) operators.add(leg.operator_name);
+
+        edgesMap.set(edgeKey, {
+          id: `edge_${from}_${to}`,
+          from: from,
+          to: to,
+          fromLevel: fromLevel,
+          toLevel: toLevel,
+          leg: leg,
+          lines: lines,
+          operators: operators,
+          minDuration: leg.duration_minutes || null,
+          modeCfg: modeCfg,
+        });
       }
     });
 
