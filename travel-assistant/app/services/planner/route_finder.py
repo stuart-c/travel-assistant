@@ -611,6 +611,9 @@ def find_routes(
         if stage_idx > max_stages + 2:
             continue
 
+        if not is_valid_leg_sequence(compressed_legs):
+            continue
+
         transit_legs_count = sum(
             1 for leg in compressed_legs if leg.leg_type == "transit"
         )
@@ -665,18 +668,71 @@ def find_routes(
     return pruned_templates[:max_routes]
 
 
+def get_leg_mode(leg: RouteLeg) -> str:
+    """Determine the effective transport mode of a route leg."""
+    if leg.leg_type in ("walk", "interchange", "platform_transfer"):
+        return "walk"
+    if leg.transport_mode:
+        m = leg.transport_mode.strip().lower()
+        if m in ("walk", "walking", "foot", "interchange", "platform_transfer"):
+            return "walk"
+        return m
+    return "walk" if leg.leg_type == "walk" else "transit"
+
+
+def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
+    """Validate that a sequence of route legs satisfies modal sequence rules:
+
+    1. Walking cannot be followed by more walking (no consecutive walking legs).
+    2. A maximum of 3 legs of the same transport mode may occur consecutively in a row.
+
+    Args:
+        legs: Ordered list of RouteLeg objects.
+
+    Returns:
+        True if the sequence complies with all rules, False otherwise.
+    """
+    if not legs:
+        return False
+
+    consecutive_count = 0
+    previous_mode: Optional[str] = None
+
+    for leg in legs:
+        mode = get_leg_mode(leg)
+
+        if mode == "walk" and previous_mode == "walk":
+            # Rule 1: Walking cannot be followed by more walking
+            return False
+
+        if mode == previous_mode:
+            consecutive_count += 1
+            if consecutive_count > 3:
+                # Rule 2: Maximum of 3 of the same mode in a row
+                return False
+        else:
+            previous_mode = mode
+            consecutive_count = 1
+
+    return True
+
+
 def prune_route_templates(
     routes: List[RouteTemplate],
     max_routes: int = 50,
 ) -> List[RouteTemplate]:
-    """Apply Pareto optimisation and corridor diversity rules to preserve distinct viable route options."""
+    """Apply Pareto optimisation, modal sequence validation, and corridor diversity rules to preserve distinct viable route options."""
     if not routes:
+        return []
+
+    valid_routes = [r for r in routes if is_valid_leg_sequence(r.legs)]
+    if not valid_routes:
         return []
 
     unique_routes: List[RouteTemplate] = []
     seen_signatures: Set[str] = set()
 
-    for r in routes:
+    for r in valid_routes:
         sig_elements = []
         for leg in r.legs:
             sig_elements.append(
@@ -768,5 +824,7 @@ def prune_route_templates(
 
 __all__ = [
     "find_routes",
+    "get_leg_mode",
+    "is_valid_leg_sequence",
     "prune_route_templates",
 ]

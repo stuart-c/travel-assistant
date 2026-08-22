@@ -18,7 +18,9 @@ from app.services.planner import (
     find_routes,
     format_minutes_to_time,
     get_access_edges,
+    get_leg_mode,
     is_timetable_active,
+    is_valid_leg_sequence,
     normalise_id,
     parse_time_to_minutes,
     plan_journey,
@@ -33,6 +35,8 @@ __all__ = [
     "find_routes",
     "plan_journey",
     "prune_route_templates",
+    "is_valid_leg_sequence",
+    "get_leg_mode",
     # Models
     "RouteTemplate",
     "RouteLeg",
