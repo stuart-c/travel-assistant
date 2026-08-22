@@ -480,6 +480,7 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
                 "train_timetables",
                 "bus_timetables",
                 "walking",
+                "journey_routes",
             )
             is_syncable = table_name in _syncable or table_name in (
                 "locations",

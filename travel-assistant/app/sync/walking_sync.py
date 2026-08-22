@@ -435,4 +435,13 @@ def sync_walking_routes(
 
         if result.get("status") == "success":
             result["bus_stops_added"] = bus_stops_added
+            try:
+                from app.sync.worker import request_sync
+
+                request_sync("journey_routes")
+            except Exception as sync_exc:
+                logger.warning(
+                    "Failed to queue journey routes sync after walking discovery: %s",
+                    sync_exc,
+                )
         return result

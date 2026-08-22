@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added hourly background synchronisation job (`journey_routes`) that automatically discovers and computes multi-modal topological routes for configured journeys lacking calculated routes (`calculated_routes is NULL`), with automatic asynchronous re-calculation triggers on journey creation/modification and upon successful walking or transit timetable synchronisations.
 - Added `calculated_routes` JSON column to the `Journey` model and SQLite `journeys` table with automated schema migration, and added a 2-tab navigation interface (**Journey Details** and **Calculated Routes**) in the Journey modal dialogue that displays raw calculated route paths when data is present and automatically clears the field upon modifying journey details.
 - Added multi-modal Journey Planner library service (`app/services/planner/`) implementing Mode 1 topological route discovery with NetworkX multi-directed graph traversal and 4-rule pruning (Last Possible Interchange, Subsumed Detours, Pareto Dominance, Senseless Detours), and Mode 2 scheduled itinerary planning with an in-memory RAPTOR solver supporting `depart`, `arrive`, and `window` timing constraints, transfer slack scoring, and 3-tier transfer hierarchy resolution.
 - Added comprehensive unit test suite (`app/tests/test_journey_planner.py`) verifying topological path discovery, RAPTOR trip scheduling, date validity filtering, transfer hierarchy precedence, and descriptive error diagnostics.

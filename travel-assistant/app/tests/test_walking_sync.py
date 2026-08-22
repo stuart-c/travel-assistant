@@ -1,6 +1,6 @@
 """Unit and integration tests for walking route discovery and Google Directions synchronisation."""
 
-from unittest.mock import patch
+from unittest.mock import call, patch
 from flask import Flask
 
 from app.datasources.exceptions import DataSourceAuthError
@@ -441,7 +441,7 @@ def test_trigger_walking_sync_if_changed_calls_request_sync(app: Flask) -> None:
             )
             mock_request_sync.assert_not_called()
 
-            # With location changes — should queue "walking"
+            # With location changes — should queue "walking" and "journey_routes"
             _trigger_syncs_if_changed(
                 {"added": 1, "updated": 0, "deleted": 0},
                 {
@@ -456,7 +456,9 @@ def test_trigger_walking_sync_if_changed_calls_request_sync(app: Flask) -> None:
                     "updated": [],
                 },
             )
-            mock_request_sync.assert_called_once_with("walking")
+            mock_request_sync.assert_has_calls(
+                [call("walking"), call("journey_routes")]
+            )
 
 
 def test_sync_walking_routes_timetable_stop_resolution(app: Flask) -> None:
@@ -709,7 +711,9 @@ def test_sync_walking_routes_bus_stops_added_triggers_bus_sync(app: Flask) -> No
                 assert res["status"] == "success"
                 assert res["records"] == 1
                 assert res["bus_stops_added"] == 1
-                mock_req.assert_called_once_with("bus_timetables")
+                mock_req.assert_has_calls(
+                    [call("bus_timetables"), call("journey_routes")]
+                )
 
 
 def test_sync_walking_routes_rail_stops_does_not_trigger_bus_sync(app: Flask) -> None:
@@ -755,4 +759,4 @@ def test_sync_walking_routes_rail_stops_does_not_trigger_bus_sync(app: Flask) ->
                 assert res["status"] == "success"
                 assert res["records"] == 1
                 assert res["bus_stops_added"] == 0
-                mock_req.assert_not_called()
+                mock_req.assert_called_once_with("journey_routes")
