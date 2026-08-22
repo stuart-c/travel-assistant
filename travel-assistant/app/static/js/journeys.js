@@ -655,14 +655,62 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  function createEdgeTooltip(leg) {
+  function sanitiseStopName(name) {
+    if (!name) return '';
+    return String(name)
+      .replace(/\brailway station\b/gi, 'Rail Station')
+      .trim();
+  }
+
+  function getStopNodeId(id, name, type) {
+    const cleanName = sanitiseStopName(name);
+    const normName = cleanName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (normName) {
+      return `stop_${normName}`;
+    }
+    const normId = (id || '')
+      .replace(/^(atco|naptan|crs|tiploc|ha|custom):/i, '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (normId) {
+      return `stop_${normId}`;
+    }
+    return 'stop_unknown';
+  }
+
+  function getStopIcon(type, name) {
+    const t = String(type || '').toLowerCase();
+    const n = String(name || '').toLowerCase();
+    if (t === 'rail' || t === 'train' || n.includes('rail') || n.includes('station')) return '🚆';
+    if (t === 'bus') return '🚌';
+    if (t === 'metro' || t === 'subway') return '🚇';
+    if (t === 'tram') return '🚋';
+    if (t === 'ferry') return '⛴️';
+    if (t === 'air' || t === 'flight') return '✈️';
+    return '🚏';
+  }
+
+  function createEdgeTooltip(leg, linesSet, operatorsSet, minDuration) {
     const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
     const modeName = leg.transport_mode
       ? leg.transport_mode.charAt(0).toUpperCase() + leg.transport_mode.slice(1)
       : leg.leg_type === 'walk'
       ? 'Walking'
       : 'Transit';
-    const lineHeading = leg.line_name ? `${modeName} ${leg.line_name}` : modeName;
+
+    const linesList =
+      linesSet && linesSet.size > 0
+        ? Array.from(linesSet).filter(Boolean)
+        : leg.line_name
+        ? [leg.line_name]
+        : [];
+    const lineHeading =
+      linesList.length > 0 ? `${modeName} ${linesList.join(', ')}` : modeName;
 
     const parts = [];
     parts.push(
@@ -671,23 +719,34 @@ document.addEventListener('DOMContentLoaded', () => {
       )}</div>`
     );
 
-    if (leg.operator_name) {
+    const opsList =
+      operatorsSet && operatorsSet.size > 0
+        ? Array.from(operatorsSet).filter(Boolean)
+        : leg.operator_name
+        ? [leg.operator_name]
+        : [];
+    if (opsList.length > 0) {
       parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Operator:</strong> ${escapeHtml(
-          leg.operator_name
-        )}</div>`
+        `<div style="margin-bottom: 2px;"><strong>Operator${
+          opsList.length > 1 ? 's' : ''
+        }:</strong> ${escapeHtml(opsList.join(', '))}</div>`
       );
     }
-    if (leg.duration_minutes !== undefined && leg.duration_minutes !== null) {
+    const dur =
+      minDuration !== undefined && minDuration !== null
+        ? minDuration
+        : leg.duration_minutes;
+    if (dur !== undefined && dur !== null) {
       parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Duration:</strong> ~${leg.duration_minutes} min${
-          leg.duration_minutes === 1 ? '' : 's'
+        `<div style="margin-bottom: 2px;"><strong>Duration:</strong> ~${dur} min${
+          dur === 1 ? '' : 's'
         }</div>`
       );
     }
     if (leg.distance_m) {
       const distKm = (leg.distance_m / 1000).toFixed(1);
-      const distStr = leg.distance_m >= 1000 ? `${distKm} km` : `${leg.distance_m} m`;
+      const distStr =
+        leg.distance_m >= 1000 ? `${distKm} km` : `${leg.distance_m} m`;
       parts.push(
         `<div style="margin-bottom: 2px;"><strong>Distance:</strong> ${distStr}</div>`
       );
@@ -733,7 +792,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!routes || routes.length === 0) {
       if (routesEmptyState) routesEmptyState.classList.remove('hidden');
       if (routesSummaryText) {
-        routesSummaryText.textContent = 'No calculated routes available for this journey.';
+        routesSummaryText.textContent =
+          'No calculated routes available for this journey.';
       }
       return;
     }
@@ -747,18 +807,178 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const dark = isDarkMode();
-    const nodesMap = new Map();
-    const edgesList = [];
-    const edgeKeySet = new Set();
-
     const originName = (item && item.from_name) || 'Origin';
     const destName = (item && item.to_name) || 'Destination';
     const originId = (item && item.from_id) || '';
     const destId = (item && item.to_id) || '';
 
-    // 1. Fixed Origin Node (Top)
+    const normOriginId = (originId || '')
+      .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
+      .trim()
+      .toLowerCase();
+    const normDestId = (destId || '')
+      .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
+      .trim()
+      .toLowerCase();
+    const normOriginName = (originName || '').trim().toLowerCase();
+    const normDestName = (destName || '').trim().toLowerCase();
+
+    function isOriginEndpoint(id, name, isFirstLeg) {
+      if (isFirstLeg) return true;
+      const nName = (name || '').trim().toLowerCase();
+      const nId = (id || '')
+        .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
+        .trim()
+        .toLowerCase();
+      return (
+        (normOriginName && nName === normOriginName) ||
+        (normOriginId && nId === normOriginId)
+      );
+    }
+
+    function isDestEndpoint(id, name, isLastLeg) {
+      if (isLastLeg) return true;
+      const nName = (name || '').trim().toLowerCase();
+      const nId = (id || '')
+        .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
+        .trim()
+        .toLowerCase();
+      return (
+        (normDestName && nName === normDestName) ||
+        (normDestId && nId === normDestId)
+      );
+    }
+
+    // 1. Process routes to extract node sequences and raw node metadata
+    const processedRoutes = [];
+    const stopMetadataMap = new Map(); // nodeId -> { name, type, id }
+
+    routes.forEach((route) => {
+      if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
+      const legs = route.legs;
+      const sequence = [];
+
+      legs.forEach((leg, index) => {
+        const isFirstLeg = index === 0;
+        const isLastLeg = index === legs.length - 1;
+
+        let fromNodeId;
+        if (isOriginEndpoint(leg.from_id, leg.from_name, isFirstLeg)) {
+          fromNodeId = 'NODE_ORIGIN';
+        } else {
+          fromNodeId = getStopNodeId(leg.from_id, leg.from_name, leg.from_type);
+          if (!stopMetadataMap.has(fromNodeId)) {
+            stopMetadataMap.set(fromNodeId, {
+              name: sanitiseStopName(leg.from_name) || 'Stop',
+              type: leg.from_type,
+              id: leg.from_id,
+            });
+          }
+        }
+
+        let toNodeId;
+        if (isDestEndpoint(leg.to_id, leg.to_name, isLastLeg)) {
+          toNodeId = 'NODE_DESTINATION';
+        } else {
+          toNodeId = getStopNodeId(leg.to_id, leg.to_name, leg.to_type);
+          if (!stopMetadataMap.has(toNodeId)) {
+            stopMetadataMap.set(toNodeId, {
+              name: sanitiseStopName(leg.to_name) || 'Stop',
+              type: leg.to_type,
+              id: leg.to_id,
+            });
+          }
+        }
+
+        if (sequence.length === 0) {
+          sequence.push(fromNodeId);
+        } else if (sequence[sequence.length - 1] !== fromNodeId) {
+          sequence.push(fromNodeId);
+        }
+
+        if (sequence[sequence.length - 1] !== toNodeId) {
+          sequence.push(toNodeId);
+        }
+      });
+
+      if (sequence[0] !== 'NODE_ORIGIN') {
+        sequence.unshift('NODE_ORIGIN');
+      }
+      if (sequence[sequence.length - 1] !== 'NODE_DESTINATION') {
+        sequence.push('NODE_DESTINATION');
+      }
+
+      processedRoutes.push({
+        route,
+        legs,
+        sequence,
+      });
+    });
+
+    if (processedRoutes.length === 0) {
+      if (routesEmptyState) routesEmptyState.classList.remove('hidden');
+      return;
+    }
+
+    // 2. Compute topological levels using longest-path relaxation
+    const nodeLevels = new Map();
+    nodeLevels.set('NODE_ORIGIN', 0);
+
+    // Initialise intermediate node levels
+    processedRoutes.forEach(({ sequence }) => {
+      sequence.forEach((nodeId, idx) => {
+        if (nodeId === 'NODE_ORIGIN' || nodeId === 'NODE_DESTINATION') return;
+        const current = nodeLevels.get(nodeId) || Infinity;
+        nodeLevels.set(nodeId, Math.min(current, Math.max(1, idx)));
+      });
+    });
+
+    // Relaxation loop to ensure level[to] >= level[from] + 1 for every leg
+    let changed = true;
+    let iterations = 0;
+    const maxIterations = 30;
+
+    while (changed && iterations < maxIterations) {
+      changed = false;
+      iterations++;
+
+      processedRoutes.forEach(({ sequence }) => {
+        for (let i = 0; i < sequence.length - 1; i++) {
+          const u = sequence[i];
+          const v = sequence[i + 1];
+          if (u === v || u === 'NODE_DESTINATION' || v === 'NODE_ORIGIN') continue;
+
+          const uLevel = nodeLevels.get(u) || 0;
+          if (v !== 'NODE_DESTINATION') {
+            const vLevel = nodeLevels.get(v) || uLevel + 1;
+            if (vLevel < uLevel + 1) {
+              nodeLevels.set(v, uLevel + 1);
+              changed = true;
+            }
+          }
+        }
+      });
+    }
+
+    let maxIntermediateLevel = 0;
+    nodeLevels.forEach((lvl, nId) => {
+      if (nId !== 'NODE_ORIGIN' && nId !== 'NODE_DESTINATION') {
+        if (lvl > maxIntermediateLevel) {
+          maxIntermediateLevel = lvl;
+        }
+      }
+    });
+
+    const destLevel = Math.max(1, maxIntermediateLevel + 1);
+    nodeLevels.set('NODE_DESTINATION', destLevel);
+
+    // 3. Build Vis.js Nodes Map
+    const nodesMap = new Map();
+
+    // 3.1 Fixed Origin Node (Top: Level 0)
     nodesMap.set('NODE_ORIGIN', {
       id: 'NODE_ORIGIN',
+      level: 0,
       label: `🚩 ${originName}\n(Start)`,
       title: `Origin: ${originName}${originId ? ` (${originId})` : ''}`,
       shape: 'box',
@@ -792,9 +1012,52 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     });
 
-    // 2. Fixed Destination Node (Bottom)
+    // 3.2 Intermediate Stop Nodes (Deduplicated, with Mode Icon and Explicit Level)
+    stopMetadataMap.forEach((meta, nodeId) => {
+      const stopLevel = nodeLevels.get(nodeId) || 1;
+      const icon = getStopIcon(meta.type, meta.name);
+      nodesMap.set(nodeId, {
+        id: nodeId,
+        level: stopLevel,
+        label: `${icon} ${meta.name}`,
+        title: `Stop: ${meta.name}${meta.type ? ` (${meta.type})` : ''}${
+          meta.id ? ` [${meta.id}]` : ''
+        }`,
+        shape: 'box',
+        margin: { top: 8, bottom: 8, left: 12, right: 12 },
+        shapeProperties: { borderRadius: 8 },
+        color: {
+          background: dark ? '#1e293b' : '#f8fafc',
+          border: dark ? '#475569' : '#cbd5e1',
+          highlight: {
+            background: dark ? '#334155' : '#e2e8f0',
+            border: dark ? '#94a3b8' : '#64748b',
+          },
+          hover: {
+            background: dark ? '#334155' : '#e2e8f0',
+            border: dark ? '#94a3b8' : '#64748b',
+          },
+        },
+        font: {
+          color: dark ? '#f1f5f9' : '#1e293b',
+          size: 12,
+          face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        },
+        borderWidth: 1.5,
+        shadow: {
+          enabled: true,
+          color: dark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
+          size: 4,
+          x: 0,
+          y: 1,
+        },
+      });
+    });
+
+    // 3.3 Fixed Destination Node (Bottom: Level destLevel)
     nodesMap.set('NODE_DESTINATION', {
       id: 'NODE_DESTINATION',
+      level: destLevel,
       label: `🏁 ${destName}\n(End)`,
       title: `Destination: ${destName}${destId ? ` (${destId})` : ''}`,
       shape: 'box',
@@ -828,111 +1091,74 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     });
 
-    function getStopNodeId(id, name, type) {
-      if (!id && !name) return 'stop_unknown';
-      return `stop_${type || 'loc'}_${id || name}`;
-    }
+    // 4. Build Aggregated Edges Map
+    const edgesMap = new Map();
 
-    function addStopNode(nodeId, name, type) {
-      if (nodesMap.has(nodeId)) return;
-      nodesMap.set(nodeId, {
-        id: nodeId,
-        label: `🚏 ${name || 'Stop'}`,
-        title: `Stop: ${name || 'Stop'}${type ? ` (${type})` : ''}`,
-        shape: 'box',
-        margin: { top: 8, bottom: 8, left: 12, right: 12 },
-        shapeProperties: { borderRadius: 8 },
-        color: {
-          background: dark ? '#1e293b' : '#f8fafc',
-          border: dark ? '#475569' : '#cbd5e1',
-          highlight: {
-            background: dark ? '#334155' : '#e2e8f0',
-            border: dark ? '#94a3b8' : '#64748b',
-          },
-          hover: {
-            background: dark ? '#334155' : '#e2e8f0',
-            border: dark ? '#94a3b8' : '#64748b',
-          },
-        },
-        font: {
-          color: dark ? '#f1f5f9' : '#1e293b',
-          size: 12,
-          face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        },
-        borderWidth: 1.5,
-        shadow: {
-          enabled: true,
-          color: dark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
-          size: 4,
-          x: 0,
-          y: 1,
-        },
-      });
-    }
+    processedRoutes.forEach(({ legs, sequence }) => {
+      for (let i = 0; i < sequence.length - 1; i++) {
+        const fromNodeId = sequence[i];
+        const toNodeId = sequence[i + 1];
+        if (fromNodeId === toNodeId) continue;
 
-    // 3. Process each route corridor and its legs
-    routes.forEach(route => {
-      if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
+        const leg = legs[i] || legs[legs.length - 1] || {};
+        const edgeKey = `${fromNodeId}->${toNodeId}`;
 
-      const legs = route.legs;
-      legs.forEach((leg, index) => {
-        let fromNodeId;
-        if (
-          index === 0 ||
-          leg.from_id === originId ||
-          leg.from_name === originName
-        ) {
-          fromNodeId = 'NODE_ORIGIN';
+        if (edgesMap.has(edgeKey)) {
+          const existing = edgesMap.get(edgeKey);
+          if (leg.line_name) existing.lines.add(leg.line_name);
+          if (leg.operator_name) existing.operators.add(leg.operator_name);
+          if (
+            leg.duration_minutes &&
+            (!existing.minDuration || leg.duration_minutes < existing.minDuration)
+          ) {
+            existing.minDuration = leg.duration_minutes;
+          }
         } else {
-          fromNodeId = getStopNodeId(leg.from_id, leg.from_name, leg.from_type);
-          addStopNode(fromNodeId, leg.from_name, leg.from_type);
-        }
+          const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
+          const lines = new Set();
+          if (leg.line_name) lines.add(leg.line_name);
+          const operators = new Set();
+          if (leg.operator_name) operators.add(leg.operator_name);
 
-        let toNodeId;
-        if (
-          index === legs.length - 1 ||
-          leg.to_id === destId ||
-          leg.to_name === destName
-        ) {
-          toNodeId = 'NODE_DESTINATION';
-        } else {
-          toNodeId = getStopNodeId(leg.to_id, leg.to_name, leg.to_type);
-          addStopNode(toNodeId, leg.to_name, leg.to_type);
-        }
-
-        const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
-        const edgeKey = `${fromNodeId}->${toNodeId}:${leg.transport_mode || leg.leg_type}:${leg.line_name || ''}:${leg.operator_name || ''}`;
-
-        if (!edgeKeySet.has(edgeKey)) {
-          edgeKeySet.add(edgeKey);
-          edgesList.push({
-            id: `edge_${edgeKeySet.size}`,
+          edgesMap.set(edgeKey, {
+            id: `edge_${edgesMap.size + 1}`,
             from: fromNodeId,
             to: toNodeId,
-            arrows: {
-              to: {
-                enabled: true,
-                scaleFactor: 0.85,
-              },
-            },
-            width: 2.5,
-            color: {
-              color: modeCfg.colour,
-              highlight: modeCfg.colour,
-              hover: modeCfg.colour,
-              opacity: 0.9,
-            },
-            dashes: modeCfg.dashes,
-            title: createEdgeTooltip(leg),
-            smooth: {
-              type: 'cubicBezier',
-              forceDirection: 'vertical',
-              roundness: 0.35,
-            },
+            leg: leg,
+            lines: lines,
+            operators: operators,
+            minDuration: leg.duration_minutes || null,
+            modeCfg: modeCfg,
           });
         }
-      });
+      }
     });
+
+    const edgesList = Array.from(edgesMap.values()).map((e) => ({
+      id: e.id,
+      from: e.from,
+      to: e.to,
+      arrows: {
+        to: {
+          enabled: true,
+          scaleFactor: 0.85,
+        },
+      },
+      width: 2.5,
+      color: {
+        color: e.modeCfg.colour,
+        highlight: e.modeCfg.colour,
+        hover: e.modeCfg.colour,
+        opacity: 0.9,
+      },
+      dashes: e.modeCfg.dashes,
+      title: createEdgeTooltip(e.leg, e.lines, e.operators, e.minDuration),
+      smooth: {
+        type: 'cubicBezier',
+        forceDirection: 'vertical',
+        roundness: 0.35,
+      },
+    }));
 
     if (typeof vis === 'undefined' || !vis.Network) {
       console.warn('vis-network library not loaded.');
@@ -950,8 +1176,12 @@ document.addEventListener('DOMContentLoaded', () => {
           enabled: true,
           direction: 'UD', // Vertical DAG layout (top to bottom)
           sortMethod: 'directed',
-          levelSeparation: 90,
-          nodeSpacing: 180,
+          levelSeparation: 110,
+          nodeSpacing: 220,
+          treeSpacing: 260,
+          blockShifting: true,
+          edgeMinimization: true,
+          parentCentralization: true,
           shakeTowards: 'leaves',
         },
       },
