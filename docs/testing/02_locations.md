@@ -32,7 +32,7 @@ Validate custom location creation, geographic coordinate validation, Home Assist
 
 ### Scenario 2.3: Adding a Custom Location via Modal
 1. Click the **+ Add Location** button (top right header).
-2. Verify the modal dialog opens titled `Add New Location`.
+2. Verify the modal dialogue opens titled `Add New Location`.
 3. Enter the following details:
    * **Location Name**: `St Pancras International Library`
    * **Latitude**: `51.5310`

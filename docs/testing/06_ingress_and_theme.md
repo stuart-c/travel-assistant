@@ -27,14 +27,14 @@ Validate Home Assistant Ingress dynamic subpath routing, static asset URL resolu
 3. **Expected Result**:
    * Navigation bar folds or scrolls cleanly without horizontal overflow clipping.
    * Grid.js tables horizontally scroll smoothly with sticky headers/actions where appropriate.
-   * Modal dialogs scale fluidly to `w-[90vw]` and maintain accessible close buttons without obscuring input fields.
+   * Modal dialogues scale fluidly to `w-[90vw]` and maintain accessible close buttons without obscuring input fields.
 
 ### Scenario 6.3: Dark & Light Theme Contrast
 1. Toggle the operating system / browser preference to `prefers-color-scheme: dark`.
 2. Inspect the dashboard, credentials, and table configuration views.
 3. **Expected Result**:
    * Background switches to dark slate (`bg-slate-900`/`bg-slate-950`).
-   * Text colors maintain high contrast (`text-slate-100`/`text-white`).
+   * Text colours maintain high contrast (`text-slate-100`/`text-white`).
    * Input borders, badges, and modal backdrops render with distinct separation without purple-on-dark cliches.
 
 ---
