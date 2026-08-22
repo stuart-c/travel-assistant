@@ -72,6 +72,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const timeWindowsEmptyNotice = document.getElementById('time-windows-empty-notice');
   const addTimeWindowBtn = document.getElementById('add-time-window-btn');
 
+  // Modal Tabs & Calculated Routes Elements
+  const tabDetails = document.getElementById('journey-tab-details');
+  const tabRoutes = document.getElementById('journey-tab-routes');
+  const panelDetails = document.getElementById('journey-panel-details');
+  const panelRoutes = document.getElementById('journey-panel-routes');
+  const calculatedRoutesContent = document.getElementById('journey-calculated-routes-content');
+
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
   const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
   const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || (() => 'pin_drop');
@@ -559,6 +566,78 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // --- Modal Tabs & Calculated Routes Management ---
+  let isRoutesTabEnabled = false;
+
+  function setRoutesTabState(enabled, content = null) {
+    isRoutesTabEnabled = Boolean(enabled);
+    if (tabRoutes) {
+      tabRoutes.disabled = !isRoutesTabEnabled;
+      if (isRoutesTabEnabled) {
+        tabRoutes.className =
+          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
+      } else {
+        tabRoutes.className =
+          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
+      }
+    }
+
+    if (calculatedRoutesContent) {
+      if (content !== null && content !== undefined) {
+        if (typeof content === 'string') {
+          try {
+            const parsed = JSON.parse(content);
+            calculatedRoutesContent.textContent = JSON.stringify(parsed, null, 2);
+          } catch (e) {
+            calculatedRoutesContent.textContent = content;
+          }
+        } else {
+          calculatedRoutesContent.textContent = JSON.stringify(content, null, 2);
+        }
+      } else {
+        calculatedRoutesContent.textContent = '';
+      }
+    }
+  }
+
+  function switchTab(targetTab) {
+    if (targetTab === 'routes' && !isRoutesTabEnabled) return;
+
+    if (targetTab === 'routes') {
+      if (panelDetails) panelDetails.classList.add('hidden');
+      if (panelRoutes) panelRoutes.classList.remove('hidden');
+
+      if (tabRoutes) {
+        tabRoutes.className =
+          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold';
+      }
+      if (tabDetails) {
+        tabDetails.className =
+          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
+      }
+    } else {
+      if (panelRoutes) panelRoutes.classList.add('hidden');
+      if (panelDetails) panelDetails.classList.remove('hidden');
+
+      if (tabDetails) {
+        tabDetails.className =
+          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold';
+      }
+      if (tabRoutes) {
+        if (isRoutesTabEnabled) {
+          tabRoutes.className =
+            'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
+        } else {
+          tabRoutes.className =
+            'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
+        }
+      }
+    }
+  }
+
+  if (tabDetails) tabDetails.addEventListener('click', () => switchTab('details'));
+  if (tabRoutes) tabRoutes.addEventListener('click', () => switchTab('routes'));
+
   // --- Modal Open / Close Handlers ---
   function openAddModal() {
     editIndexInput.value = '-1';
@@ -570,6 +649,8 @@ document.addEventListener('DOMContentLoaded', () => {
     timeWindowsList.innerHTML = '';
     updateTimeWindowsEmptyNotice();
     modalError.classList.add('hidden');
+    switchTab('details');
+    setRoutesTabState(false);
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -606,6 +687,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateTimeWindowsEmptyNotice();
     modalError.classList.add('hidden');
+
+    switchTab('details');
+    const hasRoutesContent =
+      item.calculated_routes !== null &&
+      item.calculated_routes !== undefined &&
+      item.calculated_routes !== '' &&
+      !(Array.isArray(item.calculated_routes) && item.calculated_routes.length === 0) &&
+      !(typeof item.calculated_routes === 'object' && Object.keys(item.calculated_routes).length === 0);
+
+    setRoutesTabState(hasRoutesContent, hasRoutesContent ? item.calculated_routes : null);
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -658,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         to_id: toId,
         to_name: toName,
         time_settings: timeSettings,
+        calculated_routes: null,
       };
 
       const editIndex = parseInt(editIndexInput.value, 10);

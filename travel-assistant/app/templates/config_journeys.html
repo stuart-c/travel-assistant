@@ -73,7 +73,29 @@
 ) %}
   <input type="hidden" id="edit-journey-index" value="-1">
 
-  <div class="space-y-4">
+  <!-- Tab Navigation -->
+  <div class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+    <button 
+      type="button" 
+      id="journey-tab-details" 
+      class="journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold"
+      data-tab="details"
+    >
+      Journey Details
+    </button>
+    <button 
+      type="button" 
+      id="journey-tab-routes" 
+      class="journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60"
+      data-tab="routes"
+      disabled
+    >
+      Calculated Routes
+    </button>
+  </div>
+
+  <!-- Tab 1: Journey Details Panel -->
+  <div id="journey-panel-details" class="space-y-4">
     <!-- Journey Name -->
     <div>
       <label for="journey_name" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -211,6 +233,21 @@
 
     <div id="journey-modal-error" class="hidden text-xs font-semibold text-rose-600 dark:text-rose-400">
       Please enter a journey name and select valid start and end locations.
+    </div>
+  </div>
+
+  <!-- Tab 2: Calculated Routes Panel -->
+  <div id="journey-panel-routes" class="hidden space-y-3">
+    <div>
+      <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+        Raw Calculated Routes
+      </h4>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+        Structural and calculated route paths computed for this journey.
+      </p>
+    </div>
+    <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/80 dark:bg-slate-950/70 max-h-[55vh] overflow-auto">
+      <pre id="journey-calculated-routes-content" class="text-xs font-mono text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-all select-text"></pre>
     </div>
   </div>
 {% endcall %}

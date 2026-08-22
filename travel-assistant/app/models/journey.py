@@ -49,6 +49,11 @@ class Journey(BaseModel):
     to_id = CharField()
     to_name = CharField()
     time_settings = PydanticField(model_type=List[JourneyTimeSetting], default=list)
+    calculated_routes = PydanticField(
+        model_type=Optional[Union[List[Any], Dict[str, Any], Any]],
+        default=None,
+        null=True,
+    )
 
     class Meta:
         table_name = "journeys"
@@ -85,10 +90,42 @@ class Journey(BaseModel):
                     continue
         self.time_settings = parsed
 
+    def get_calculated_routes(self) -> Optional[Union[List[Any], Dict[str, Any], Any]]:
+        """Deserialise and return calculated routes data."""
+        val = self.calculated_routes
+        if isinstance(val, (dict, list)):
+            return val
+        if isinstance(val, str):
+            try:
+                import json
+
+                return json.loads(val)
+            except Exception:
+                return val
+        return val
+
+    def set_calculated_routes(
+        self, routes: Optional[Union[List[Any], Dict[str, Any], str]]
+    ) -> None:
+        """Serialise and store calculated routes data."""
+        if routes is None:
+            self.calculated_routes = None
+            return
+        if isinstance(routes, str):
+            try:
+                import json
+
+                self.calculated_routes = json.loads(routes)
+            except Exception:
+                self.calculated_routes = routes
+            return
+        self.calculated_routes = routes
+
     def to_dict(self, recurse: bool = False, **kwargs: Any) -> Dict[str, Any]:
-        """Convert journey model to dictionary with parsed time settings."""
+        """Convert journey model to dictionary with parsed time settings and calculated routes."""
         data = super().to_dict(recurse=recurse, **kwargs)
         data["time_settings"] = self.get_time_settings()
+        data["calculated_routes"] = self.get_calculated_routes()
         return data
 
     @classmethod
