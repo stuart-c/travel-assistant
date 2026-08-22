@@ -1115,3 +1115,232 @@ def test_find_routes_direct_train_continuity(app: Flask) -> None:
         assert transit_legs[0].from_name == "Stevenage"
         assert transit_legs[0].to_name == "Cambridge"
         assert transit_legs[0].timetable_id == tt_direct.id
+
+
+def test_find_routes_transfer_preference_and_direct_dropoff(app: Flask) -> None:
+    """Test route finder prioritises routes with fewer changes and supports direct drop-off."""
+    with app.app_context():
+        Walking.delete().execute()
+        Timetable.delete().execute()
+        StopInterchange.delete().execute()
+        Location.delete().execute()
+        PlatformTransfer.delete().execute()
+
+        Location.create(
+            id="ha:home", name="Home", latitude=51.53, longitude=-0.12, ha=True
+        )
+        Location.create(
+            id="ha:office", name="Office", latitude=52.23, longitude=0.14, ha=True
+        )
+
+        # Walking access to Stop A (Sweyns Mead) and Stop B (Emperor's Head)
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="2100A",
+            finish_name="Sweyns Mead",
+            time_needed_minutes=3,
+            bidirectional=True,
+        )
+        Walking.create(
+            start_type="ha",
+            start_id="ha:home",
+            start_name="Home",
+            finish_type="bus",
+            finish_id="2100B",
+            finish_name="Emperor's Head",
+            time_needed_minutes=4,
+            bidirectional=True,
+        )
+
+        # Bus from Stop A to Stevenage
+        tt_bus_a = Timetable.create(
+            name="Bus SB1: Sweyns Mead to Station",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_bus_a.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="2100A", name="Sweyns Mead", type="bus"),
+                    TimetableStop(
+                        id="2100STV_BUS", name="Stevenage Bus Station", type="bus"
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(id="b1", times=[{"dep": "08:00"}, {"arr": "08:15"}])
+                ],
+            )
+        )
+        tt_bus_a.save()
+
+        # Bus from Stop B to Stevenage
+        tt_bus_b = Timetable.create(
+            name="Bus 38: Emperor's Head to Station",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_bus_b.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="2100B", name="Emperor's Head", type="bus"),
+                    TimetableStop(
+                        id="2100STV_BUS", name="Stevenage Bus Station", type="bus"
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(id="b2", times=[{"dep": "08:00"}, {"arr": "08:14"}])
+                ],
+            )
+        )
+        tt_bus_b.save()
+
+        # Interchange walk at Stevenage
+        StopInterchange.create(
+            from_stop_atco="2100STV_BUS",
+            from_stop_name="Stevenage Bus Station",
+            from_stop_type="bus",
+            to_stop_atco="9100STEVNGE",
+            to_stop_name="Stevenage Rail Station",
+            to_stop_type="rail",
+            distance_metres=100,
+            estimated_walk_minutes=2,
+        )
+
+        # 1-Change Rail Option: Stevenage -> Cambridge, then Cambridge -> Cambridge North
+        tt_train_1 = Timetable.create(
+            name="Rail: Stevenage to Cambridge",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_train_1.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100STEVNGE", name="Stevenage Rail Station", type="rail"
+                    ),
+                    TimetableStop(
+                        id="9100HITCHIN", name="Hitchin Rail Station", type="rail"
+                    ),
+                    TimetableStop(
+                        id="9100ROYSTON", name="Royston Rail Station", type="rail"
+                    ),
+                    TimetableStop(
+                        id="9100CAMBDGE", name="Cambridge Rail Station", type="rail"
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="r1",
+                        times=[
+                            {"dep": "08:20"},
+                            {"arr": "08:26"},
+                            {"arr": "08:40"},
+                            {"arr": "08:55"},
+                        ],
+                    )
+                ],
+            )
+        )
+        tt_train_1.save()
+
+        # Platform transfer at Cambridge
+        PlatformTransfer.create(
+            location_type="rail",
+            location_id="9100CAMBDGE",
+            location_name="Cambridge Rail Station",
+            from_platform="1",
+            to_platform="2",
+            transfer_time_minutes=4,
+        )
+
+        tt_train_2 = Timetable.create(
+            name="Rail: Cambridge to Cambridge North",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_train_2.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100CAMBDGE", name="Cambridge Rail Station", type="rail"
+                    ),
+                    TimetableStop(
+                        id="9100CAMBNTH",
+                        name="Cambridge North Rail Station",
+                        type="rail",
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(id="r2", times=[{"dep": "09:00"}, {"arr": "09:05"}])
+                ],
+            )
+        )
+        tt_train_2.save()
+
+        # Shuttle Bus from Cambridge North dropping off directly at ha:office (no walk)
+        tt_shuttle = Timetable.create(
+            name="Shuttle Bus (Morning)",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+        )
+        tt_shuttle.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100CAMBNTH",
+                        name="Cambridge North Rail Station",
+                        type="rail",
+                    ),
+                    TimetableStop(id="ha:office", name="Office", type="ha"),
+                ],
+                trips=[
+                    TimetableTrip(id="s1", times=[{"dep": "09:10"}, {"arr": "09:20"}])
+                ],
+            )
+        )
+        tt_shuttle.save()
+
+        routes = find_routes(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:office",
+            days_of_week=["mon"],
+        )
+
+        assert len(routes) >= 2
+        # Verify routes from both Sweyns Mead and Emperor's Head are returned
+        summaries = [r.summary_text for r in routes]
+        assert any("Sweyns Mead" in s or "SB1" in s for s in summaries)
+        assert any("Emperor's Head" in s or "38" in s for s in summaries)
+
+        # Verify final leg terminates at Office without an artificial walk leg
+        for r in routes:
+            final_leg = r.legs[-1]
+            assert final_leg.to_name == "Office"
+            assert final_leg.to_id == "office" or final_leg.to_id == "ha:office"
+            assert final_leg.leg_type == "transit"
+            assert final_leg.transport_mode == "bus"

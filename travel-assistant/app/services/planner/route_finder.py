@@ -40,9 +40,9 @@ def find_routes(
     to_id: str,
     days_of_week: Optional[List[str]] = None,
     target_date: Optional[Union[datetime.date, str]] = None,
-    max_stages: int = 6,
+    max_stages: int = 10,
     max_transfers_per_stage: int = 3,
-    max_routes: int = 5,
+    max_routes: int = 50,
 ) -> List[RouteTemplate]:
     """Discover distinct viable multi-modal topological route templates.
 
@@ -96,9 +96,31 @@ def find_routes(
         active_days,
     )
 
-    # 1. Access & Egress Footpaths
+    # 1. Filter Active Timetables
+    all_timetables = list(Timetable.select())
+    active_timetables = [
+        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
+    ]
+
+    # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)
     dest_walks = get_access_edges(t_type, t_id, is_origin=False)
+
+    # Check if origin or destination endpoint is directly served by active timetables
+    timetable_stop_ids = {
+        normalise_id(s.get("id", ""))
+        for tt in active_timetables
+        for s in tt.get_content().get("stops", [])
+    }
+    if normalise_id(f_id) in timetable_stop_ids and not any(
+        w[2] == f_type and normalise_id(w[3]) == normalise_id(f_id)
+        for w in origin_walks
+    ):
+        origin_walks.append((f_type, f_id, f_type, f_id, 0, "direct"))
+    if normalise_id(t_id) in timetable_stop_ids and not any(
+        w[0] == t_type and normalise_id(w[1]) == normalise_id(t_id) for w in dest_walks
+    ):
+        dest_walks.append((t_type, t_id, t_type, t_id, 0, "direct"))
 
     # Check Direct Walking Connection First
     direct_walk = Walking.find_walking_route(f_type, f_id, t_type, t_id)
@@ -118,12 +140,6 @@ def find_routes(
             f"No reachable transit stops found within walking distance of destination '{t_id}'.",
             {"endpoint": t_id, "type": t_type},
         )
-
-    # 2. Filter Active Timetables
-    all_timetables = list(Timetable.select())
-    active_timetables = [
-        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
-    ]
 
     def make_node_key(node_type: str, raw_id: str) -> str:
         """Create standardised graph node identifier formatted as '{type}:{normalised_id}'."""
@@ -347,11 +363,21 @@ def find_routes(
     simple_g = nx.DiGraph()
     for u, v, k, data in G.edges(keys=True, data=True):
         dur = data.get("duration", 1)
-        if simple_g.has_edge(u, v):
-            if dur < simple_g[u][v].get("weight", 9999):
-                simple_g[u][v]["weight"] = dur
+        leg_type = data.get("leg_type", "walk")
+        if leg_type == "transit":
+            # Intermediate stops on the same vehicle route do not penalise routes
+            w = 1.0
+        elif leg_type in ("interchange", "platform_transfer"):
+            # Vehicle and station changes carry duration plus a transfer penalty
+            w = float(dur) + 8.0
         else:
-            simple_g.add_edge(u, v, weight=dur)
+            w = float(dur)
+
+        if simple_g.has_edge(u, v):
+            if w < simple_g[u][v].get("weight", 9999):
+                simple_g[u][v]["weight"] = w
+        else:
+            simple_g.add_edge(u, v, weight=w)
 
     raw_node_paths: List[List[str]] = []
     try:
@@ -361,7 +387,7 @@ def find_routes(
                     nx.shortest_simple_paths(
                         simple_g, origin_node, dest_node, weight="weight"
                     ),
-                    max_routes * 15,
+                    max_routes * 20,
                 )
             )
         )
@@ -375,8 +401,24 @@ def find_routes(
     for o_target in origin_targets:
         if o_target == origin_node or not simple_g.has_node(o_target):
             continue
+        # Search directly from access stop to dest_node
+        if nx.has_path(simple_g, o_target, dest_node):
+            try:
+                sub_paths = list(
+                    itertools.islice(
+                        nx.shortest_simple_paths(
+                            simple_g, o_target, dest_node, weight="weight"
+                        ),
+                        10,
+                    )
+                )
+                for sp in sub_paths:
+                    raw_node_paths.append([origin_node] + sp)
+            except Exception:
+                pass
+        # Search from access stop to destination access stops
         for d_source in dest_sources:
-            if d_source == dest_node or not simple_g.has_node(d_source):
+            if d_source in (dest_node, o_target) or not simple_g.has_node(d_source):
                 continue
             if nx.has_path(simple_g, o_target, d_source):
                 try:
@@ -385,12 +427,11 @@ def find_routes(
                             nx.shortest_simple_paths(
                                 simple_g, o_target, d_source, weight="weight"
                             ),
-                            3,
+                            5,
                         )
                     )
                     for sp in sub_paths:
-                        full_np = [origin_node] + sp + [dest_node]
-                        raw_node_paths.append(full_np)
+                        raw_node_paths.append([origin_node] + sp + [dest_node])
                 except Exception:
                     pass
 
@@ -415,6 +456,16 @@ def find_routes(
             f"No viable corridor paths found connecting '{f_id}' to '{t_id}'.",
             {"from_id": f_id, "to_id": t_id},
         )
+
+    logger.info(
+        "Corridor search found %d raw candidate paths (%d unique node sequences) for %s:%s -> %s:%s",
+        len(raw_node_paths),
+        len(node_paths),
+        f_type,
+        f_id,
+        t_type,
+        t_id,
+    )
 
     def _resolve_edge_sequences_for_path(
         np: List[str],
@@ -601,12 +652,22 @@ def find_routes(
         )
         corridor_idx += 1
 
-    pruned_templates = prune_route_templates(candidate_templates)
+    logger.info(
+        "Assembled %d candidate route templates before pruning for %s:%s -> %s:%s",
+        len(candidate_templates),
+        f_type,
+        f_id,
+        t_type,
+        t_id,
+    )
+
+    pruned_templates = prune_route_templates(candidate_templates, max_routes=max_routes)
     return pruned_templates[:max_routes]
 
 
 def prune_route_templates(
     routes: List[RouteTemplate],
+    max_routes: int = 50,
 ) -> List[RouteTemplate]:
     """Apply Pareto optimisation and corridor diversity rules to preserve distinct viable route options."""
     if not routes:
@@ -627,8 +688,8 @@ def prune_route_templates(
         seen_signatures.add(signature)
         unique_routes.append(r)
 
-    # Group by corridor fingerprint (distinct access stop, initial transit line, final transit line)
-    corridor_best: Dict[Tuple[str, str, str], RouteTemplate] = {}
+    # Group by corridor fingerprint: (access_stop, first_transit, rail_corridor, last_transit, egress_stop)
+    corridor_best: Dict[Tuple[str, str, str, str, str], RouteTemplate] = {}
     for r in unique_routes:
         transit_legs = [leg for leg in r.legs if leg.leg_type == "transit"]
         first_transit = (
@@ -641,20 +702,37 @@ def prune_route_templates(
             if transit_legs
             else "walk"
         )
-        access_stop = r.legs[0].to_id if len(r.legs) > 1 else "direct"
-        fp = (access_stop, first_transit, last_transit)
+        rail_legs = [leg for leg in transit_legs if leg.transport_mode == "rail"]
+        rail_corridor = (
+            " -> ".join(f"{leg.from_name} to {leg.to_name}" for leg in rail_legs)
+            if rail_legs
+            else "no_rail"
+        )
+        access_stop = (
+            r.legs[0].to_id
+            if len(r.legs) > 1 and r.legs[0].leg_type == "walk"
+            else "direct"
+        )
+        egress_stop = (
+            r.legs[-1].from_id
+            if len(r.legs) > 1 and r.legs[-1].leg_type == "walk"
+            else "direct"
+        )
+        fp = (access_stop, first_transit, rail_corridor, last_transit, egress_stop)
 
-        if (
-            fp not in corridor_best
-            or r.total_duration_est_minutes
-            < corridor_best[fp].total_duration_est_minutes
+        if fp not in corridor_best or (
+            r.transfer_count,
+            r.total_duration_est_minutes,
+        ) < (
+            corridor_best[fp].transfer_count,
+            corridor_best[fp].total_duration_est_minutes,
         ):
             corridor_best[fp] = r
 
     diverse_candidates = list(corridor_best.values())
 
     fastest_duration = min(r.total_duration_est_minutes for r in unique_routes)
-    max_acceptable_duration = max(fastest_duration * 1.5, fastest_duration + 35)
+    max_acceptable_duration = max(fastest_duration * 1.6, fastest_duration + 45)
 
     filtered = [
         r
@@ -662,14 +740,30 @@ def prune_route_templates(
         if r.total_duration_est_minutes <= max_acceptable_duration
     ]
 
+    excluded_count = len(diverse_candidates) - len(filtered)
+
     filtered.sort(
         key=lambda r: (
-            r.total_duration_est_minutes,
             r.transfer_count,
+            r.total_duration_est_minutes,
             r.stages_count,
         )
     )
-    return filtered or unique_routes
+
+    final_routes = (filtered or unique_routes)[:max_routes]
+
+    logger.info(
+        "Route pruning results: %d raw options -> %d unique -> %d corridor options (%d excluded by duration threshold <= %dm) -> returning %d best options (limit: %d)",
+        len(routes),
+        len(unique_routes),
+        len(diverse_candidates),
+        excluded_count,
+        int(max_acceptable_duration),
+        len(final_routes),
+        max_routes,
+    )
+
+    return final_routes
 
 
 __all__ = [
