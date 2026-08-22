@@ -82,7 +82,7 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
     if not candidate_routes:
         return None
 
-    pruned = prune_route_templates(candidate_routes)
+    pruned = prune_route_templates(candidate_routes, max_routes=50)
     return pruned if pruned else None
 
 
