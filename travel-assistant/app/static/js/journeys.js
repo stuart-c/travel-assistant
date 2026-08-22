@@ -659,6 +659,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!name) return '';
     return String(name)
       .replace(/\brailway station\b/gi, 'Rail Station')
+      // Strip parenthetical indicators like (opp), (adj), (nr), (o/s), (Stop A), (Stand 1), (Bay 2), (Platform 3)
+      .replace(
+        /\s*\(\s*(opp|adj|nr|o\/s|opposite|adjacent|near|outside|stop\s+[a-z0-9]+|stand\s+[a-z0-9]+|bay\s+[a-z0-9]+|platform\s+[a-z0-9]+)\s*\)\s*$/gi,
+        ''
+      )
+      // Strip trailing bare indicators like "opp", "adj", "nr"
+      .replace(/\s+\b(opp|adj|nr|o\/s)\.?\s*$/gi, '')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
@@ -759,8 +767,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     parts.push(
       `<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed rgba(148, 163, 184, 0.4); font-size: 11px; opacity: 0.85;">${escapeHtml(
-        leg.from_name || 'Start'
-      )} &rarr; ${escapeHtml(leg.to_name || 'End')}</div>`
+        sanitiseStopName(leg.from_name) || 'Start'
+      )} &rarr; ${escapeHtml(sanitiseStopName(leg.to_name) || 'End')}</div>`
     );
 
     const tooltipEl = document.createElement('div');
