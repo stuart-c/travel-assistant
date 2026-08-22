@@ -856,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
     routes.forEach((route) => {
       if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
       const legs = route.legs;
-      const sequence = [];
+      const rawSequence = [];
 
       legs.forEach((leg, index) => {
         const isFirstLeg = index === 0;
@@ -890,28 +890,33 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        if (sequence.length === 0) {
-          sequence.push(fromNodeId);
-        } else if (sequence[sequence.length - 1] !== fromNodeId) {
-          sequence.push(fromNodeId);
+        if (rawSequence.length === 0) {
+          rawSequence.push(fromNodeId);
+        } else if (rawSequence[rawSequence.length - 1] !== fromNodeId) {
+          rawSequence.push(fromNodeId);
         }
 
-        if (sequence[sequence.length - 1] !== toNodeId) {
-          sequence.push(toNodeId);
+        if (rawSequence[rawSequence.length - 1] !== toNodeId) {
+          rawSequence.push(toNodeId);
         }
       });
 
-      if (sequence[0] !== 'NODE_ORIGIN') {
-        sequence.unshift('NODE_ORIGIN');
+      if (rawSequence[0] !== 'NODE_ORIGIN') {
+        rawSequence.unshift('NODE_ORIGIN');
       }
-      if (sequence[sequence.length - 1] !== 'NODE_DESTINATION') {
-        sequence.push('NODE_DESTINATION');
+      if (rawSequence[rawSequence.length - 1] !== 'NODE_DESTINATION') {
+        rawSequence.push('NODE_DESTINATION');
       }
+
+      // Filter consecutive duplicate node IDs in the sequence
+      const cleanSequence = rawSequence.filter(
+        (nodeId, idx) => idx === 0 || nodeId !== rawSequence[idx - 1]
+      );
 
       processedRoutes.push({
         route,
         legs,
-        sequence,
+        sequence: cleanSequence,
       });
     });
 
@@ -920,56 +925,103 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 2. Compute topological levels using longest-path relaxation
-    const nodeLevels = new Map();
-    nodeLevels.set('NODE_ORIGIN', 0);
+    // 2. Compute normalized topological progress for intermediate nodes
+    const nodeProgressSums = new Map();
+    const nodeProgressCounts = new Map();
 
-    // Initialise intermediate node levels
     processedRoutes.forEach(({ sequence }) => {
+      const len = sequence.length;
       sequence.forEach((nodeId, idx) => {
         if (nodeId === 'NODE_ORIGIN' || nodeId === 'NODE_DESTINATION') return;
-        const current = nodeLevels.get(nodeId) || Infinity;
-        nodeLevels.set(nodeId, Math.min(current, Math.max(1, idx)));
+        const progress = len > 2 ? idx / (len - 1) : 0.5;
+        nodeProgressSums.set(
+          nodeId,
+          (nodeProgressSums.get(nodeId) || 0) + progress
+        );
+        nodeProgressCounts.set(
+          nodeId,
+          (nodeProgressCounts.get(nodeId) || 0) + 1
+        );
       });
     });
 
-    // Relaxation loop to ensure level[to] >= level[from] + 1 for every leg
-    let changed = true;
-    let iterations = 0;
-    const maxIterations = 30;
+    const intermediateNodes = Array.from(stopMetadataMap.keys());
+    const nodeAvgProgress = new Map();
+    intermediateNodes.forEach((nodeId) => {
+      const sum = nodeProgressSums.get(nodeId) || 0.5;
+      const count = nodeProgressCounts.get(nodeId) || 1;
+      nodeAvgProgress.set(nodeId, sum / count);
+    });
 
-    while (changed && iterations < maxIterations) {
-      changed = false;
-      iterations++;
+    // Sort intermediate nodes by average topological progress along the journey
+    intermediateNodes.sort((a, b) => {
+      const pA = nodeAvgProgress.get(a) || 0;
+      const pB = nodeAvgProgress.get(b) || 0;
+      return pA - pB;
+    });
 
-      processedRoutes.forEach(({ sequence }) => {
-        for (let i = 0; i < sequence.length - 1; i++) {
-          const u = sequence[i];
-          const v = sequence[i + 1];
-          if (u === v || u === 'NODE_DESTINATION' || v === 'NODE_ORIGIN') continue;
+    // Build forward DAG adjacency list
+    const forwardAdj = new Map();
+    intermediateNodes.forEach((n) => forwardAdj.set(n, new Set()));
+    forwardAdj.set('NODE_ORIGIN', new Set());
 
-          const uLevel = nodeLevels.get(u) || 0;
-          if (v !== 'NODE_DESTINATION') {
-            const vLevel = nodeLevels.get(v) || uLevel + 1;
-            if (vLevel < uLevel + 1) {
-              nodeLevels.set(v, uLevel + 1);
-              changed = true;
-            }
+    processedRoutes.forEach(({ sequence }) => {
+      for (let i = 0; i < sequence.length - 1; i++) {
+        const u = sequence[i];
+        const v = sequence[i + 1];
+        if (u === v || u === 'NODE_DESTINATION' || v === 'NODE_ORIGIN') continue;
+
+        if (v === 'NODE_DESTINATION' || u === 'NODE_ORIGIN') {
+          if (forwardAdj.has(u)) forwardAdj.get(u).add(v);
+        } else {
+          const pU = nodeAvgProgress.get(u) || 0;
+          const pV = nodeAvgProgress.get(v) || 0;
+          if (pU <= pV + 0.0001) {
+            if (forwardAdj.has(u)) forwardAdj.get(u).add(v);
           }
-        }
-      });
-    }
-
-    let maxIntermediateLevel = 0;
-    nodeLevels.forEach((lvl, nId) => {
-      if (nId !== 'NODE_ORIGIN' && nId !== 'NODE_DESTINATION') {
-        if (lvl > maxIntermediateLevel) {
-          maxIntermediateLevel = lvl;
         }
       }
     });
 
-    const destLevel = Math.max(1, maxIntermediateLevel + 1);
+    // Assign topological levels: NODE_ORIGIN is 0
+    const nodeLevels = new Map();
+    nodeLevels.set('NODE_ORIGIN', 0);
+
+    intermediateNodes.forEach((v) => {
+      let maxParentLevel = 0;
+      if (forwardAdj.get('NODE_ORIGIN') && forwardAdj.get('NODE_ORIGIN').has(v)) {
+        maxParentLevel = Math.max(maxParentLevel, 0);
+      }
+      intermediateNodes.forEach((u) => {
+        if (forwardAdj.get(u) && forwardAdj.get(u).has(v)) {
+          const uLvl = nodeLevels.get(u);
+          if (uLvl !== undefined) {
+            maxParentLevel = Math.max(maxParentLevel, uLvl);
+          }
+        }
+      });
+      nodeLevels.set(v, maxParentLevel + 1);
+    });
+
+    // Compact intermediate levels into strictly consecutive levels (no vertical gaps)
+    const usedLevels = Array.from(
+      new Set(Array.from(nodeLevels.values()).filter((l) => l > 0))
+    ).sort((a, b) => a - b);
+
+    const levelCompactor = new Map();
+    usedLevels.forEach((lvl, idx) => {
+      levelCompactor.set(lvl, idx + 1);
+    });
+
+    intermediateNodes.forEach((v) => {
+      const oldLvl = nodeLevels.get(v);
+      if (oldLvl !== undefined && levelCompactor.has(oldLvl)) {
+        nodeLevels.set(v, levelCompactor.get(oldLvl));
+      }
+    });
+
+    const maxIntermediateLevel = usedLevels.length;
+    const destLevel = maxIntermediateLevel + 1;
     nodeLevels.set('NODE_DESTINATION', destLevel);
 
     // 3. Build Vis.js Nodes Map
@@ -1091,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
       },
     });
 
-    // 4. Build Aggregated Edges Map
+    // 4. Build Aggregated Edges Map (Strictly Downward, Consolidated, No Overlaps)
     const edgesMap = new Map();
 
     processedRoutes.forEach(({ legs, sequence }) => {
@@ -1099,6 +1151,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const fromNodeId = sequence[i];
         const toNodeId = sequence[i + 1];
         if (fromNodeId === toNodeId) continue;
+
+        const fromLevel = nodeLevels.get(fromNodeId) || 0;
+        const toLevel = nodeLevels.get(toNodeId) || destLevel;
+
+        // STRICT RULE: Only include edges pointing downwards (toLevel > fromLevel)
+        if (toLevel <= fromLevel) continue;
 
         const leg = legs[i] || legs[legs.length - 1] || {};
         const edgeKey = `${fromNodeId}->${toNodeId}`;
@@ -1121,9 +1179,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (leg.operator_name) operators.add(leg.operator_name);
 
           edgesMap.set(edgeKey, {
-            id: `edge_${edgesMap.size + 1}`,
+            id: `edge_${fromNodeId}_${toNodeId}`,
             from: fromNodeId,
             to: toNodeId,
+            fromLevel,
+            toLevel,
             leg: leg,
             lines: lines,
             operators: operators,
@@ -1134,31 +1194,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    const edgesList = Array.from(edgesMap.values()).map((e) => ({
-      id: e.id,
-      from: e.from,
-      to: e.to,
-      arrows: {
-        to: {
-          enabled: true,
-          scaleFactor: 0.85,
+    const edgesList = Array.from(edgesMap.values()).map((e) => {
+      const levelDiff = e.toLevel - e.fromLevel;
+      const roundness = levelDiff > 1 ? 0.45 : 0.3;
+
+      return {
+        id: e.id,
+        from: e.from,
+        to: e.to,
+        arrows: {
+          to: {
+            enabled: true,
+            scaleFactor: 0.85,
+          },
         },
-      },
-      width: 2.5,
-      color: {
-        color: e.modeCfg.colour,
-        highlight: e.modeCfg.colour,
-        hover: e.modeCfg.colour,
-        opacity: 0.9,
-      },
-      dashes: e.modeCfg.dashes,
-      title: createEdgeTooltip(e.leg, e.lines, e.operators, e.minDuration),
-      smooth: {
-        type: 'cubicBezier',
-        forceDirection: 'vertical',
-        roundness: 0.35,
-      },
-    }));
+        width: 2.5,
+        color: {
+          color: e.modeCfg.colour,
+          highlight: e.modeCfg.colour,
+          hover: e.modeCfg.colour,
+          opacity: 0.9,
+        },
+        dashes: e.modeCfg.dashes,
+        title: createEdgeTooltip(e.leg, e.lines, e.operators, e.minDuration),
+        smooth: {
+          type: 'cubicBezier',
+          forceDirection: 'vertical',
+          roundness: roundness,
+        },
+      };
+    });
 
     if (typeof vis === 'undefined' || !vis.Network) {
       console.warn('vis-network library not loaded.');
@@ -1182,7 +1247,7 @@ document.addEventListener('DOMContentLoaded', () => {
           blockShifting: true,
           edgeMinimization: true,
           parentCentralization: true,
-          shakeTowards: 'leaves',
+          shakeTowards: 'roots',
         },
       },
       physics: {
