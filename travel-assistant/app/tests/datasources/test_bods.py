@@ -886,3 +886,67 @@ def test_bods_parse_linear_deviating_patterns_consolidation():
     # Express trip skipping STOP_3
     assert trips[1]["id"] == "TRIP_EXP"
     assert trips[1]["times"] == ["08:30", "08:40", "", "08:55"]
+
+
+def test_parse_transxchange_bidirectional_corridors_and_target_filter() -> None:
+    """Test TransXChange XML with outbound and inbound corridors generates both directions."""
+    xml_data = """<?xml version="1.0" encoding="UTF-8"?>
+<TransXChange xmlns="http://www.transxchange.org.uk/">
+  <StopPoints>
+    <AnnotatedStopPointRef><StopPointRef>STOP_A</StopPointRef><CommonName>Station</CommonName></AnnotatedStopPointRef>
+    <AnnotatedStopPointRef><StopPointRef>STOP_B</StopPointRef><CommonName>Sweyns Mead</CommonName></AnnotatedStopPointRef>
+    <AnnotatedStopPointRef><StopPointRef>STOP_C</StopPointRef><CommonName>Woodcock Road</CommonName></AnnotatedStopPointRef>
+  </StopPoints>
+  <JourneyPatternSections>
+    <JourneyPatternSection id="JPS_OUT">
+      <JourneyPatternTimingLink id="TL_OUT1"><From><StopPointRef>STOP_A</StopPointRef></From><To><StopPointRef>STOP_B</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="TL_OUT2"><From><StopPointRef>STOP_B</StopPointRef></From><To><StopPointRef>STOP_C</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_IN">
+      <JourneyPatternTimingLink id="TL_IN1"><From><StopPointRef>STOP_C</StopPointRef></From><To><StopPointRef>STOP_B</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="TL_IN2"><From><StopPointRef>STOP_B</StopPointRef></From><To><StopPointRef>STOP_A</StopPointRef></To><RunTime>PT10M</RunTime></JourneyPatternTimingLink>
+    </JourneyPatternSection>
+  </JourneyPatternSections>
+  <Services>
+    <Service>
+      <ServiceCode>SER_SB1</ServiceCode>
+      <Lines><Line id="L1"><LineName>SB1</LineName></Line></Lines>
+      <StandardService>
+        <Origin>Station</Origin><Destination>Woodcock Road</Destination>
+        <JourneyPattern id="JP_OUT">
+          <Direction>outbound</Direction>
+          <JourneyPatternSectionRefs>JPS_OUT</JourneyPatternSectionRefs>
+        </JourneyPattern>
+        <JourneyPattern id="JP_IN">
+          <Direction>inbound</Direction>
+          <JourneyPatternSectionRefs>JPS_IN</JourneyPatternSectionRefs>
+        </JourneyPattern>
+      </StandardService>
+    </Service>
+  </Services>
+  <VehicleJourneys>
+    <VehicleJourney>
+      <VehicleJourneyCode>TRIP_OUT_1</VehicleJourneyCode>
+      <ServiceRef>SER_SB1</ServiceRef>
+      <JourneyPatternRef>JP_OUT</JourneyPatternRef>
+      <DepartureTime>07:00:00</DepartureTime>
+    </VehicleJourney>
+    <VehicleJourney>
+      <VehicleJourneyCode>TRIP_IN_1</VehicleJourneyCode>
+      <ServiceRef>SER_SB1</ServiceRef>
+      <JourneyPatternRef>JP_IN</JourneyPatternRef>
+      <DepartureTime>07:30:00</DepartureTime>
+    </VehicleJourney>
+  </VehicleJourneys>
+</TransXChange>
+"""
+    # 1. Parse without target filter -> both directions present
+    all_timetables = BodsClient.parse_transxchange_xml(xml_data)
+    assert len(all_timetables) == 2
+    names = [tt["name"] for tt in all_timetables]
+    assert any("Station to Woodcock Road" in n for n in names)
+    assert any("Woodcock Road to Station" in n for n in names)
+
+    # 2. Parse with target filter matching STOP_B (Sweyns Mead)
+    filtered = BodsClient.parse_transxchange_xml(xml_data, target_stop_codes={"STOP_B"})
+    assert len(filtered) == 2

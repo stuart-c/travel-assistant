@@ -519,3 +519,67 @@ def test_train_s3_parse_darwin_timetables_weekday_saturday_sunday() -> None:
     assert sun_tt["bank_holiday"] is True
     assert len(sun_tt["content"]["trips"]) == 1
     assert sun_tt["content"]["trips"][0]["headsign"] == "TL 1U01"
+
+
+def test_get_latest_timetable_keys_by_day_profile() -> None:
+    """Test get_latest_timetable_keys_by_day_profile selects one newest snapshot per day profile."""
+    mock_s3 = MagicMock()
+    mock_s3.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "PPTimetable/20260815020529_v8.xml.gz"},  # Saturday
+            {"Key": "PPTimetable/20260816020531_v8.xml.gz"},  # Sunday
+            {"Key": "PPTimetable/20260817020538_v8.xml.gz"},  # Monday (Weekday)
+            {"Key": "PPTimetable/20260821020538_v8.xml.gz"},  # Friday (Weekday - newer)
+            {"Key": "PPTimetable/20260822020530_v8.xml.gz"},  # Saturday (newer)
+        ]
+    }
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_s3)
+    keys = client.get_latest_timetable_keys_by_day_profile()
+
+    # Should select Friday (latest weekday), Saturday (latest Sat), and Sunday
+    assert len(keys) == 3
+    assert "PPTimetable/20260821020538_v8.xml.gz" in keys
+    assert "PPTimetable/20260822020530_v8.xml.gz" in keys
+    assert "PPTimetable/20260816020531_v8.xml.gz" in keys
+
+
+@patch.object(TrainS3Client, "download_timetable_snapshot")
+def test_fetch_timetables_multi_snapshot(mock_download: MagicMock) -> None:
+    """Test fetch_timetables merges timetables across multiple day profile snapshots."""
+    mock_s3 = MagicMock()
+    mock_s3.list_objects_v2.return_value = {
+        "Contents": [
+            {"Key": "PPTimetable/20260821020538_v8.xml.gz"},  # Weekday
+            {"Key": "PPTimetable/20260822020530_v8.xml.gz"},  # Saturday
+        ]
+    }
+
+    weekday_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
+  <Journey rid="20260821000001" trainId="1W01" toc="TL" ssd="2026-08-21" isPassengerSvc="true">
+    <OR tpl="KGX" ptd="08:00"/>
+    <DT tpl="CAMBDGE" pta="08:50"/>
+  </Journey>
+</PportTimetable>""".encode("utf-8")
+
+    sat_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<PportTimetable xmlns="http://www.thalesgroup.com/rtti/XmlTimetable/v8">
+  <Journey rid="20260822000001" trainId="1S01" toc="TL" ssd="2026-08-22" isPassengerSvc="true">
+    <OR tpl="KGX" ptd="08:00"/>
+    <DT tpl="CAMBDGE" pta="08:50"/>
+  </Journey>
+</PportTimetable>""".encode("utf-8")
+
+    def side_effect(key=None, prefix="PPTimetable/"):
+        if "20260821" in key:
+            return weekday_xml
+        return sat_xml
+
+    mock_download.side_effect = side_effect
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_s3)
+    timetables = client.fetch_timetables()
+
+    assert len(timetables) == 2
+    assert any(t["monday"] for t in timetables)
+    assert any(t["saturday"] for t in timetables)
+    assert any("(Sat)" in t["name"] for t in timetables)

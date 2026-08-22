@@ -123,14 +123,22 @@ def sync_journey_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
                         journey.name,
                     )
                 else:
+                    orig_str = (
+                        journey.from_id
+                        if str(journey.from_id).startswith(f"{journey.from_type}:")
+                        else f"{journey.from_type}:{journey.from_id}"
+                    )
+                    dest_str = (
+                        journey.to_id
+                        if str(journey.to_id).startswith(f"{journey.to_type}:")
+                        else f"{journey.to_type}:{journey.to_id}"
+                    )
                     logger.warning(
-                        "No viable routes could be calculated for journey %d ('%s') between %s:%s and %s:%s.",
+                        "No viable routes could be calculated for journey %d ('%s') between %s and %s.",
                         journey.id,
                         journey.name,
-                        journey.from_type,
-                        journey.from_id,
-                        journey.to_type,
-                        journey.to_id,
+                        orig_str,
+                        dest_str,
                     )
             except Exception as exc:
                 logger.warning(
