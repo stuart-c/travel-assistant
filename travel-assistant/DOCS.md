@@ -45,15 +45,13 @@ Add-on configuration is managed via the **Configuration** tab in Home Assistant 
 
 ### Option: `log_level`
 
-The `log_level` option controls the verbosity of log output.
+The `log_level` option controls the verbosity of log output across the application and WSGI server.
 
-- `trace`
-- `debug`
-- `info` (default)
-- `notice`
-- `warning`
-- `error`
-- `fatal`
+- `trace`: Maximum diagnostic output including internal graph solver iterations and raw payloads.
+- `debug`: Detailed logging including static asset (`.js`, `.css`) HTTP access logs and timetable parser traces.
+- `info` (default): Operational logs, dataset synchronisation summaries, and standard page/API HTTP access logs (static JS and CSS asset access logs are filtered out to keep logs concise).
+- `notice` / `warning`: Operational warnings and skipped operations.
+- `error` / `fatal`: Errors and fatal failures only.
 
 ## Ingress
 
