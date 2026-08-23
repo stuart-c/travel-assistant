@@ -544,13 +544,23 @@ def find_routes(
 
                 if (
                     current_transit_leg is not None
-                    and current_transit_leg.get("timetable_id") == tt_id
+                    and current_transit_leg.get("transport_mode") == mode
                 ):
                     current_transit_leg["to_type"] = G.nodes[v].get("node_type", "bus")
                     current_transit_leg["to_id"] = G.nodes[v].get("id", "")
                     current_transit_leg["to_name"] = edge_attr.get("to_name", "")
                     current_transit_leg["duration_minutes"] += dur
                     current_transit_leg["stops_count"] += 1
+                    if current_transit_leg.get("timetable_id") != tt_id:
+                        current_transit_leg["timetable_id"] = None
+                        existing_names = [
+                            n.strip()
+                            for n in (current_transit_leg.get("line_name") or "").split("/")
+                            if n.strip()
+                        ]
+                        if line_name and line_name not in existing_names:
+                            existing_names.append(line_name)
+                            current_transit_leg["line_name"] = " / ".join(existing_names)
                 else:
                     if current_transit_leg is not None:
                         compressed_legs.append(RouteLeg(**current_transit_leg))
