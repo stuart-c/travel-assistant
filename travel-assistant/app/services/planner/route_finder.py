@@ -575,12 +575,16 @@ def find_routes(
                         current_transit_leg["timetable_id"] = None
                         existing_names = [
                             n.strip()
-                            for n in (current_transit_leg.get("line_name") or "").split("/")
+                            for n in (current_transit_leg.get("line_name") or "").split(
+                                "/"
+                            )
                             if n.strip()
                         ]
                         if line_name and line_name not in existing_names:
                             existing_names.append(line_name)
-                            current_transit_leg["line_name"] = " / ".join(existing_names)
+                            current_transit_leg["line_name"] = " / ".join(
+                                existing_names
+                            )
                 else:
                     if current_transit_leg is not None:
                         compressed_legs.append(RouteLeg(**current_transit_leg))
