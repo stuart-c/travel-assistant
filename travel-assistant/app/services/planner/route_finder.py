@@ -509,6 +509,26 @@ def find_routes(
                             seen_line_keys.add(l_key)
                             distinct_edge_keys.append(k)
 
+                    def _forward_coverage(key: Any) -> int:
+                        attr = edge_data_dict[key]
+                        target_tt = attr.get("timetable_id")
+                        if target_tt is None:
+                            return 0
+                        cov = 0
+                        for f_idx in range(i + 1, len(np) - 1):
+                            f_u, f_v = np[f_idx], np[f_idx + 1]
+                            f_edges = G.get_edge_data(f_u, f_v) or {}
+                            if any(
+                                e_attr.get("timetable_id") == target_tt
+                                for e_attr in f_edges.values()
+                            ):
+                                cov += 1
+                            else:
+                                break
+                        return cov
+
+                    distinct_edge_keys.sort(key=_forward_coverage, reverse=True)
+
                     for k in distinct_edge_keys[:2]:
                         next_sequences.append(seq + [(u, v, k)])
 
@@ -544,13 +564,27 @@ def find_routes(
 
                 if (
                     current_transit_leg is not None
-                    and current_transit_leg.get("timetable_id") == tt_id
+                    and current_transit_leg.get("transport_mode") == mode
                 ):
                     current_transit_leg["to_type"] = G.nodes[v].get("node_type", "bus")
                     current_transit_leg["to_id"] = G.nodes[v].get("id", "")
                     current_transit_leg["to_name"] = edge_attr.get("to_name", "")
                     current_transit_leg["duration_minutes"] += dur
                     current_transit_leg["stops_count"] += 1
+                    if current_transit_leg.get("timetable_id") != tt_id:
+                        current_transit_leg["timetable_id"] = None
+                        existing_names = [
+                            n.strip()
+                            for n in (current_transit_leg.get("line_name") or "").split(
+                                "/"
+                            )
+                            if n.strip()
+                        ]
+                        if line_name and line_name not in existing_names:
+                            existing_names.append(line_name)
+                            current_transit_leg["line_name"] = " / ".join(
+                                existing_names
+                            )
                 else:
                     if current_transit_leg is not None:
                         compressed_legs.append(RouteLeg(**current_transit_leg))
