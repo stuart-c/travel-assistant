@@ -659,13 +659,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!name) return '';
     return String(name)
       .replace(/\brailway station\b/gi, 'Rail Station')
-      // Strip parenthetical indicators like (opp), (adj), (nr), (o/s), (Stop A), (Stand 1), (Bay 2), (Platform 3)
+      // Strip parenthetical indicators like (opp), (adj), (nr), (o/s), (Stop A), (Stand 1), (Bay 2), (Platform 3), (S-bound), (Northbound), etc.
       .replace(
-        /\s*\(\s*(opp|adj|nr|o\/s|opposite|adjacent|near|outside|stop\s+[a-z0-9]+|stand\s+[a-z0-9]+|bay\s+[a-z0-9]+|platform\s+[a-z0-9]+)\s*\)\s*$/gi,
+        /\s*\(\s*(opp|adj|nr|o\/s|opposite|adjacent|near|outside|stop\s+[a-z0-9]+|stand\s+[a-z0-9]+|bay\s+[a-z0-9]+|platform\s+[a-z0-9]+|[nsew]|north|south|east|west|inbound|outbound|[nsew]{1,2}[-\s]bound|[a-z]+bound|[nsew]\/b)\s*\)\s*$/gi,
         ''
       )
-      // Strip trailing bare indicators like "opp", "adj", "nr"
-      .replace(/\s+\b(opp|adj|nr|o\/s)\.?\s*$/gi, '')
+      // Strip trailing bare indicators like "opp", "adj", "nr", "S-bound", "Northbound", "Stop A", etc.
+      .replace(
+        /\s+(?:opp|adj|nr|o\/s|stop\s+[a-z0-9]+|stand\s+[a-z0-9]+|bay\s+[a-z0-9]+|platform\s+[a-z0-9]+|[nsew]{1,2}[-\s]bound|[a-z]+bound|[nsew]\/b)\.?\s*$/gi,
+        ''
+      )
       .replace(/\s+/g, ' ')
       .trim();
   }
