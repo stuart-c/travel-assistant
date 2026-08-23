@@ -429,6 +429,198 @@ def test_find_routes_intercity_rail(seeded_planner: Flask):
         assert any(leg.line_name == "Avanti West Coast" for leg in r.legs)
 
 
+def test_find_routes_preserves_interchange_between_distinct_rail_services(
+    seeded_planner: Flask,
+):
+    """Verify Mode 1 preserves intermediate stations and creates distinct legs across different services."""
+    with seeded_planner.app_context():
+        Stop.get_or_create(
+            atco_code="9100CBG",
+            defaults={
+                "naptan_code": "CBG",
+                "name": "Cambridge",
+                "stop_type": "rail",
+                "indicator": "Station",
+            },
+        )
+        Stop.get_or_create(
+            atco_code="9100CMB",
+            defaults={
+                "naptan_code": "CMB",
+                "name": "Cambridge North",
+                "stop_type": "rail",
+                "indicator": "Station",
+            },
+        )
+
+        # Service 1: King's Cross to Cambridge
+        tt1 = Timetable.create(
+            name="Great Northern (London to Cambridge)",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            start_date=datetime.date(2026, 1, 1),
+            end_date=datetime.date(2026, 12, 31),
+        )
+        tt1.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100KNGX", name="London King's Cross", type="rail"
+                    ),
+                    TimetableStop(id="9100CBG", name="Cambridge", type="rail"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="gn_cbg_01",
+                        headsign="Cambridge",
+                        operator="Great Northern",
+                        times=[{"dep": "08:00"}, {"arr": "08:50"}],
+                    )
+                ],
+            )
+        )
+        tt1.save()
+
+        # Service 2: Cambridge to Cambridge North
+        tt2 = Timetable.create(
+            name="Greater Anglia (Cambridge to Norwich)",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            start_date=datetime.date(2026, 1, 1),
+            end_date=datetime.date(2026, 12, 31),
+        )
+        tt2.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(id="9100CBG", name="Cambridge", type="rail"),
+                    TimetableStop(id="9100CMB", name="Cambridge North", type="rail"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="ga_nor_01",
+                        headsign="Norwich",
+                        operator="Greater Anglia",
+                        times=[{"dep": "08:55"}, {"arr": "09:00"}],
+                    )
+                ],
+            )
+        )
+        tt2.save()
+
+        routes = find_routes(
+            "rail", "9100KNGX", "rail", "9100CMB", days_of_week=["mon"]
+        )
+        assert len(routes) >= 1
+        r = routes[0]
+        assert r.primary_mode == "rail"
+        assert r.transfer_count == 1
+
+        transit_legs = [leg for leg in r.legs if leg.leg_type == "transit"]
+        assert len(transit_legs) == 2
+
+        # Leg 1: London King's Cross -> Cambridge
+        assert transit_legs[0].from_id == "9100KNGX"
+        assert transit_legs[0].to_id == "9100CBG"
+        assert transit_legs[0].line_name == "Great Northern (London to Cambridge)"
+
+        # Leg 2: Cambridge -> Cambridge North
+        assert transit_legs[1].from_id == "9100CBG"
+        assert transit_legs[1].to_id == "9100CMB"
+        assert transit_legs[1].line_name == "Greater Anglia (Cambridge to Norwich)"
+
+
+def test_find_routes_compresses_intermediate_stops_within_same_service(
+    seeded_planner: Flask,
+):
+    """Verify Mode 1 compresses intermediate calling points within a single continuous direct service."""
+    with seeded_planner.app_context():
+        Stop.get_or_create(
+            atco_code="9100CBG",
+            defaults={
+                "naptan_code": "CBG",
+                "name": "Cambridge",
+                "stop_type": "rail",
+                "indicator": "Station",
+            },
+        )
+        Stop.get_or_create(
+            atco_code="9100CMB",
+            defaults={
+                "naptan_code": "CMB",
+                "name": "Cambridge North",
+                "stop_type": "rail",
+                "indicator": "Station",
+            },
+        )
+
+        # Direct Service: King's Cross -> Cambridge -> Cambridge North
+        tt_direct = Timetable.create(
+            name="Great Northern Express (London to Kings Lynn)",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            start_date=datetime.date(2026, 1, 1),
+            end_date=datetime.date(2026, 12, 31),
+        )
+        tt_direct.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100KNGX", name="London King's Cross", type="rail"
+                    ),
+                    TimetableStop(id="9100CBG", name="Cambridge", type="rail"),
+                    TimetableStop(id="9100CMB", name="Cambridge North", type="rail"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="gn_direct_01",
+                        headsign="Kings Lynn",
+                        operator="Great Northern",
+                        times=[
+                            {"dep": "08:00"},
+                            {"arr": "08:50", "dep": "08:52"},
+                            {"arr": "08:57"},
+                        ],
+                    )
+                ],
+            )
+        )
+        tt_direct.save()
+
+        routes = find_routes(
+            "rail", "9100KNGX", "rail", "9100CMB", days_of_week=["mon"]
+        )
+        assert len(routes) >= 1
+
+        direct_routes = [
+            r
+            for r in routes
+            if len([leg for leg in r.legs if leg.leg_type == "transit"]) == 1
+        ]
+        assert len(direct_routes) >= 1
+        r = direct_routes[0]
+        assert r.transfer_count == 0
+
+        transit_legs = [leg for leg in r.legs if leg.leg_type == "transit"]
+        assert len(transit_legs) == 1
+        assert transit_legs[0].from_id == "9100KNGX"
+        assert transit_legs[0].to_id == "9100CMB"
+        assert (
+            transit_legs[0].line_name == "Great Northern Express (London to Kings Lynn)"
+        )
+
+
 def test_plan_journey_depart_mode(seeded_planner: Flask):
     """Verify Mode 2 RAPTOR planning with depart_after constraint."""
     with seeded_planner.app_context():
