@@ -365,11 +365,11 @@ def find_routes(
         dur = data.get("duration", 1)
         leg_type = data.get("leg_type", "walk")
         if leg_type == "transit":
-            # Intermediate stops on the same vehicle route do not penalise routes
-            w = 1.0
+            # In-vehicle transit travel carries a near-zero fractional weight (0.01) to prevent zero-weight cycles while maintaining pure per-change costs
+            w = 0.01
         elif leg_type in ("interchange", "platform_transfer"):
             # Vehicle and station changes carry duration plus a transfer penalty
-            w = float(dur) + 8.0
+            w = float(dur) + 12.0
         else:
             w = float(dur)
 
@@ -387,14 +387,14 @@ def find_routes(
                     nx.shortest_simple_paths(
                         simple_g, origin_node, dest_node, weight="weight"
                     ),
-                    max_routes * 20,
+                    max_routes * 25,
                 )
             )
         )
     except Exception as e:
         logger.debug("shortest_simple_paths main exception: %s", e)
 
-    # Search paths across all reachable origin access nodes to destination egress nodes
+    # Dedicated path discovery across each reachable origin access node to destination egress nodes
     origin_targets = {make_node_key(w[2], w[3]) for w in origin_walks if len(w) >= 4}
     dest_sources = {make_node_key(w[0], w[1]) for w in dest_walks if len(w) >= 2}
 
@@ -409,7 +409,7 @@ def find_routes(
                         nx.shortest_simple_paths(
                             simple_g, o_target, dest_node, weight="weight"
                         ),
-                        10,
+                        25,
                     )
                 )
                 for sp in sub_paths:
@@ -427,7 +427,7 @@ def find_routes(
                             nx.shortest_simple_paths(
                                 simple_g, o_target, d_source, weight="weight"
                             ),
-                            5,
+                            15,
                         )
                     )
                     for sp in sub_paths:
@@ -609,9 +609,18 @@ def find_routes(
             compressed_legs.append(RouteLeg(**current_transit_leg))
 
         if stage_idx > max_stages + 2:
+            logger.debug(
+                "Rejected candidate path due to stage_idx %d > %d",
+                stage_idx,
+                max_stages + 2,
+            )
             continue
 
         if not is_valid_leg_sequence(compressed_legs):
+            logger.debug(
+                "Rejected candidate path due to is_valid_leg_sequence: %s",
+                [(leg.leg_type, leg.transport_mode) for leg in compressed_legs],
+            )
             continue
 
         transit_legs_count = sum(
@@ -765,12 +774,12 @@ def prune_route_templates(
             else "no_rail"
         )
         access_stop = (
-            r.legs[0].to_id
+            normalise_id(r.legs[0].to_id)
             if len(r.legs) > 1 and r.legs[0].leg_type == "walk"
             else "direct"
         )
         egress_stop = (
-            r.legs[-1].from_id
+            normalise_id(r.legs[-1].from_id)
             if len(r.legs) > 1 and r.legs[-1].leg_type == "walk"
             else "direct"
         )
