@@ -655,30 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  function sanitiseStopName(name) {
-    if (!name) return '';
-    return String(name)
-      .replace(/\brailway station\b/gi, 'Rail Station')
-      // Strip parenthetical indicators like (opp), (adj), (nr), (o/s), (Stop A), (Stand 1), (Bay 2), (Platform 3)
-      .replace(
-        /\s*\(\s*(opp|adj|nr|o\/s|opposite|adjacent|near|outside|stop\s+[a-z0-9]+|stand\s+[a-z0-9]+|bay\s+[a-z0-9]+|platform\s+[a-z0-9]+)\s*\)\s*$/gi,
-        ''
-      )
-      // Strip trailing bare indicators like "opp", "adj", "nr"
-      .replace(/\s+\b(opp|adj|nr|o\/s)\.?\s*$/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
   function getStopNodeId(id, name, type) {
-    const cleanName = sanitiseStopName(name);
-    const normName = cleanName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-    if (normName) {
-      return `stop_${normName}`;
-    }
     const normId = (id || '')
       .replace(/^(atco|naptan|crs|tiploc|ha|custom):/i, '')
       .trim()
@@ -687,6 +664,14 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/^_+|_+$/g, '');
     if (normId) {
       return `stop_${normId}`;
+    }
+    const normName = (name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (normName) {
+      return `stop_${normName}`;
     }
     return 'stop_unknown';
   }
@@ -767,8 +752,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     parts.push(
       `<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed rgba(148, 163, 184, 0.4); font-size: 11px; opacity: 0.85;">${escapeHtml(
-        sanitiseStopName(leg.from_name) || 'Start'
-      )} &rarr; ${escapeHtml(sanitiseStopName(leg.to_name) || 'End')}</div>`
+        leg.from_name || 'Start'
+      )} &rarr; ${escapeHtml(leg.to_name || 'End')}</div>`
     );
 
     const tooltipEl = document.createElement('div');
@@ -879,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
           fromNodeId = getStopNodeId(leg.from_id, leg.from_name, leg.from_type);
           if (!stopMetadataMap.has(fromNodeId)) {
             stopMetadataMap.set(fromNodeId, {
-              name: sanitiseStopName(leg.from_name) || 'Stop',
+              name: leg.from_name || 'Stop',
               type: leg.from_type,
               id: leg.from_id,
             });
@@ -893,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
           toNodeId = getStopNodeId(leg.to_id, leg.to_name, leg.to_type);
           if (!stopMetadataMap.has(toNodeId)) {
             stopMetadataMap.set(toNodeId, {
-              name: sanitiseStopName(leg.to_name) || 'Stop',
+              name: leg.to_name || 'Stop',
               type: leg.to_type,
               id: leg.to_id,
             });
