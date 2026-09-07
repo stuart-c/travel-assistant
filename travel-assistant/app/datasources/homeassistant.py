@@ -193,3 +193,84 @@ class HomeAssistantClient(BaseDataSource):
                 f"Network error fetching zones from Home Assistant: {exc}",
                 provider=self.provider_name,
             )
+
+    def get_entity_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve state and attributes of a Home Assistant entity by entity_id."""
+        headers = self._get_headers()
+        try:
+            url = f"{self.base_url}/states/{entity_id.strip()}"
+            resp = requests.get(url, headers=headers, timeout=self.timeout_seconds)
+            if resp.status_code == 404:
+                return None
+            if resp.status_code in (401, 403):
+                raise DataSourceAuthError(
+                    f"Authentication failed for Home Assistant ({resp.status_code}): {resp.text}",
+                    provider=self.provider_name,
+                )
+            if resp.status_code != 200:
+                raise DataSourceError(
+                    f"Home Assistant API returned HTTP {resp.status_code}: {resp.text}",
+                    provider=self.provider_name,
+                )
+            return resp.json()
+        except requests.exceptions.Timeout as exc:
+            raise DataSourceConnectionError(
+                f"Connection timed out fetching entity state for {entity_id} from Home Assistant: {exc}",
+                provider=self.provider_name,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise DataSourceConnectionError(
+                f"Network error fetching entity state for {entity_id} from Home Assistant: {exc}",
+                provider=self.provider_name,
+            )
+
+    def call_service(
+        self,
+        domain: str,
+        service: str,
+        service_data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Execute a service call against the Home Assistant Core API."""
+        headers = self._get_headers()
+        payload = service_data or {}
+        try:
+            url = f"{self.base_url}/services/{domain.strip()}/{service.strip()}"
+            resp = requests.post(
+                url, headers=headers, json=payload, timeout=self.timeout_seconds
+            )
+            if resp.status_code in (401, 403):
+                raise DataSourceAuthError(
+                    f"Authentication failed calling service {domain}.{service} ({resp.status_code}): {resp.text}",
+                    provider=self.provider_name,
+                )
+            if resp.status_code not in (200, 201):
+                raise DataSourceError(
+                    f"Home Assistant service {domain}.{service} returned HTTP {resp.status_code}: {resp.text}",
+                    provider=self.provider_name,
+                )
+            return True
+        except requests.exceptions.Timeout as exc:
+            raise DataSourceConnectionError(
+                f"Connection timed out calling service {domain}.{service}: {exc}",
+                provider=self.provider_name,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise DataSourceConnectionError(
+                f"Network error calling service {domain}.{service}: {exc}",
+                provider=self.provider_name,
+            )
+
+    def send_mobile_notification(
+        self,
+        title: str,
+        message: str,
+        service_name: str = "mobile_app_stuart_mobile",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Dispatch a push notification to Stuart's mobile device with no fallback."""
+        payload: Dict[str, Any] = {"message": message}
+        if title:
+            payload["title"] = title
+        if data:
+            payload["data"] = data
+        return self.call_service("notify", service_name, payload)

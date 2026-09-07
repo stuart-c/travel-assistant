@@ -227,3 +227,122 @@ def test_ha_validate_credentials_network_error(mock_get: MagicMock) -> None:
     with pytest.raises(DataSourceConnectionError) as exc_info:
         client.validate_credentials()
     assert "DNS lookup failed" in str(exc_info.value)
+
+
+@patch("app.datasources.homeassistant.requests.get")
+def test_ha_get_entity_state_success(mock_get: MagicMock) -> None:
+    """Test get_entity_state successfully retrieves entity state dictionary."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "entity_id": "person.stuart",
+        "state": "home",
+        "attributes": {"latitude": 51.5308, "longitude": -0.1238},
+    }
+    mock_get.return_value = mock_resp
+
+    client = HomeAssistantClient(token="valid-token")
+    res = client.get_entity_state("person.stuart")
+    assert res is not None
+    assert res["entity_id"] == "person.stuart"
+    assert res["state"] == "home"
+
+
+@patch("app.datasources.homeassistant.requests.get")
+def test_ha_get_entity_state_not_found(mock_get: MagicMock) -> None:
+    """Test get_entity_state returns None when entity is not found (HTTP 404)."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    mock_get.return_value = mock_resp
+
+    client = HomeAssistantClient(token="valid-token")
+    res = client.get_entity_state("person.non_existent")
+    assert res is None
+
+
+@patch("app.datasources.homeassistant.requests.get")
+def test_ha_get_entity_state_errors(mock_get: MagicMock) -> None:
+    """Test get_entity_state error handling for auth, server error, and timeouts."""
+    client = HomeAssistantClient(token="valid-token")
+
+    mock_get.return_value = MagicMock(status_code=401, text="Unauthorized")
+    with pytest.raises(DataSourceAuthError):
+        client.get_entity_state("person.stuart")
+
+    mock_get.return_value = MagicMock(status_code=500, text="Internal Error")
+    with pytest.raises(DataSourceError):
+        client.get_entity_state("person.stuart")
+
+    mock_get.side_effect = requests.exceptions.Timeout("Timeout")
+    with pytest.raises(DataSourceConnectionError):
+        client.get_entity_state("person.stuart")
+
+    mock_get.side_effect = requests.exceptions.RequestException("Network error")
+    with pytest.raises(DataSourceConnectionError):
+        client.get_entity_state("person.stuart")
+
+
+@patch("app.datasources.homeassistant.requests.post")
+def test_ha_call_service_success(mock_post: MagicMock) -> None:
+    """Test call_service executes POST request to Core API."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_post.return_value = mock_resp
+
+    client = HomeAssistantClient(token="valid-token")
+    assert (
+        client.call_service("notify", "mobile_app_stuart_mobile", {"message": "Test"})
+        is True
+    )
+    mock_post.assert_called_once()
+    assert (
+        mock_post.call_args[0][0]
+        == "http://supervisor/core/api/services/notify/mobile_app_stuart_mobile"
+    )
+    assert mock_post.call_args[1]["json"] == {"message": "Test"}
+
+
+@patch("app.datasources.homeassistant.requests.post")
+def test_ha_call_service_errors(mock_post: MagicMock) -> None:
+    """Test call_service error conditions."""
+    client = HomeAssistantClient(token="valid-token")
+
+    mock_post.return_value = MagicMock(status_code=403, text="Forbidden")
+    with pytest.raises(DataSourceAuthError):
+        client.call_service("notify", "mobile_app_stuart_mobile")
+
+    mock_post.return_value = MagicMock(status_code=400, text="Bad Request")
+    with pytest.raises(DataSourceError):
+        client.call_service("notify", "mobile_app_stuart_mobile")
+
+    mock_post.side_effect = requests.exceptions.Timeout("Timeout")
+    with pytest.raises(DataSourceConnectionError):
+        client.call_service("notify", "mobile_app_stuart_mobile")
+
+    mock_post.side_effect = requests.exceptions.RequestException("Post failed")
+    with pytest.raises(DataSourceConnectionError):
+        client.call_service("notify", "mobile_app_stuart_mobile")
+
+
+@patch.object(HomeAssistantClient, "call_service")
+def test_ha_send_mobile_notification(mock_call: MagicMock) -> None:
+    """Test send_mobile_notification packages payload with title, message, and data."""
+    mock_call.return_value = True
+    client = HomeAssistantClient(token="valid-token")
+
+    res = client.send_mobile_notification(
+        title="Travel Alert",
+        message="Next bus at 08:08",
+        service_name="mobile_app_stuart_mobile",
+        data={"url": "/"},
+    )
+    assert res is True
+    mock_call.assert_called_once_with(
+        "notify",
+        "mobile_app_stuart_mobile",
+        {
+            "message": "Next bus at 08:08",
+            "title": "Travel Alert",
+            "data": {"url": "/"},
+        },
+    )

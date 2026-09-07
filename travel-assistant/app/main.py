@@ -86,6 +86,9 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
         and not os.environ.get("PYTEST_CURRENT_TEST")
     ):
         start_background_worker(app)
+        from app.services.dispatcher import start_departure_monitor
+
+        start_departure_monitor(app)
 
     # Refresh live LDBWS Swagger schema on startup outside test environments
     if (
