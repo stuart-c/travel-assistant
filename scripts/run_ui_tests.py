@@ -65,6 +65,7 @@ class UITester:
         )
 
         routes_to_check = [
+            "/journey",
             "/config/credentials",
             "/config/locations",
             "/config/timetables",

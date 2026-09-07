@@ -23,6 +23,7 @@ from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
     format_progress_notification,
+    get_journey_live_tracking_data,
     update_journey_progress,
 )
 
@@ -37,6 +38,7 @@ __all__ = [
     "format_departure_notification",
     "format_progress_notification",
     "get_departure_monitor",
+    "get_journey_live_tracking_data",
     "haversine_distance",
     "is_journey_active_for_datetime",
     "is_person_near_origin",

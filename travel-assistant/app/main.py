@@ -14,6 +14,7 @@ from app import db
 from app.logging_config import GunicornLogger, StaticAccessLogFilter, configure_logging
 from app.sync import request_sync, start_background_worker
 from app.views.config import config_bp
+from app.views.journey import journey_bp
 
 __all__ = [
     "app",
@@ -77,6 +78,7 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
 
     # Register blueprints
     app.register_blueprint(config_bp)
+    app.register_blueprint(journey_bp)
 
     # Start background synchronization daemon worker if enabled
     if (
@@ -107,14 +109,26 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
             )
 
     @app.context_processor
-    def inject_ingress_path() -> Dict[str, str]:
-        """Inject ingress base path and cache busting token into templates."""
+    def inject_ingress_path() -> Dict[str, Any]:
+        """Inject ingress base path, cache busting token, and active journey status into templates."""
         ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
+        has_active = False
+        try:
+            from app.services.dispatcher.monitor import get_departure_monitor
+
+            mon = get_departure_monitor()
+            if mon and mon.active_journeys:
+                has_active = True
+        except Exception:
+            pass
+
         return {
             "ingress_path": ingress_path,
             "app_version": app.config.get("VERSION", "0.1.0"),
             "app_name": app.config.get("APP_NAME", "Travel Assistant"),
             "cache_bust": STARTUP_CACHE_BUST,
+            "has_active_journey": has_active,
+            "current_path": request.path,
         }
 
     @app.route("/")

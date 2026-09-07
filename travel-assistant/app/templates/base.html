@@ -19,7 +19,23 @@
           </a>
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/30">v{{ app_version }}</span>
         </div>
-        <div>
+        <div class="flex items-center gap-1 sm:gap-2">
+          <nav class="flex items-center gap-1 sm:gap-1.5 mr-1" aria-label="Main Navigation">
+            <a href="{{ ingress_path }}/" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-colors {% if current_path == '/' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500/20{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60{% endif %}" id="nav-dashboard">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">dashboard</span>
+              <span>Dashboard</span>
+            </a>
+            <a href="{{ ingress_path }}/journey" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-colors {% if current_path and current_path.startswith('/journey') %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500/20{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60{% endif %}" id="nav-live-journey">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">navigation</span>
+              <span>Live Journey</span>
+              {% if has_active_journey %}
+              <span class="flex h-2 w-2 relative ml-0.5" title="Active journey in progress">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              {% endif %}
+            </a>
+          </nav>
           <a href="{{ ingress_path }}/config/timetables" class="inline-flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/80 transition-colors" title="Settings" aria-label="Settings" id="settings-cog-button">
             <span class="material-symbols-outlined text-xl" aria-hidden="true">settings</span>
           </a>

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Dedicated Live Journey Tracking Screen and Real-Time Telemetry API (`/journey` and `/api/journey/live`):
+  - Created a dedicated user-facing screen (accessible directly from top navigation outside `/config/...` settings) visualizing journey routes and Stuart's real-time position within them.
+  - Implemented interactive Leaflet map rendering route waypoints, transit corridor polylines, departure/interchange stops, and Stuart's live GPS position with an animated beacon marker.
+  - Built visual journey progress stepper and timeline displaying completed stages, the active leg with a "Stuart is here" indicator, and upcoming legs.
+  - Added real-time telemetry cards detailing live rail platforms (Darwin LDBWS), service delay status, next step instructions, and distance to the next stop and final destination in British English.
+  - Added client-side controller (`static/js/journey_tracker.js`) with 10-second auto-polling and smooth map updates.
+  - Updated application header navigation in `base.html` with direct links to "Dashboard" and "Live Journey" (with an active journey pulsing indicator), and added a Live Journey Tracking hero card to `index.html`.
+  - Updated mobile notification click actions (`data["url"] = "/journey"` and `data["clickAction"] = "/journey"`) to open directly into the live tracking screen.
 - Added Journey Progress Tracking and In-Place Notification Updates (`app/services/dispatcher/tracker.py` and `DepartureMonitor`):
   - Continuously monitors Stuart's location (`person.stuart`) during an active journey and updates the existing mobile notification card in-place using persistent notification tags (`tag: journey_{id}`) sent directly to `notify.mobile_app_stuart_mobile` (no fallback).
   - Implemented granular journey step transitions (`JourneyStepStatus`): `PRE_DEPARTURE` (getting ready at origin), `EN_ROUTE_TO_STOP` (walking towards the boarding stop), `AT_DEPARTURE_STOP` (arrived at stop awaiting transit), `ON_TRANSIT` (on board vehicle in transit), `AT_INTERCHANGE` (transferring between services at an intermediate hub), `EN_ROUTE_TO_DESTINATION` (final walking leg to destination), and `ARRIVED` (journey complete).

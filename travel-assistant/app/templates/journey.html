@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block title %}{{ app_name }} - Live Journey Tracking{% endblock %}
+
+{% block extra_head %}
+<!-- Leaflet Stylesheet (CDN) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* Custom Pulse Animation for Stuart's GPS Marker */
+  .stuart-beacon-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .stuart-beacon-ping {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: rgb(14, 165, 233);
+    opacity: 0.6;
+    animation: beacon-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  .stuart-beacon-core {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    border: 2.5px solid #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+  @keyframes beacon-ping {
+    75%, 100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+  .waypoint-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    color: white;
+  }
+</style>
+{% endblock %}
+
+{% block subtitle %}
+<p class="text-base text-slate-600 dark:text-slate-400">
+  Real-time journey navigation, transit stages, live platform status, and position monitoring.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" id="journey-tracker-root">
+  {% if not data.journeys or data.journeys|length == 0 %}
+  <!-- Empty State: No Journeys Configured -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-8 sm:p-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400 mb-4">
+      <span class="material-symbols-outlined text-3xl">route</span>
+    </div>
+    <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">No Journeys Configured</h2>
+    <p class="max-w-md mx-auto text-sm sm:text-base text-slate-600 dark:text-slate-400 mb-6">
+      To track journeys and monitor real-time progression, create your journeys in the settings section.
+    </p>
+    <a href="{{ ingress_path }}/config/journeys" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition-all">
+      <span class="material-symbols-outlined text-base">add</span>
+      <span>Configure Journeys</span>
+      <span>&rarr;</span>
+    </a>
+  </section>
+  {% else %}
+
+  <!-- Control & Selection Bar -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+        <label for="journey-select" class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0">
+          Select Journey:
+        </label>
+        <div class="relative flex-1 max-w-lg">
+          <select 
+            id="journey-select" 
+            class="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+          >
+            {% for j in data.journeys %}
+            <option value="{{ j.id }}" {% if data.selected_journey and data.selected_journey.id == j.id %}selected{% endif %}>
+              {{ j.name }}{% if j.is_active %} ● (Active Now){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 self-end md:self-auto">
+        <!-- Live Active Status Badge -->
+        <div id="live-indicator-badge">
+          {% if data.selected_journey and data.selected_journey.is_active %}
+          <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/30">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span id="badge-status-text">Active Journey</span>
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+            <span id="badge-status-text">Scheduled</span>
+          </span>
+          {% endif %}
+        </div>
+
+        <!-- Refresh Button -->
+        <button 
+          type="button" 
+          id="btn-refresh-telemetry" 
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          title="Refresh live telemetry"
+        >
+          <span class="material-symbols-outlined text-base" id="refresh-icon">refresh</span>
+          <span class="hidden sm:inline">Refresh</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Status & Next Step Hero Banner -->
+  <section class="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/70 via-white to-white p-6 sm:p-8 shadow-sm dark:border-sky-900/40 dark:from-sky-950/30 dark:via-slate-900/90 dark:to-slate-900/90" id="hero-banner">
+    <div class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap mb-1">
+            <span class="text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400" id="journey-overview-sub">
+              {{ data.selected_journey.name if data.selected_journey else 'Journey' }}
+            </span>
+            <span class="text-slate-300 dark:text-slate-600">•</span>
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400" id="journey-terminals">
+              {{ data.selected_journey.from_name }} &rarr; {{ data.selected_journey.to_name }}
+            </span>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2" id="hero-stage-title">
+            <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl" id="hero-stage-icon">
+              {{ data.selected_journey.status.icon if data.selected_journey else 'navigation' }}
+            </span>
+            <span id="hero-stage-label">
+              {{ data.selected_journey.status.label if data.selected_journey else 'Overview' }}
+            </span>
+          </h2>
+        </div>
+
+        <!-- Timetable departure / arrival chips -->
+        <div class="flex items-center gap-2 self-start sm:self-auto">
+          <div class="px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-2xs">
+            <span class="text-slate-500 dark:text-slate-400">Dep:</span> 
+            <strong class="text-slate-900 dark:text-white font-semibold" id="hero-dep-time">
+              {{ data.selected_journey.departure_time or '--:--' }}
+            </strong>
+          </div>
+          <div class="px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-2xs">
+            <span class="text-slate-500 dark:text-slate-400">Arr:</span> 
+            <strong class="text-slate-900 dark:text-white font-semibold" id="hero-arr-time">
+              {{ data.selected_journey.arrival_time or '--:--' }}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actionable Next Step Banner -->
+      <div class="p-4 rounded-xl bg-sky-500/10 border border-sky-500/20 text-slate-800 dark:text-slate-100 flex items-start gap-3" id="hero-next-step-box">
+        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-xl shrink-0 mt-0.5">near_me</span>
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300 mb-0.5">
+            Next Action
+          </div>
+          <div class="text-sm sm:text-base font-semibold text-slate-900 dark:text-white" id="hero-next-step-text">
+            {{ data.selected_journey.status.next_step if data.selected_journey else 'Follow scheduled route.' }}
+          </div>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed" id="hero-message-text">
+            {{ data.selected_journey.status.message if data.selected_journey else '' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- 4 Telemetry Cards Grid -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+        <!-- Stuart's Location -->
+        <div class="p-3.5 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 shadow-2xs">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
+            <span class="material-symbols-outlined text-sm text-sky-500">person_pin_circle</span>
+            <span>Stuart's Location</span>
+          </div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white truncate" id="telemetry-person-state">
+            {{ data.person.state|title if data.person and data.person.state else 'Unknown' }}
+          </div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" id="telemetry-person-coords">
+            {% if data.person and data.person.latitude and data.person.longitude %}
+            {{ "%.4f"|format(data.person.latitude) }}, {{ "%.4f"|format(data.person.longitude) }}
+            {% else %}
+            GPS awaiting signal
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Distance to Next Stop -->
+        <div class="p-3.5 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 shadow-2xs">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
+            <span class="material-symbols-outlined text-sm text-amber-500">straighten</span>
+            <span>Distance to Next Stop</span>
+          </div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white" id="telemetry-dist-next">
+            {% if data.person and data.person.distance_to_next_stop_m is not none %}
+              {% if data.person.distance_to_next_stop_m >= 1000 %}
+                {{ "%.1f"|format(data.person.distance_to_next_stop_m / 1000.0) }} km
+              {% else %}
+                {{ data.person.distance_to_next_stop_m|int }} metres
+              {% endif %}
+            {% else %}
+              Calculating...
+            {% endif %}
+          </div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" id="telemetry-dist-dest">
+            {% if data.person and data.person.distance_to_destination_m is not none %}
+              Dest: {{ "%.1f"|format(data.person.distance_to_destination_m / 1000.0) }} km
+            {% else %}
+              Dest distance N/A
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Live Platform -->
+        <div class="p-3.5 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 shadow-2xs">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
+            <span class="material-symbols-outlined text-sm text-indigo-500">meeting_room</span>
+            <span>Platform</span>
+          </div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5" id="telemetry-platform">
+            {% if data.selected_journey and data.selected_journey.platform %}
+              <span>Platform {{ data.selected_journey.platform }}</span>
+              <span class="inline-flex px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">Live</span>
+            {% else %}
+              <span class="text-slate-500 dark:text-slate-400">Unannounced</span>
+            {% endif %}
+          </div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+            Darwin LDBWS Feed
+          </div>
+        </div>
+
+        <!-- Live Service Status -->
+        <div class="p-3.5 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 shadow-2xs">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
+            <span class="material-symbols-outlined text-sm text-emerald-500">traffic</span>
+            <span>Service Status</span>
+          </div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white" id="telemetry-live-status">
+            {{ data.selected_journey.live_status if data.selected_journey and data.selected_journey.live_status else 'On schedule' }}
+          </div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" id="telemetry-last-updated">
+            Updated: {{ data.person.updated_at if data.person and data.person.updated_at else 'Just now' }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Map Section -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+          <span class="material-symbols-outlined text-sky-600 dark:text-sky-400">map</span>
+          <span>Journey Corridor &amp; Real-time Location</span>
+        </h3>
+        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+          Interactive map tracking Stuart's GPS position, route corridor, transit stations, and interchanges.
+        </p>
+      </div>
+
+      <!-- Map Legend -->
+      <div class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 self-start sm:self-auto flex-wrap">
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+          <span>Origin</span>
+        </span>
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-sky-500 inline-block border-2 border-white shadow-xs"></span>
+          <span class="font-bold text-sky-700 dark:text-sky-300">Stuart</span>
+        </span>
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span>
+          <span>Transit Stop</span>
+        </span>
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
+          <span>Destination</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Leaflet Map Container -->
+    <div 
+      id="journey-map" 
+      class="w-full h-[400px] sm:h-[480px] rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-hidden relative z-0 bg-slate-100 dark:bg-slate-950"
+    ></div>
+  </section>
+
+  <!-- Journey Legs & Progress Stepper -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="mb-4">
+      <h3 class="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400">linear_scale</span>
+        <span>Journey Stages &amp; Route Timeline</span>
+      </h3>
+      <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+        Detailed transit legs, scheduled connections, walking segments, and platform announcements.
+      </p>
+    </div>
+
+    <div class="space-y-4" id="journey-legs-container">
+      {% if data.selected_journey and data.selected_journey.legs and data.selected_journey.legs|length > 0 %}
+        {% for leg in data.selected_journey.legs %}
+        <div class="p-4 rounded-xl border transition-all duration-200 {% if leg.is_current and data.selected_journey.is_active %}border-sky-500 bg-sky-50/40 dark:border-sky-500/80 dark:bg-sky-950/30 ring-2 ring-sky-500/20{% elif leg.is_completed %}border-slate-200/60 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 opacity-75{% else %}border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40{% endif %}" id="leg-card-{{ leg.leg_index }}">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-start sm:items-center gap-3">
+              <!-- Mode Icon -->
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 {% if leg.mode == 'walk' %}bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300{% elif leg.mode == 'rail' %}bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300{% else %}bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300{% endif %}">
+                <span class="material-symbols-outlined text-xl">
+                  {% if leg.mode == 'walk' %}directions_walk{% elif leg.mode == 'rail' %}train{% elif leg.mode == 'bus' %}directions_bus{% else %}directions_transit{% endif %}
+                </span>
+              </div>
+
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Stage {{ leg.leg_index + 1 }}
+                  </span>
+                  <span class="text-sm font-bold text-slate-900 dark:text-white">
+                    {% if leg.mode == 'walk' %}
+                      Walk ({{ leg.duration_minutes }}m)
+                    {% else %}
+                      {{ leg.line if leg.line else leg.mode|title }}
+                      {% if leg.operator %}<span class="font-normal text-xs text-slate-500">({{ leg.operator }})</span>{% endif %}
+                    {% endif %}
+                  </span>
+                  {% if leg.is_current and data.selected_journey.is_active %}
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-600 text-white shadow-xs">
+                    <span class="material-symbols-outlined text-[13px]">person</span>
+                    <span>Stuart is here</span>
+                  </span>
+                  {% elif leg.is_completed %}
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    <span class="material-symbols-outlined text-[13px]">check</span>
+                    <span>Completed</span>
+                  </span>
+                  {% endif %}
+                </div>
+
+                <div class="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
+                  <span class="font-medium text-slate-800 dark:text-slate-200">{{ leg.origin.name }}</span>
+                  <span>&rarr;</span>
+                  <span class="font-medium text-slate-800 dark:text-slate-200">{{ leg.destination.name }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Times & Platform -->
+            <div class="flex items-center gap-3 self-end sm:self-auto shrink-0">
+              {% if leg.origin.platform %}
+              <div class="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200/80 dark:bg-indigo-950/60 dark:border-indigo-800/80 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                Plat {{ leg.origin.platform }}
+              </div>
+              {% endif %}
+
+              <div class="text-right">
+                <div class="text-sm font-mono font-bold text-slate-900 dark:text-white">
+                  {{ leg.dep_time }} &rarr; {{ leg.arr_time }}
+                </div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                  {{ leg.duration_minutes }} mins
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="p-6 text-center text-sm text-slate-500 dark:text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-800/40">
+        No active itinerary stages discovered for the selected journey.
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<!-- Initial Tracking Data Bootstrap -->
+<script id="initial-tracking-data" type="application/json">
+  {{ initial_data_json|safe }}
+</script>
+
+<!-- Dependencies: Leaflet and Journey Tracking Controller -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ ingress_path }}/static/js/journey_tracker.js?v={{ cache_bust }}"></script>
+{% endblock %}
