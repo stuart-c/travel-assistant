@@ -42,6 +42,8 @@ class DepartureCandidate:
     notification_trigger_minutes: int
     is_live: bool = False
     delay_minutes: int = 0
+    platform: Optional[str] = None
+    itinerary: Optional[Any] = None
 
 
 def is_journey_active_for_datetime(
@@ -200,6 +202,7 @@ def extract_departure_candidates(
             leave_time=leave_time_str,
             arrival_time=itin.arrival_time,
             notification_trigger_minutes=trigger_min,
+            itinerary=itin,
         )
         candidates.append(cand)
 
@@ -239,6 +242,9 @@ def apply_live_departure_adjustments(
             first_dep = departures[0]
             std = first_dep.get("std")  # Scheduled
             etd = first_dep.get("etd")  # Expected
+            platform = first_dep.get("platform")
+            if platform:
+                candidate.platform = str(platform).strip()
             if std == candidate.transit_dep_time and etd and etd != "On time":
                 live_min = parse_time_to_minutes(etd)
                 if live_min is not None:
@@ -325,12 +331,13 @@ def format_departure_notification(
     else:
         service_desc = mode_label
 
+    plat_note = f" (Platform {candidate.platform})" if candidate.platform else ""
     live_note = ""
     if candidate.is_live and candidate.delay_minutes > 0:
         live_note = f" (delayed by {candidate.delay_minutes}m)"
 
     message = (
-        f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{live_note} "
+        f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note}{live_note} "
         f"from {candidate.origin_stop_name} departing at {candidate.transit_dep_time}. "
         f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
     )
@@ -338,8 +345,8 @@ def format_departure_notification(
     data: Dict[str, Any] = {
         "url": "/",
         "clickAction": "/",
-        "tag": f"journey_departure_{candidate.journey_id}",
-        "group": "travel_assistant_departures",
+        "tag": f"journey_{candidate.journey_id}",
+        "group": "travel_assistant_journeys",
     }
 
     return title, message, data

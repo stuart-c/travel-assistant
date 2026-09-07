@@ -422,7 +422,7 @@ def test_format_departure_notification() -> None:
     assert "departing at 08:08" in message
     assert "Estimated arrival at Tech Campus by 08:28." in message
     assert data["url"] == "/"
-    assert data["tag"] == "journey_departure_1"
+    assert data["tag"] == "journey_1"
 
 
 # --- Monitor Tests ---

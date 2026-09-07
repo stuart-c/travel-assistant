@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Journey Progress Tracking and In-Place Notification Updates (`app/services/dispatcher/tracker.py` and `DepartureMonitor`):
+  - Continuously monitors Stuart's location (`person.stuart`) during an active journey and updates the existing mobile notification card in-place using persistent notification tags (`tag: journey_{id}`) sent directly to `notify.mobile_app_stuart_mobile` (no fallback).
+  - Implemented granular journey step transitions (`JourneyStepStatus`): `PRE_DEPARTURE` (getting ready at origin), `EN_ROUTE_TO_STOP` (walking towards the boarding stop), `AT_DEPARTURE_STOP` (arrived at stop awaiting transit), `ON_TRANSIT` (on board vehicle in transit), `AT_INTERCHANGE` (transferring between services at an intermediate hub), `EN_ROUTE_TO_DESTINATION` (final walking leg to destination), and `ARRIVED` (journey complete).
+  - Integrated real-time railway platform detection via National Rail Darwin Live (`TrainLiveClient`), probing fastest departures to announce platform numbers and live delay statuses (e.g. `Platform 4 (On time)`) as soon as published.
+  - Formatted British English notification messages containing next-step instructions, walking times, connection transfers, calling destinations, and arrival alerts.
+  - Added corridor boundary and leave-time expiration handling to ensure inactive or off-route journeys expire cleanly and allow subsequent departure notifications to trigger.
 - Added Journey Departure Detection and Notification Dispatcher (`app/services/dispatcher/`) with automated background monitoring daemon (`DepartureMonitor`):
   - Automatically detects Stuart (`person.stuart`) near the start of any configured journey (within 200 metres GPS distance or inside the origin Home Assistant zone) during active scheduled time windows (`time_settings`).
   - Calculates the optimal departure leave-by time ($T_{\text{leave}} = T_{\text{transit\_dep}} - T_{\text{walk\_mins}}$) using the in-memory RAPTOR solver (`plan_journey`) and live departure probe adjustments (National Rail Darwin Live).
