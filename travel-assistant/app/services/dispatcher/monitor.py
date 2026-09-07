@@ -3,7 +3,7 @@
 import datetime
 import logging
 import threading
-from typing import Optional, Set
+from typing import Dict, Optional, Set
 from flask import Flask
 
 from app.datasources.homeassistant import HomeAssistantClient
@@ -15,6 +15,11 @@ from app.services.dispatcher.evaluator import (
     is_journey_active_for_datetime,
 )
 from app.services.dispatcher.proximity import is_person_near_origin
+from app.services.dispatcher.tracker import (
+    ActiveJourney,
+    JourneyStepStatus,
+    update_journey_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,7 @@ class DepartureMonitor:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.sent_keys: Set[str] = set()
+        self.active_journeys: Dict[int, ActiveJourney] = {}
         self._last_clean_date: Optional[datetime.date] = None
 
     def start(self) -> None:
@@ -110,15 +116,41 @@ class DepartureMonitor:
             return 0
 
         dispatched_count = 0
+
+        # 1. Update in-progress journeys first
+        completed_or_expired = []
+        for journey_id, active in list(self.active_journeys.items()):
+            updated = update_journey_progress(
+                active=active,
+                person_state=stuart_state,
+                current_dt=current_dt,
+                ha_client=client,
+                live_client=live_client,
+            )
+            if updated:
+                dispatched_count += 1
+            if active.current_status in (
+                JourneyStepStatus.ARRIVED,
+                JourneyStepStatus.EXPIRED,
+            ):
+                completed_or_expired.append(journey_id)
+
+        for j_id in completed_or_expired:
+            self.active_journeys.pop(j_id, None)
+
+        # 2. Evaluate departures for journeys not currently in progress
         journeys = list(Journey.select())
 
         for journey in journeys:
-            # 1. Quick check: Is journey scheduled and active right now?
+            if journey.id in self.active_journeys:
+                continue
+
+            # 2a. Quick check: Is journey scheduled and active right now?
             is_active, _ = is_journey_active_for_datetime(journey, current_dt)
             if not is_active:
                 continue
 
-            # 2. Proximity check: Is Stuart near the journey origin?
+            # 2b. Proximity check: Is Stuart near the journey origin?
             is_near = is_person_near_origin(
                 person_state=stuart_state,
                 from_type=journey.from_type,
@@ -133,7 +165,7 @@ class DepartureMonitor:
                 )
                 continue
 
-            # 3. Evaluate timing and find upcoming candidate
+            # 2c. Evaluate timing and find upcoming candidate
             candidate = evaluate_journey_notification(
                 journey=journey,
                 dt=current_dt,
@@ -143,7 +175,7 @@ class DepartureMonitor:
             if not candidate:
                 continue
 
-            # 4. Format and dispatch notification to Stuart's mobile device
+            # 2d. Format and dispatch notification to Stuart's mobile device
             title, message, data = format_departure_notification(candidate)
             try:
                 sent = client.send_mobile_notification(
@@ -155,6 +187,24 @@ class DepartureMonitor:
                 if sent:
                     self.sent_keys.add(candidate.service_key)
                     dispatched_count += 1
+                    if candidate.itinerary:
+                        active = ActiveJourney(
+                            journey_id=journey.id,
+                            journey_name=journey.name,
+                            from_type=journey.from_type,
+                            from_id=journey.from_id,
+                            from_name=journey.from_name,
+                            to_type=journey.to_type,
+                            to_id=journey.to_id,
+                            to_name=journey.to_name,
+                            itinerary=candidate.itinerary,
+                            platform=candidate.platform,
+                            last_notification_message=message,
+                            started_at=current_dt,
+                            expected_arrival_time=candidate.arrival_time,
+                        )
+                        self.active_journeys[journey.id] = active
+
                     logger.info(
                         "Dispatched departure alert for journey %d (%s) to %s: %s",
                         journey.id,

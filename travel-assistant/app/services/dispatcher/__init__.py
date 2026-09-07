@@ -19,18 +19,28 @@ from app.services.dispatcher.proximity import (
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
+from app.services.dispatcher.tracker import (
+    ActiveJourney,
+    JourneyStepStatus,
+    format_progress_notification,
+    update_journey_progress,
+)
 
 __all__ = [
+    "ActiveJourney",
     "DepartureCandidate",
     "DepartureMonitor",
+    "JourneyStepStatus",
     "apply_live_departure_adjustments",
     "evaluate_journey_notification",
     "extract_departure_candidates",
     "format_departure_notification",
+    "format_progress_notification",
     "get_departure_monitor",
     "haversine_distance",
     "is_journey_active_for_datetime",
     "is_person_near_origin",
     "resolve_endpoint_coordinates",
     "start_departure_monitor",
+    "update_journey_progress",
 ]
