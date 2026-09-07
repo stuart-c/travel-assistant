@@ -1629,25 +1629,21 @@ def test_is_valid_leg_sequence_same_mode_rules():
     # 1 of mode (valid)
     assert is_valid_leg_sequence([_make_test_leg(transport_mode="bus")])
 
-    # 2 of same mode in a row (valid)
+    # 2, 3, 4 of same mode in a row (valid, up to 3 intra-modal transfers)
     assert is_valid_leg_sequence(
         [
             _make_test_leg(transport_mode="bus"),
             _make_test_leg(transport_mode="bus"),
         ]
     )
-
-    # 3 of same mode in a row (invalid)
-    assert not is_valid_leg_sequence(
+    assert is_valid_leg_sequence(
         [
             _make_test_leg(transport_mode="bus"),
             _make_test_leg(transport_mode="bus"),
             _make_test_leg(transport_mode="bus"),
         ]
     )
-
-    # 4 of same mode in a row (invalid)
-    assert not is_valid_leg_sequence(
+    assert is_valid_leg_sequence(
         [
             _make_test_leg(transport_mode="bus"),
             _make_test_leg(transport_mode="bus"),
@@ -1656,8 +1652,19 @@ def test_is_valid_leg_sequence_same_mode_rules():
         ]
     )
 
-    # 3 rail legs in a row (invalid)
+    # 5 of same mode in a row (invalid, exceeds 3 transfers per stage)
     assert not is_valid_leg_sequence(
+        [
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+            _make_test_leg(transport_mode="bus"),
+        ]
+    )
+
+    # 3 rail legs in a row (valid)
+    assert is_valid_leg_sequence(
         [
             _make_test_leg(transport_mode="rail"),
             _make_test_leg(transport_mode="rail"),
@@ -1735,23 +1742,25 @@ def test_prune_route_templates_filters_invalid_sequences():
         ],
     )
 
-    invalid_three_buses_template = RouteTemplate(
+    invalid_five_buses_template = RouteTemplate(
         corridor_id="invalid_buses",
-        name="Invalid 3 Buses",
-        summary_text="Bus → Bus → Bus",
+        name="Invalid 5 Buses",
+        summary_text="Bus → Bus → Bus → Bus → Bus",
         primary_mode="bus",
-        total_duration_est_minutes=30,
-        transfer_count=2,
-        stages_count=3,
+        total_duration_est_minutes=50,
+        transfer_count=4,
+        stages_count=5,
         legs=[
             _make_test_leg(transport_mode="bus", from_id="1", to_id="2"),
             _make_test_leg(transport_mode="bus", from_id="2", to_id="3"),
             _make_test_leg(transport_mode="bus", from_id="3", to_id="4"),
+            _make_test_leg(transport_mode="bus", from_id="4", to_id="5"),
+            _make_test_leg(transport_mode="bus", from_id="5", to_id="6"),
         ],
     )
 
     pruned = prune_route_templates(
-        [valid_template, invalid_walk_template, invalid_three_buses_template]
+        [valid_template, invalid_walk_template, invalid_five_buses_template]
     )
     assert len(pruned) == 1
     assert pruned[0].corridor_id == "valid_1"
