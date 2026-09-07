@@ -194,7 +194,8 @@ def test_format_progress_notification_stages() -> None:
     assert "London King's Cross" in msg
     assert "Estimated arrival at Tech Campus by 08:28." in msg
     assert data["tag"] == "journey_1"
-    assert data["url"] == "/"
+    assert data["url"] == "/journey"
+    assert data["clickAction"] == "/journey"
     assert data["group"] == "travel_assistant_journeys"
 
     # PRE_DEPARTURE with announced platform

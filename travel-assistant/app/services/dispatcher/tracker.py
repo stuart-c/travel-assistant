@@ -13,8 +13,10 @@ from app.services.dispatcher.proximity import (
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
+from app.models.journey import Journey
 from app.services.planner.models import ItineraryLeg, ScheduledItinerary
 from app.services.planner.transfers import (
+    DAY_NAME_TO_CODE,
     format_minutes_to_time,
     parse_time_to_minutes,
 )
@@ -79,11 +81,42 @@ def resolve_live_rail_platform(
         crs = crs[len("naptan:") :]
 
     if len(crs) != 3 or not crs.isalpha():
-        return None, None
+        from app.models.transit import Stop
+
+        stop = (
+            Stop.select()
+            .where((Stop.atco_code == origin_id) | (Stop.naptan_code == origin_id))
+            .first()
+        )
+        if (
+            stop
+            and stop.naptan_code
+            and len(stop.naptan_code) == 3
+            and stop.naptan_code.isalpha()
+        ):
+            crs = stop.naptan_code
+        else:
+            return None, None
 
     dest_crs = dest_id.strip()
     if dest_crs.startswith("naptan:"):
         dest_crs = dest_crs[len("naptan:") :]
+
+    if len(dest_crs) != 3 or not dest_crs.isalpha():
+        from app.models.transit import Stop
+
+        dest_stop = (
+            Stop.select()
+            .where((Stop.atco_code == dest_id) | (Stop.naptan_code == dest_id))
+            .first()
+        )
+        if (
+            dest_stop
+            and dest_stop.naptan_code
+            and len(dest_stop.naptan_code) == 3
+            and dest_stop.naptan_code.isalpha()
+        ):
+            dest_crs = dest_stop.naptan_code
 
     filter_list = dest_crs if (len(dest_crs) == 3 and dest_crs.isalpha()) else None
 
@@ -256,8 +289,8 @@ def format_progress_notification(
         message = f"Journey update: en route to {active.to_name}."
 
     data: Dict[str, Any] = {
-        "url": "/",
-        "clickAction": "/",
+        "url": "/journey",
+        "clickAction": "/journey",
         "tag": f"journey_{active.journey_id}",
         "group": "travel_assistant_journeys",
     }
@@ -489,3 +522,487 @@ def update_journey_progress(
             )
 
     return False
+
+
+STATUS_METADATA: Dict[JourneyStepStatus, Dict[str, str]] = {
+    JourneyStepStatus.PRE_DEPARTURE: {
+        "label": "Preparing to leave",
+        "icon": "schedule",
+        "badge_colour": "sky",
+    },
+    JourneyStepStatus.EN_ROUTE_TO_STOP: {
+        "label": "Walking to departure stop",
+        "icon": "directions_walk",
+        "badge_colour": "amber",
+    },
+    JourneyStepStatus.AT_DEPARTURE_STOP: {
+        "label": "At departure stop",
+        "icon": "pin_drop",
+        "badge_colour": "indigo",
+    },
+    JourneyStepStatus.ON_TRANSIT: {
+        "label": "On board transit",
+        "icon": "directions_transit",
+        "badge_colour": "emerald",
+    },
+    JourneyStepStatus.AT_INTERCHANGE: {
+        "label": "At transfer station",
+        "icon": "transfer_within_a_station",
+        "badge_colour": "purple",
+    },
+    JourneyStepStatus.EN_ROUTE_TO_DESTINATION: {
+        "label": "Walking to destination",
+        "icon": "directions_walk",
+        "badge_colour": "teal",
+    },
+    JourneyStepStatus.ARRIVED: {
+        "label": "Arrived at destination",
+        "icon": "check_circle",
+        "badge_colour": "emerald",
+    },
+    JourneyStepStatus.EXPIRED: {
+        "label": "Journey completed",
+        "icon": "done_all",
+        "badge_colour": "slate",
+    },
+}
+
+
+def get_journey_live_tracking_data(
+    journey_id: Optional[int] = None,
+    dt: Optional[datetime.datetime] = None,
+    ha_client: Optional[HomeAssistantClient] = None,
+    live_client: Optional[TrainLiveClient] = None,
+    active_journeys: Optional[Dict[int, ActiveJourney]] = None,
+) -> Dict[str, Any]:
+    """Compile aggregated journey progress, waypoints, and Stuart's real-time position."""
+    current_dt = dt or datetime.datetime.now()
+
+    # 1. Resolve active journeys
+    current_active_journeys: Dict[int, ActiveJourney] = {}
+    if active_journeys is not None:
+        current_active_journeys = active_journeys
+    else:
+        try:
+            from app.services.dispatcher.monitor import get_departure_monitor
+
+            mon = get_departure_monitor()
+            if mon:
+                current_active_journeys = mon.active_journeys
+        except Exception:
+            current_active_journeys = {}
+
+    # 2. Query configured journeys
+    all_journeys = list(Journey.select())
+    journeys_list = [
+        {
+            "id": j.id,
+            "name": j.name,
+            "from_name": j.from_name,
+            "to_name": j.to_name,
+            "is_active": (j.id in current_active_journeys),
+        }
+        for j in all_journeys
+    ]
+
+    # 3. Determine selected journey ID
+    target_id: Optional[int] = None
+    if journey_id is not None and any(j["id"] == journey_id for j in journeys_list):
+        target_id = journey_id
+    elif current_active_journeys:
+        target_id = next(iter(current_active_journeys.keys()))
+    elif journeys_list:
+        target_id = journeys_list[0]["id"]
+
+    if target_id is None:
+        return {
+            "journeys": [],
+            "selected_journey": None,
+            "person": None,
+            "active": False,
+            "timestamp": current_dt.isoformat(),
+        }
+
+    # 4. Query Stuart's current position from Home Assistant
+    client = ha_client or HomeAssistantClient.from_settings()
+    person_state: Optional[Dict[str, Any]] = None
+    if client and client.token:
+        try:
+            person_state = client.get_entity_state("person.stuart")
+        except Exception as exc:
+            logger.debug("Could not query Home Assistant for person.stuart: %s", exc)
+
+    person_lat: Optional[float] = None
+    person_lon: Optional[float] = None
+    person_status_str = "unknown"
+    if person_state and isinstance(person_state, dict):
+        person_status_str = str(person_state.get("state", "unknown"))
+        attrs = person_state.get("attributes", {}) or {}
+        raw_lat = attrs.get("latitude")
+        raw_lon = attrs.get("longitude")
+        if raw_lat is not None and raw_lon is not None:
+            try:
+                person_lat = float(raw_lat)
+                person_lon = float(raw_lon)
+            except (ValueError, TypeError):
+                pass
+
+    # 5. Extract journey data
+    if target_id in current_active_journeys:
+        active = current_active_journeys[target_id]
+        is_active = True
+        journey_name = active.journey_name
+        from_name = active.from_name
+        from_type = active.from_type
+        from_id = active.from_id
+        to_name = active.to_name
+        to_type = active.to_type
+        to_id = active.to_id
+        current_status = active.current_status
+        current_leg_index = active.current_leg_index
+        platform = active.platform
+        live_status = active.live_status
+        departure_time = active.itinerary.departure_time if active.itinerary else ""
+        expected_arrival_time = active.expected_arrival_time
+        legs = list(active.legs)
+        notification_message = active.last_notification_message
+    else:
+        j_obj = next(j for j in all_journeys if j.id == target_id)
+        is_active = False
+        journey_name = j_obj.name
+        from_name = j_obj.from_name
+        from_type = j_obj.from_type
+        from_id = j_obj.from_id
+        to_name = j_obj.to_name
+        to_type = j_obj.to_type
+        to_id = j_obj.to_id
+        current_status = JourneyStepStatus.PRE_DEPARTURE
+        current_leg_index = 0
+        platform = None
+        live_status = None
+        notification_message = None
+
+        # Plan upcoming itinerary
+        upcoming_itinerary = None
+        time_str = current_dt.strftime("%H:%M")
+        weekday_idx = current_dt.weekday()
+        day_names = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+        day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+        try:
+            from app.services.planner.raptor import plan_journey
+
+            plans = plan_journey(
+                from_type=j_obj.from_type,
+                from_id=j_obj.from_id,
+                to_type=j_obj.to_type,
+                to_id=j_obj.to_id,
+                timing_mode="depart",
+                time_str=time_str,
+                days_of_week=[day_code],
+                target_date=current_dt.date(),
+                max_itineraries=1,
+            )
+            if plans:
+                upcoming_itinerary = plans[0]
+        except Exception as exc:
+            logger.debug(
+                "Could not plan upcoming itinerary for journey %d: %s", target_id, exc
+            )
+
+        if upcoming_itinerary:
+            legs = list(upcoming_itinerary.legs)
+            departure_time = upcoming_itinerary.departure_time
+            expected_arrival_time = upcoming_itinerary.arrival_time
+        else:
+            legs = []
+            departure_time = ""
+            expected_arrival_time = ""
+
+    # Check live rail platform if applicable
+    if current_leg_index < len(legs):
+        cur_leg = legs[current_leg_index]
+        if cur_leg.mode == "rail" and live_client:
+            plat, l_stat = resolve_live_rail_platform(
+                cur_leg.origin.id,
+                cur_leg.destination.id,
+                cur_leg.dep_time,
+                live_client,
+            )
+            if plat:
+                platform = plat
+            if l_stat:
+                live_status = l_stat
+
+    # 6. Resolve coordinates
+    origin_lat, origin_lon, _ = resolve_endpoint_coordinates(from_type, from_id)
+    dest_lat, dest_lon, _ = resolve_endpoint_coordinates(to_type, to_id)
+
+    serialized_legs: List[Dict[str, Any]] = []
+    waypoints: List[Dict[str, Any]] = []
+
+    if origin_lat is not None and origin_lon is not None:
+        waypoints.append(
+            {
+                "lat": origin_lat,
+                "lon": origin_lon,
+                "name": from_name,
+                "type": "origin",
+                "description": f"Origin: {from_name}",
+            }
+        )
+
+    for idx, leg in enumerate(legs):
+        o_lat, o_lon, _ = resolve_endpoint_coordinates(leg.mode, leg.origin.id)
+        d_lat, d_lon, _ = resolve_endpoint_coordinates(leg.mode, leg.destination.id)
+
+        leg_plat = getattr(leg.origin, "platform", None)
+        if idx == current_leg_index and platform:
+            leg_plat = platform
+
+        is_completed = (idx < current_leg_index) if is_active else False
+        is_current = (idx == current_leg_index) if is_active else (idx == 0)
+        is_upcoming = (idx > current_leg_index) if is_active else (idx > 0)
+
+        leg_dict = {
+            "leg_index": idx,
+            "mode": leg.mode,
+            "line": leg.line,
+            "operator": leg.operator,
+            "headsign": getattr(leg, "headsign", None),
+            "dep_time": leg.dep_time,
+            "arr_time": leg.arr_time,
+            "duration_minutes": leg.duration_minutes,
+            "origin": {
+                "id": leg.origin.id,
+                "name": leg.origin.name,
+                "platform": leg_plat,
+                "latitude": o_lat,
+                "longitude": o_lon,
+            },
+            "destination": {
+                "id": leg.destination.id,
+                "name": leg.destination.name,
+                "latitude": d_lat,
+                "longitude": d_lon,
+            },
+            "status": (
+                "completed"
+                if is_completed
+                else ("current" if is_current else "upcoming")
+            ),
+            "is_completed": is_completed,
+            "is_current": is_current,
+            "is_upcoming": is_upcoming,
+        }
+        serialized_legs.append(leg_dict)
+
+        if o_lat is not None and o_lon is not None:
+            if not waypoints or (
+                abs(waypoints[-1]["lat"] - o_lat) > 1e-5
+                or abs(waypoints[-1]["lon"] - o_lon) > 1e-5
+            ):
+                waypoints.append(
+                    {
+                        "lat": o_lat,
+                        "lon": o_lon,
+                        "name": leg.origin.name,
+                        "type": "origin" if idx == 0 and not waypoints else "stop",
+                        "description": f"{leg.origin.name} ({leg.mode.title()})",
+                    }
+                )
+
+        if d_lat is not None and d_lon is not None:
+            is_final = idx == len(legs) - 1
+            waypoints.append(
+                {
+                    "lat": d_lat,
+                    "lon": d_lon,
+                    "name": leg.destination.name,
+                    "type": "destination" if is_final else "interchange",
+                    "description": (
+                        f"Destination: {leg.destination.name}"
+                        if is_final
+                        else f"Interchange: {leg.destination.name}"
+                    ),
+                }
+            )
+
+    if dest_lat is not None and dest_lon is not None:
+        if not waypoints or (
+            abs(waypoints[-1]["lat"] - dest_lat) > 1e-5
+            or abs(waypoints[-1]["lon"] - dest_lon) > 1e-5
+        ):
+            waypoints.append(
+                {
+                    "lat": dest_lat,
+                    "lon": dest_lon,
+                    "name": to_name,
+                    "type": "destination",
+                    "description": f"Destination: {to_name}",
+                }
+            )
+
+    # 7. Compute distances to next waypoint and destination
+    dist_to_dest_m: Optional[float] = None
+    dist_to_next_stop_m: Optional[float] = None
+    if person_lat is not None and person_lon is not None:
+        if dest_lat is not None and dest_lon is not None:
+            dist_to_dest_m = round(
+                haversine_distance(person_lat, person_lon, dest_lat, dest_lon), 1
+            )
+
+        if current_leg_index < len(serialized_legs):
+            cur_l = serialized_legs[current_leg_index]
+            if (
+                cur_l["mode"] == "walk"
+                and current_status == JourneyStepStatus.PRE_DEPARTURE
+            ):
+                t_lat = cur_l["origin"]["latitude"]
+                t_lon = cur_l["origin"]["longitude"]
+            else:
+                t_lat = cur_l["destination"]["latitude"]
+                t_lon = cur_l["destination"]["longitude"]
+
+            if t_lat is not None and t_lon is not None:
+                dist_to_next_stop_m = round(
+                    haversine_distance(person_lat, person_lon, t_lat, t_lon), 1
+                )
+        elif dist_to_dest_m is not None:
+            dist_to_next_stop_m = dist_to_dest_m
+
+    # 8. Friendly status styling and messaging
+    status_meta = STATUS_METADATA.get(
+        current_status,
+        {
+            "label": "Scheduled Journey" if not is_active else "In Progress",
+            "icon": "calendar_month" if not is_active else "navigation",
+            "badge_colour": "slate" if not is_active else "sky",
+        },
+    )
+
+    if not notification_message:
+        if not is_active:
+            if departure_time:
+                notification_message = (
+                    f"Next scheduled departure at {departure_time} from {from_name} "
+                    f"to {to_name} (ETA: {expected_arrival_time})."
+                )
+            else:
+                notification_message = (
+                    f"Configured journey from {from_name} to {to_name}."
+                )
+        else:
+            _, notification_message, _ = format_progress_notification(active)
+
+    # 9. Next step action instruction in British English
+    next_step_instruction = ""
+    if current_leg_index < len(serialized_legs):
+        c_leg = serialized_legs[current_leg_index]
+        mode_str = c_leg["mode"].title()
+        line_str = c_leg.get("line") or ""
+        if line_str and mode_str.lower() in line_str.lower():
+            line_display = line_str
+        elif line_str:
+            line_display = f"{mode_str} {line_str}"
+        else:
+            line_display = mode_str
+
+        if current_status == JourneyStepStatus.PRE_DEPARTURE:
+            next_step_instruction = (
+                f"Prepare to depart {from_name} for the {departure_time} departure."
+            )
+        elif current_status == JourneyStepStatus.EN_ROUTE_TO_STOP:
+            next_step_instruction = (
+                f"Walk to {c_leg['destination']['name']} for connection."
+            )
+        elif current_status == JourneyStepStatus.AT_DEPARTURE_STOP:
+            plat_str = f" from Platform {platform}" if platform else ""
+            next_step_instruction = (
+                f"Board {line_display} departing at {c_leg['dep_time']}{plat_str} "
+                f"towards {c_leg['destination']['name']}."
+            )
+        elif current_status == JourneyStepStatus.ON_TRANSIT:
+            next_step_instruction = (
+                f"Alight at {c_leg['destination']['name']} (ETA: {c_leg['arr_time']})."
+            )
+        elif current_status == JourneyStepStatus.AT_INTERCHANGE:
+            plat_str = f" from Platform {platform}" if platform else ""
+            next_step_instruction = f"Transfer to {line_display} departing at {c_leg['dep_time']}{plat_str}."
+        elif current_status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION:
+            next_step_instruction = (
+                f"Walk to final destination {to_name} (ETA: {expected_arrival_time})."
+            )
+        elif current_status == JourneyStepStatus.ARRIVED:
+            next_step_instruction = f"You have reached your destination: {to_name}."
+    else:
+        next_step_instruction = f"Journey from {from_name} to {to_name}."
+
+    return {
+        "journeys": journeys_list,
+        "selected_journey": {
+            "id": target_id,
+            "name": journey_name,
+            "from_name": from_name,
+            "from_type": from_type,
+            "from_id": from_id,
+            "from_coords": {"lat": origin_lat, "lon": origin_lon},
+            "to_name": to_name,
+            "to_type": to_type,
+            "to_id": to_id,
+            "to_coords": {"lat": dest_lat, "lon": dest_lon},
+            "departure_time": departure_time,
+            "arrival_time": expected_arrival_time,
+            "is_active": is_active,
+            "status": {
+                "code": (
+                    current_status.value
+                    if isinstance(current_status, JourneyStepStatus)
+                    else str(current_status)
+                ),
+                "label": status_meta["label"],
+                "icon": status_meta["icon"],
+                "badge_colour": status_meta["badge_colour"],
+                "message": notification_message,
+                "next_step": next_step_instruction,
+            },
+            "current_leg_index": current_leg_index,
+            "platform": platform,
+            "live_status": live_status,
+            "legs": serialized_legs,
+            "waypoints": waypoints,
+            "route_polyline": [
+                [wp["lat"], wp["lon"]]
+                for wp in waypoints
+                if wp.get("lat") is not None and wp.get("lon") is not None
+            ],
+        },
+        "person": {
+            "name": "Stuart",
+            "state": person_status_str,
+            "latitude": person_lat,
+            "longitude": person_lon,
+            "distance_to_next_stop_m": dist_to_next_stop_m,
+            "distance_to_destination_m": dist_to_dest_m,
+            "updated_at": current_dt.strftime("%H:%M:%S"),
+        },
+        "active": is_active,
+        "timestamp": current_dt.isoformat(),
+    }
+
+
+__all__ = [
+    "ActiveJourney",
+    "JourneyStepStatus",
+    "format_progress_notification",
+    "resolve_live_rail_platform",
+    "update_journey_progress",
+    "get_journey_live_tracking_data",
+]

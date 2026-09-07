@@ -55,6 +55,8 @@ def resolve_endpoint_coordinates(
                 | (Location.id == f"ha:{clean_id}")
                 | (Location.id == f"custom:{clean_id}")
                 | (Location.id == clean_id)
+                | (Location.name == raw_id)
+                | (Location.name == clean_id)
             )
             .first()
         )
@@ -69,11 +71,35 @@ def resolve_endpoint_coordinates(
             | (Stop.atco_code == clean_id)
             | (Stop.naptan_code == raw_id)
             | (Stop.naptan_code == clean_id)
+            | (Stop.name == raw_id)
+            | (Stop.name == clean_id)
         )
         .first()
     )
     if stop and stop.latitude is not None and stop.longitude is not None:
         return float(stop.latitude), float(stop.longitude), stop.name
+
+    # 3. General Location fallback by name
+    fallback_loc = (
+        Location.select()
+        .where(
+            (Location.id == raw_id)
+            | (Location.id == clean_id)
+            | (Location.name == raw_id)
+            | (Location.name == clean_id)
+        )
+        .first()
+    )
+    if (
+        fallback_loc
+        and fallback_loc.latitude is not None
+        and fallback_loc.longitude is not None
+    ):
+        return (
+            float(fallback_loc.latitude),
+            float(fallback_loc.longitude),
+            fallback_loc.name,
+        )
 
     return None, None, None
 

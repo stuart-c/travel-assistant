@@ -343,8 +343,8 @@ def format_departure_notification(
     )
 
     data: Dict[str, Any] = {
-        "url": "/",
-        "clickAction": "/",
+        "url": "/journey",
+        "clickAction": "/journey",
         "tag": f"journey_{candidate.journey_id}",
         "group": "travel_assistant_journeys",
     }

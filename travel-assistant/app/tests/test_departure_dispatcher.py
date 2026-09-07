@@ -421,7 +421,8 @@ def test_format_departure_notification() -> None:
     assert "Bus 73" in message
     assert "departing at 08:08" in message
     assert "Estimated arrival at Tech Campus by 08:28." in message
-    assert data["url"] == "/"
+    assert data["url"] == "/journey"
+    assert data["clickAction"] == "/journey"
     assert data["tag"] == "journey_1"
 
 
