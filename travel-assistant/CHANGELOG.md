@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Abstract Vertical Route Corridor Diagram to Live Journey Tracking (`/journey`, `journey_tracker.js`, and `tracker.py`):
+  - Replaced the map with an abstract vertical route corridor diagram as the default primary display on `/journey`, styled after British transport apps (TfL Go, Citymapper, and National Rail).
+  - Implemented mode-specific vertical transit spines connecting station stops with distinct British colours and line styles: dashed amber for walking, solid deep indigo for mainline rail, solid rose for bus, solid sky for metro/tube, and solid emerald for tram.
+  - Implemented intermediate transfer nodes formatted as TfL standard double-ring concentric interchange discs with platform announcement badges (e.g. `Plat 4`).
+  - Added dedicated interchange changeover callout cards (`Change here: Board [Line] from Platform [X]`) detailing transfer lines, departure platforms, and connection buffer times.
+  - Dynamically anchored Stuart's real-time position to the abstract schematic: station node indicators (`Stuart is here`) when waiting or transferring, and floating cyan telemetry beacons with pulsing ping along the transit spine when en route, displaying remaining distance and next-stop information.
+  - Added a segmented view toggle (`[ Route Diagram (Default) | Geographic Map ]`) enabling immediate switching between the schematic route corridor and Leaflet geographic GPS map.
+  - Integrated 10-second client-side auto-polling with seamless DOM reconciliation and dynamic Leaflet viewport resizing.
 - Added Dedicated Live Journey Tracking Screen and Real-Time Telemetry API (`/journey` and `/api/journey/live`):
   - Created a dedicated user-facing screen (accessible directly from top navigation outside `/config/...` settings) visualizing journey routes and Stuart's real-time position within them.
   - Implemented interactive Leaflet map rendering route waypoints, transit corridor polylines, departure/interchange stops, and Stuart's live GPS position with an animated beacon marker.

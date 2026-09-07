@@ -253,7 +253,7 @@ def test_journey_page_and_api_active_journey(client: FlaskClient, app: Flask) ->
             res = client.get("/journey")
             assert res.status_code == 200
             assert b"Active Journey" in res.data
-            assert b"Stuart is here" in res.data
+            assert b"Stuart on board Northern Line" in res.data
             assert b"Platform 4" in res.data
 
             # API Live call
@@ -408,3 +408,118 @@ def test_journey_invalid_id_query_param(client: FlaskClient, app: Flask) -> None
     assert res_api.status_code == 200
     data = res_api.get_json()
     assert data["selected_journey"] is not None
+
+
+def test_journey_schematic_structure_and_telemetry(app: Flask) -> None:
+    """Test get_journey_live_tracking_data generates abstract vertical schematic stages."""
+    with app.app_context():
+        j = _seed_sample_journey()
+        active = _create_test_active_journey(j)
+
+        data = get_journey_live_tracking_data(
+            journey_id=j.id, active_journeys={j.id: active}
+        )
+
+        schematic = data["selected_journey"]["schematic"]
+        assert schematic is not None
+        assert "stages" in schematic
+        assert len(schematic["stages"]) == 3
+
+        # Stage 0: Walk leg
+        stage0 = schematic["stages"][0]
+        assert stage0["stage_index"] == 0
+        assert stage0["line_colour"] == "amber"
+        assert stage0["line_style"] == "dashed"
+        assert stage0["from_node"]["name"] == "London King's Cross Residential"
+        assert stage0["from_node"]["type"] == "origin"
+        assert stage0["is_stuart_on_leg"] is False
+        assert stage0["interchange"] is not None
+        assert stage0["interchange"]["transfer_to"] == "Northern Line"
+        assert stage0["interchange"]["next_platform"] == "4"
+
+        # Stage 1: Rail leg (Stuart is active on this leg)
+        stage1 = schematic["stages"][1]
+        assert stage1["stage_index"] == 1
+        assert stage1["line_colour"] == "indigo"
+        assert stage1["line_style"] == "solid"
+        assert stage1["from_node"]["platform"] == "4"
+        assert stage1["is_stuart_on_leg"] is True
+        assert stage1["stuart_status_text"] == "Stuart on board Northern Line"
+
+        # Stage 2: Final walk leg
+        stage2 = schematic["stages"][2]
+        assert stage2["stage_index"] == 2
+        assert stage2["line_colour"] == "amber"
+        assert stage2["line_style"] == "dashed"
+        assert stage2["to_node"]["name"] == "London Euston Offices"
+        assert stage2["to_node"]["type"] == "destination"
+
+        # Final terminal node
+        final_node = schematic["final_node"]
+        assert final_node["name"] == "London Euston Offices"
+        assert final_node["time"] == "08:20"
+        assert final_node["type"] == "destination"
+        assert final_node["is_stuart_here"] is False
+
+
+def test_journey_page_renders_schematic_view(client: FlaskClient, app: Flask) -> None:
+    """Test /journey HTML page contains the vertical corridor schematic elements."""
+    with app.app_context():
+        j = _seed_sample_journey()
+        active = _create_test_active_journey(j)
+
+        mock_monitor = MagicMock(spec=DepartureMonitor)
+        mock_monitor.active_journeys = {j.id: active}
+
+        with patch(
+            "app.services.dispatcher.monitor.get_departure_monitor",
+            return_value=mock_monitor,
+        ):
+            res = client.get("/journey")
+            assert res.status_code == 200
+            html = res.get_data(as_text=True)
+
+            # Abstract diagram containers & toggle tabs
+            assert "schematic-diagram-container" in html
+            assert "btn-view-schematic" in html
+            assert "btn-view-map" in html
+            assert "schematic-station-interchange" in html
+            assert "schematic-spine-solid-indigo" in html
+            assert "schematic-spine-dashed-amber" in html
+
+            # Station names & transfer details
+            assert (
+                "London King&#039;s Cross Station" in html
+                or "London King's Cross Station" in html
+            )
+            assert "London Euston Station" in html
+            assert "Change here: Board Northern Line" in html
+            assert "Plat 4" in html
+            assert "Stuart on board Northern Line" in html
+
+
+def test_journey_schematic_mode_colours(app: Flask) -> None:
+    """Test that distinct transit modes map to their respective TfL/railway schematic colours."""
+    with app.app_context():
+        j = _seed_sample_journey()
+        active = _create_test_active_journey(j)
+
+        # Update modes: bus, tram, metro
+        active.legs[0].mode = "bus"
+        active.legs[0].line = "Route 73"
+        active.legs[1].mode = "tram"
+        active.legs[1].line = "Tramlink 1"
+        active.legs[2].mode = "metro"
+        active.legs[2].line = "Victoria Line"
+
+        data = get_journey_live_tracking_data(
+            journey_id=j.id, active_journeys={j.id: active}
+        )
+
+        stages = data["selected_journey"]["schematic"]["stages"]
+        assert stages[0]["line_colour"] == "rose"
+        assert stages[0]["line_style"] == "solid"
+        assert stages[1]["line_colour"] == "emerald"
+        assert stages[1]["line_style"] == "solid"
+        assert stages[2]["line_colour"] == "sky"
+        assert stages[2]["line_style"] == "solid"

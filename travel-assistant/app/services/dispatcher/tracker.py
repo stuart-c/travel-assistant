@@ -945,6 +945,124 @@ def get_journey_live_tracking_data(
     else:
         next_step_instruction = f"Journey from {from_name} to {to_name}."
 
+    # 10. Abstract vertical schematic representation (TfL / mainline rail route diagram)
+    schematic_stages: List[Dict[str, Any]] = []
+    for idx, s_leg in enumerate(serialized_legs):
+        is_first = idx == 0
+        is_last = idx == len(serialized_legs) - 1
+
+        is_stuart_at_origin_node = False
+        if is_active:
+            if is_first and current_status == JourneyStepStatus.PRE_DEPARTURE:
+                is_stuart_at_origin_node = True
+            elif (
+                idx > 0
+                and current_leg_index == idx
+                and current_status
+                in (
+                    JourneyStepStatus.AT_DEPARTURE_STOP,
+                    JourneyStepStatus.AT_INTERCHANGE,
+                )
+            ):
+                is_stuart_at_origin_node = True
+
+        is_stuart_on_this_leg = False
+        stuart_stage_text = ""
+        if is_active:
+            if is_first and current_status == JourneyStepStatus.EN_ROUTE_TO_STOP:
+                is_stuart_on_this_leg = True
+                stuart_stage_text = "Stuart walking to departure stop"
+            elif (
+                current_status == JourneyStepStatus.ON_TRANSIT
+                and current_leg_index == idx
+            ):
+                is_stuart_on_this_leg = True
+                stuart_stage_text = (
+                    f"Stuart on board {s_leg['line'] or s_leg['mode'].title()}"
+                )
+            elif (
+                is_last and current_status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+            ):
+                is_stuart_on_this_leg = True
+                stuart_stage_text = "Stuart walking to final destination"
+
+        mode = s_leg["mode"].lower()
+        if mode == "rail":
+            line_colour = "indigo"
+            line_style = "solid"
+        elif mode == "bus":
+            line_colour = "rose"
+            line_style = "solid"
+        elif mode == "walk":
+            line_colour = "amber"
+            line_style = "dashed"
+        elif mode in ("metro", "subway", "tube"):
+            line_colour = "sky"
+            line_style = "solid"
+        elif mode == "tram":
+            line_colour = "emerald"
+            line_style = "solid"
+        else:
+            line_colour = "slate"
+            line_style = "solid"
+
+        # Delineate change / interchange to next leg
+        interchange_info = None
+        if not is_last and idx + 1 < len(serialized_legs):
+            next_l = serialized_legs[idx + 1]
+            interchange_info = {
+                "station_name": s_leg["destination"]["name"],
+                "transfer_from": s_leg.get("line") or s_leg["mode"].title(),
+                "transfer_to": next_l.get("line") or next_l["mode"].title(),
+                "next_dep_time": next_l["dep_time"],
+                "next_platform": next_l["origin"]["platform"],
+                "duration_minutes": max(
+                    1,
+                    (parse_time_to_minutes(next_l["dep_time"]) or 0)
+                    - (parse_time_to_minutes(s_leg["arr_time"]) or 0),
+                ),
+                "is_stuart_here": (
+                    is_active
+                    and current_leg_index == idx + 1
+                    and current_status == JourneyStepStatus.AT_INTERCHANGE
+                ),
+            }
+
+        stage_data = {
+            "stage_index": idx,
+            "from_node": {
+                "name": s_leg["origin"]["name"],
+                "time": s_leg["dep_time"],
+                "type": "origin" if is_first else "interchange",
+                "platform": s_leg["origin"]["platform"],
+                "is_stuart_here": is_stuart_at_origin_node,
+            },
+            "to_node": {
+                "name": s_leg["destination"]["name"],
+                "time": s_leg["arr_time"],
+                "type": "destination" if is_last else "interchange",
+                "is_stuart_here": (
+                    is_active
+                    and is_last
+                    and current_status == JourneyStepStatus.ARRIVED
+                ),
+            },
+            "leg": s_leg,
+            "line_colour": line_colour,
+            "line_style": line_style,
+            "is_stuart_on_leg": is_stuart_on_this_leg,
+            "stuart_status_text": stuart_stage_text,
+            "interchange": interchange_info,
+        }
+        schematic_stages.append(stage_data)
+
+    final_node = {
+        "name": to_name,
+        "time": expected_arrival_time,
+        "type": "destination",
+        "is_stuart_here": (is_active and current_status == JourneyStepStatus.ARRIVED),
+    }
+
     return {
         "journeys": journeys_list,
         "selected_journey": {
@@ -977,6 +1095,11 @@ def get_journey_live_tracking_data(
             "platform": platform,
             "live_status": live_status,
             "legs": serialized_legs,
+            "schematic": {
+                "stages": schematic_stages,
+                "final_node": final_node,
+                "current_stage_index": current_leg_index,
+            },
             "waypoints": waypoints,
             "route_polyline": [
                 [wp["lat"], wp["lon"]]

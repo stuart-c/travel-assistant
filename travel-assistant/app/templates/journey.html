@@ -6,7 +6,7 @@
 <!-- Leaflet Stylesheet (CDN) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  /* Custom Pulse Animation for Stuart's GPS Marker */
+  /* Custom Pulse Animation for Stuart's GPS Marker and Schematic Beacon */
   .stuart-beacon-wrapper {
     position: relative;
     display: flex;
@@ -52,12 +52,45 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     color: white;
   }
+
+  /* Schematic Vertical Spine Lines (TfL / Mainline Rail Style) */
+  .schematic-spine-solid-indigo {
+    border-left: 6px solid #4f46e5;
+  }
+  .schematic-spine-solid-rose {
+    border-left: 6px solid #e11d48;
+  }
+  .schematic-spine-solid-sky {
+    border-left: 6px solid #0284c7;
+  }
+  .schematic-spine-solid-emerald {
+    border-left: 6px solid #059669;
+  }
+  .schematic-spine-dashed-amber {
+    border-left: 4px dashed #f59e0b;
+  }
+  .schematic-spine-solid-slate {
+    border-left: 5px solid #64748b;
+  }
+  .schematic-station-interchange {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 4px solid #1e293b;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  }
+  .dark .schematic-station-interchange {
+    border-color: #cbd5e1;
+    background: #0f172a;
+  }
 </style>
 {% endblock %}
 
 {% block subtitle %}
 <p class="text-base text-slate-600 dark:text-slate-400">
-  Real-time journey navigation, transit stages, live platform status, and position monitoring.
+  Real-time journey navigation, schematic transit corridor, live platform status, and position monitoring.
 </p>
 {% endblock %}
 
@@ -274,131 +307,233 @@
     </div>
   </section>
 
-  <!-- Interactive Map Section -->
-  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+  <!-- Primary Visual Section: Abstract Route Corridor Diagram (TfL / Mainline Rail App Style) -->
+  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90" id="primary-visual-section">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-          <span class="material-symbols-outlined text-sky-600 dark:text-sky-400">map</span>
-          <span>Journey Corridor &amp; Real-time Location</span>
+          <span class="material-symbols-outlined text-sky-600 dark:text-sky-400">route</span>
+          <span>Journey Corridor &amp; Real-time Progression</span>
         </h3>
         <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-          Interactive map tracking Stuart's GPS position, route corridor, transit stations, and interchanges.
+          Abstract schematic route plan detailing each transit change, intermediate stops, platform announcements, and Stuart's live position.
         </p>
       </div>
 
-      <!-- Map Legend -->
-      <div class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 self-start sm:self-auto flex-wrap">
-        <span class="inline-flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
-          <span>Origin</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-full bg-sky-500 inline-block border-2 border-white shadow-xs"></span>
-          <span class="font-bold text-sky-700 dark:text-sky-300">Stuart</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span>
-          <span>Transit Stop</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
-          <span>Destination</span>
-        </span>
+      <!-- View Switcher (Schematic vs Geographic Map) -->
+      <div class="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 self-start sm:self-auto shrink-0" role="tablist" aria-label="Visual view options">
+        <button 
+          type="button" 
+          id="btn-view-schematic" 
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs transition-all cursor-pointer" 
+          role="tab" 
+          aria-selected="true"
+        >
+          <span class="material-symbols-outlined text-sm">route</span>
+          <span>Route Diagram</span>
+        </button>
+        <button 
+          type="button" 
+          id="btn-view-map" 
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer" 
+          role="tab" 
+          aria-selected="false"
+        >
+          <span class="material-symbols-outlined text-sm">map</span>
+          <span>Geographic Map</span>
+        </button>
       </div>
     </div>
 
-    <!-- Leaflet Map Container -->
-    <div 
-      id="journey-map" 
-      class="w-full h-[400px] sm:h-[480px] rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-hidden relative z-0 bg-slate-100 dark:bg-slate-950"
-    ></div>
-  </section>
+    <!-- Vertical Schematic Corridor View (Default) -->
+    <div id="schematic-view-wrapper" class="block">
+      <div class="relative max-w-3xl mx-auto py-2" id="schematic-diagram-container">
+        {% if data.selected_journey and data.selected_journey.schematic and data.selected_journey.schematic.stages %}
+          {% for stage in data.selected_journey.schematic.stages %}
+            <!-- Station Node -->
+            <div class="relative flex items-start gap-4 sm:gap-6">
+              <!-- Left Station Disc & Spine Anchor -->
+              <div class="flex flex-col items-center shrink-0 w-8 sm:w-10">
+                {% if stage.stage_index == 0 %}
+                <!-- Origin Node -->
+                <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-4 border-emerald-500 bg-white dark:bg-slate-900 flex items-center justify-center z-10 shadow-xs">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                </div>
+                {% else %}
+                <!-- Intermediate Interchange Node -->
+                <div class="schematic-station-interchange z-10"></div>
+                {% endif %}
 
-  <!-- Journey Legs & Progress Stepper -->
-  <section class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-    <div class="mb-4">
-      <h3 class="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-        <span class="material-symbols-outlined text-sky-600 dark:text-sky-400">linear_scale</span>
-        <span>Journey Stages &amp; Route Timeline</span>
-      </h3>
-      <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-        Detailed transit legs, scheduled connections, walking segments, and platform announcements.
-      </p>
-    </div>
-
-    <div class="space-y-4" id="journey-legs-container">
-      {% if data.selected_journey and data.selected_journey.legs and data.selected_journey.legs|length > 0 %}
-        {% for leg in data.selected_journey.legs %}
-        <div class="p-4 rounded-xl border transition-all duration-200 {% if leg.is_current and data.selected_journey.is_active %}border-sky-500 bg-sky-50/40 dark:border-sky-500/80 dark:bg-sky-950/30 ring-2 ring-sky-500/20{% elif leg.is_completed %}border-slate-200/60 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 opacity-75{% else %}border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40{% endif %}" id="leg-card-{{ leg.leg_index }}">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="flex items-start sm:items-center gap-3">
-              <!-- Mode Icon -->
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 {% if leg.mode == 'walk' %}bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300{% elif leg.mode == 'rail' %}bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300{% else %}bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300{% endif %}">
-                <span class="material-symbols-outlined text-xl">
-                  {% if leg.mode == 'walk' %}directions_walk{% elif leg.mode == 'rail' %}train{% elif leg.mode == 'bus' %}directions_bus{% else %}directions_transit{% endif %}
-                </span>
+                <!-- Connecting Vertical Transit Line -->
+                <div class="w-1.5 flex-1 min-h-[90px] sm:min-h-[110px] my-1 {% if stage.line_style == 'dashed' %}schematic-spine-dashed-amber{% elif stage.line_colour == 'indigo' %}schematic-spine-solid-indigo{% elif stage.line_colour == 'rose' %}schematic-spine-solid-rose{% elif stage.line_colour == 'sky' %}schematic-spine-solid-sky{% elif stage.line_colour == 'emerald' %}schematic-spine-solid-emerald{% else %}schematic-spine-solid-slate{% endif %}"></div>
               </div>
 
-              <div>
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Stage {{ leg.leg_index + 1 }}
-                  </span>
-                  <span class="text-sm font-bold text-slate-900 dark:text-white">
-                    {% if leg.mode == 'walk' %}
-                      Walk ({{ leg.duration_minutes }}m)
-                    {% else %}
-                      {{ leg.line if leg.line else leg.mode|title }}
-                      {% if leg.operator %}<span class="font-normal text-xs text-slate-500">({{ leg.operator }})</span>{% endif %}
+              <!-- Right Content Block -->
+              <div class="flex-1 pb-8 min-w-0">
+                <!-- Station Title Row -->
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                      {{ stage.from_node.name }}
+                    </span>
+                    {% if stage.from_node.platform %}
+                    <span class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                      Plat {{ stage.from_node.platform }}
+                    </span>
                     {% endif %}
+                    {% if stage.from_node.is_stuart_here %}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-600 text-white shadow-xs">
+                      <span class="material-symbols-outlined text-[14px]">person</span>
+                      <span>Stuart is here</span>
+                    </span>
+                    {% endif %}
+                  </div>
+                  <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                    {{ stage.from_node.time }}
                   </span>
-                  {% if leg.is_current and data.selected_journey.is_active %}
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-600 text-white shadow-xs">
-                    <span class="material-symbols-outlined text-[13px]">person</span>
-                    <span>Stuart is here</span>
+                </div>
+
+                <!-- If Interchange / Change Point -->
+                {% if stage.stage_index > 0 %}
+                <div class="my-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3 text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-sky-600 dark:text-sky-400">sync_alt</span>
+                    <span class="font-semibold text-slate-800 dark:text-slate-200">
+                      Change here: Board {{ stage.leg.line if stage.leg.line else stage.leg.mode|title }}
+                    </span>
+                  </div>
+                  {% if stage.from_node.platform %}
+                  <span class="font-semibold text-indigo-600 dark:text-indigo-400">Platform {{ stage.from_node.platform }}</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Connecting Transit Leg Card (Along the Line) -->
+                <div class="mt-3 p-4 rounded-xl border transition-all duration-200 {% if stage.leg.is_current and data.selected_journey.is_active %}border-sky-500 bg-sky-50/50 dark:border-sky-500/80 dark:bg-sky-950/30 ring-2 ring-sky-500/20{% elif stage.leg.is_completed %}border-slate-200/70 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/40 opacity-80{% else %}border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40{% endif %}">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-start sm:items-center gap-3">
+                      <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 {% if stage.leg.mode == 'walk' %}bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300{% elif stage.leg.mode == 'rail' %}bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300{% elif stage.leg.mode == 'bus' %}bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300{% else %}bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300{% endif %}">
+                        <span class="material-symbols-outlined text-lg">
+                          {% if stage.leg.mode == 'walk' %}directions_walk{% elif stage.leg.mode == 'rail' %}train{% elif stage.leg.mode == 'bus' %}directions_bus{% else %}directions_transit{% endif %}
+                        </span>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-sm font-bold text-slate-900 dark:text-white">
+                            {% if stage.leg.mode == 'walk' %}
+                              Walk {{ stage.leg.duration_minutes }} mins
+                            {% else %}
+                              {{ stage.leg.line if stage.leg.line else stage.leg.mode|title }}
+                              {% if stage.leg.operator %}<span class="font-normal text-xs text-slate-500">({{ stage.leg.operator }})</span>{% endif %}
+                            {% endif %}
+                          </span>
+                          {% if stage.leg.is_completed %}
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            <span class="material-symbols-outlined text-[12px]">check</span>
+                            <span>Completed</span>
+                          </span>
+                          {% endif %}
+                        </div>
+                        <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          Ride for {{ stage.leg.duration_minutes }} mins to {{ stage.to_node.name }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="text-right self-end sm:self-auto shrink-0">
+                      <div class="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+                        {{ stage.leg.dep_time }} &rarr; {{ stage.leg.arr_time }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- If Stuart is actively in transit on this leg -->
+                  {% if stage.is_stuart_on_leg %}
+                  <div class="mt-3 p-3 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2">
+                      <span class="relative flex h-2.5 w-2.5">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
+                      </span>
+                      <strong class="text-sky-900 dark:text-sky-200">
+                        {{ stage.stuart_status_text }}
+                      </strong>
+                    </div>
+                    {% if data.person and data.person.distance_to_next_stop_m is not none %}
+                    <span class="text-sky-700 dark:text-sky-300 font-medium">
+                      Next stop: 
+                      {% if data.person.distance_to_next_stop_m >= 1000 %}
+                        {{ "%.1f"|format(data.person.distance_to_next_stop_m / 1000.0) }} km
+                      {% else %}
+                        {{ data.person.distance_to_next_stop_m|int }}m
+                      {% endif %}
+                    </span>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+
+          <!-- Final Destination Terminal Node -->
+          <div class="relative flex items-start gap-4 sm:gap-6">
+            <div class="flex flex-col items-center shrink-0 w-8 sm:w-10">
+              <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-4 border-rose-500 bg-white dark:bg-slate-900 flex items-center justify-center z-10 shadow-xs">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+              </div>
+            </div>
+
+            <div class="flex-1 min-w-0 pt-0.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                    {{ data.selected_journey.schematic.final_node.name }}
                   </span>
-                  {% elif leg.is_completed %}
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                    <span class="material-symbols-outlined text-[13px]">check</span>
-                    <span>Completed</span>
+                  <span class="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Final Destination
+                  </span>
+                  {% if data.selected_journey.schematic.final_node.is_stuart_here %}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-xs">
+                    <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                    <span>Stuart has arrived</span>
                   </span>
                   {% endif %}
                 </div>
-
-                <div class="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
-                  <span class="font-medium text-slate-800 dark:text-slate-200">{{ leg.origin.name }}</span>
-                  <span>&rarr;</span>
-                  <span class="font-medium text-slate-800 dark:text-slate-200">{{ leg.destination.name }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Times & Platform -->
-            <div class="flex items-center gap-3 self-end sm:self-auto shrink-0">
-              {% if leg.origin.platform %}
-              <div class="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200/80 dark:bg-indigo-950/60 dark:border-indigo-800/80 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-                Plat {{ leg.origin.platform }}
-              </div>
-              {% endif %}
-
-              <div class="text-right">
-                <div class="text-sm font-mono font-bold text-slate-900 dark:text-white">
-                  {{ leg.dep_time }} &rarr; {{ leg.arr_time }}
-                </div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400">
-                  {{ leg.duration_minutes }} mins
-                </div>
+                <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                  {{ data.selected_journey.schematic.final_node.time }}
+                </span>
               </div>
             </div>
           </div>
+        {% else %}
+        <div class="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+          No active itinerary stages discovered for the selected journey.
         </div>
-        {% endfor %}
-      {% else %}
-      <div class="p-6 text-center text-sm text-slate-500 dark:text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-800/40">
-        No active itinerary stages discovered for the selected journey.
+        {% endif %}
       </div>
-      {% endif %}
+    </div>
+
+    <!-- Geographic Map View Container (Optional toggle view) -->
+    <div id="geographic-map-wrapper" class="hidden mt-4">
+      <div class="flex items-center justify-between mb-3 text-xs text-slate-500 dark:text-slate-400">
+        <span>Interactive geographic map view</span>
+        <div class="flex items-center gap-3">
+          <span class="inline-flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Origin
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block"></span> Stuart
+          </span>
+          <span class="inline-flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Destination
+          </span>
+        </div>
+      </div>
+      <div 
+        id="journey-map" 
+        class="w-full h-[380px] sm:h-[450px] rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-hidden relative z-0 bg-slate-100 dark:bg-slate-950"
+      ></div>
     </div>
   </section>
   {% endif %}

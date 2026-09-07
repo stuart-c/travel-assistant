@@ -1,8 +1,9 @@
 /**
  * Journey Live Tracking Controller.
  * 
- * Manages real-time telemetry polling, Stuart's live GPS beacon,
- * interactive Leaflet corridor mapping, and journey stage progression.
+ * Manages real-time telemetry polling, Stuart's live location beacon,
+ * abstract vertical schematic corridor diagrams (TfL / Rail style),
+ * and view toggling with geographic mapping.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -28,6 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const liveIndicatorBadge = document.getElementById('live-indicator-badge');
   const badgeStatusText = document.getElementById('badge-status-text');
 
+  // View Switcher Buttons
+  const btnViewSchematic = document.getElementById('btn-view-schematic');
+  const btnViewMap = document.getElementById('btn-view-map');
+  const schematicViewWrapper = document.getElementById('schematic-view-wrapper');
+  const geographicMapWrapper = document.getElementById('geographic-map-wrapper');
+  const schematicContainer = document.getElementById('schematic-diagram-container');
+
   // Hero elements
   const journeyOverviewSub = document.getElementById('journey-overview-sub');
   const journeyTerminals = document.getElementById('journey-terminals');
@@ -47,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const telemetryPlatform = document.getElementById('telemetry-platform');
   const telemetryLiveStatus = document.getElementById('telemetry-live-status');
   const telemetryLastUpdated = document.getElementById('telemetry-last-updated');
-  const journeyLegsContainer = document.getElementById('journey-legs-container');
 
   // Map state
   let map = null;
@@ -215,6 +222,258 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function renderSchematicDiagram(data) {
+    if (!schematicContainer || !data) return;
+    const j = data.selected_journey;
+    const person = data.person;
+
+    if (!j || !j.schematic || !j.schematic.stages || j.schematic.stages.length === 0) {
+      schematicContainer.innerHTML = `
+        <div class="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+          No active itinerary stages discovered for the selected journey.
+        </div>
+      `;
+      return;
+    }
+
+    const stages = j.schematic.stages;
+    const finalNode = j.schematic.final_node;
+    const isActive = j.is_active;
+
+    let html = '';
+
+    stages.forEach((stage) => {
+      const isFirst = stage.stage_index === 0;
+      const isCurrent = stage.leg.is_current && isActive;
+      const isCompleted = stage.leg.is_completed;
+
+      // Node disc
+      let nodeCircleHtml = '';
+      if (isFirst) {
+        nodeCircleHtml = `
+          <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-4 border-emerald-500 bg-white dark:bg-slate-900 flex items-center justify-center z-10 shadow-xs">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+        `;
+      } else {
+        nodeCircleHtml = `<div class="schematic-station-interchange z-10"></div>`;
+      }
+
+      // Connecting vertical line styling
+      let spineClass = 'schematic-spine-solid-slate';
+      if (stage.line_style === 'dashed') {
+        spineClass = 'schematic-spine-dashed-amber';
+      } else if (stage.line_colour === 'indigo') {
+        spineClass = 'schematic-spine-solid-indigo';
+      } else if (stage.line_colour === 'rose') {
+        spineClass = 'schematic-spine-solid-rose';
+      } else if (stage.line_colour === 'sky') {
+        spineClass = 'schematic-spine-solid-sky';
+      } else if (stage.line_colour === 'emerald') {
+        spineClass = 'schematic-spine-solid-emerald';
+      }
+
+      // Platform tag
+      let platPill = '';
+      if (stage.from_node.platform) {
+        platPill = `
+          <span class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+            Plat ${escapeHtml(stage.from_node.platform)}
+          </span>
+        `;
+      }
+
+      // Stuart at node indicator
+      let stuartNodeBeacon = '';
+      if (stage.from_node.is_stuart_here) {
+        stuartNodeBeacon = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-600 text-white shadow-xs">
+            <span class="material-symbols-outlined text-[14px]">person</span>
+            <span>Stuart is here</span>
+          </span>
+        `;
+      }
+
+      // Interchange change banner
+      let interchangeBanner = '';
+      if (!isFirst) {
+        const platNotice = stage.from_node.platform
+          ? `<span class="font-semibold text-indigo-600 dark:text-indigo-400">Platform ${escapeHtml(stage.from_node.platform)}</span>`
+          : '';
+        interchangeBanner = `
+          <div class="my-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm text-sky-600 dark:text-sky-400">sync_alt</span>
+              <span class="font-semibold text-slate-800 dark:text-slate-200">
+                Change here: Board ${escapeHtml(stage.leg.line || stage.leg.mode)}
+              </span>
+            </div>
+            ${platNotice}
+          </div>
+        `;
+      }
+
+      // Card styling
+      let legCardClass = 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40';
+      if (isCurrent) {
+        legCardClass = 'border-sky-500 bg-sky-50/50 dark:border-sky-500/80 dark:bg-sky-950/30 ring-2 ring-sky-500/20';
+      } else if (isCompleted) {
+        legCardClass = 'border-slate-200/70 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/40 opacity-80';
+      }
+
+      let modeIcon = 'directions_transit';
+      let modeBg = 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300';
+      if (stage.leg.mode === 'walk') {
+        modeIcon = 'directions_walk';
+        modeBg = 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300';
+      } else if (stage.leg.mode === 'rail') {
+        modeIcon = 'train';
+        modeBg = 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300';
+      } else if (stage.leg.mode === 'bus') {
+        modeIcon = 'directions_bus';
+        modeBg = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300';
+      }
+
+      const modeTitle =
+        stage.leg.mode === 'walk'
+          ? `Walk ${stage.leg.duration_minutes} mins`
+          : `${escapeHtml(stage.leg.line || stage.leg.mode.toUpperCase())}${stage.leg.operator ? ` <span class="font-normal text-xs text-slate-500">(${escapeHtml(stage.leg.operator)})</span>` : ''}`;
+
+      let completedBadge = '';
+      if (isCompleted) {
+        completedBadge = `
+          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            <span class="material-symbols-outlined text-[12px]">check</span>
+            <span>Completed</span>
+          </span>
+        `;
+      }
+
+      // Stuart on-leg beacon banner
+      let stuartLegBanner = '';
+      if (stage.is_stuart_on_leg) {
+        let nextStopSnippet = '';
+        if (person && person.distance_to_next_stop_m != null) {
+          const distStr =
+            person.distance_to_next_stop_m >= 1000
+              ? `${(person.distance_to_next_stop_m / 1000.0).toFixed(1)} km`
+              : `${Math.round(person.distance_to_next_stop_m)}m`;
+          nextStopSnippet = `<span class="text-sky-700 dark:text-sky-300 font-medium">Next stop: ${distStr}</span>`;
+        }
+
+        stuartLegBanner = `
+          <div class="mt-3 p-3 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="relative flex h-2.5 w-2.5">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
+              </span>
+              <strong class="text-sky-900 dark:text-sky-200">
+                ${escapeHtml(stage.stuart_status_text || 'Stuart in transit')}
+              </strong>
+            </div>
+            ${nextStopSnippet}
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="relative flex items-start gap-4 sm:gap-6">
+          <div class="flex flex-col items-center shrink-0 w-8 sm:w-10">
+            ${nodeCircleHtml}
+            <div class="w-1.5 flex-1 min-h-[90px] sm:min-h-[110px] my-1 ${spineClass}"></div>
+          </div>
+
+          <div class="flex-1 pb-8 min-w-0">
+            <div class="flex items-center justify-between gap-2 flex-wrap mb-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  ${escapeHtml(stage.from_node.name)}
+                </span>
+                ${platPill}
+                ${stuartNodeBeacon}
+              </div>
+              <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                ${escapeHtml(stage.from_node.time)}
+              </span>
+            </div>
+
+            ${interchangeBanner}
+
+            <div class="mt-3 p-4 rounded-xl border transition-all duration-200 ${legCardClass}">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-start sm:items-center gap-3">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${modeBg}">
+                    <span class="material-symbols-outlined text-lg">${modeIcon}</span>
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-sm font-bold text-slate-900 dark:text-white">
+                        ${modeTitle}
+                      </span>
+                      ${completedBadge}
+                    </div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Ride for ${stage.leg.duration_minutes} mins to ${escapeHtml(stage.to_node.name)}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-right self-end sm:self-auto shrink-0">
+                  <div class="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+                    ${escapeHtml(stage.leg.dep_time)} &rarr; ${escapeHtml(stage.leg.arr_time)}
+                  </div>
+                </div>
+              </div>
+
+              ${stuartLegBanner}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    // Final Terminal Node
+    let stuartArrivedBeacon = '';
+    if (finalNode && finalNode.is_stuart_here) {
+      stuartArrivedBeacon = `
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-xs">
+          <span class="material-symbols-outlined text-[14px]">check_circle</span>
+          <span>Stuart has arrived</span>
+        </span>
+      `;
+    }
+
+    html += `
+      <div class="relative flex items-start gap-4 sm:gap-6">
+        <div class="flex flex-col items-center shrink-0 w-8 sm:w-10">
+          <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-4 border-rose-500 bg-white dark:bg-slate-900 flex items-center justify-center z-10 shadow-xs">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+          </div>
+        </div>
+
+        <div class="flex-1 min-w-0 pt-0.5">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                ${escapeHtml(finalNode ? finalNode.name : '')}
+              </span>
+              <span class="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Final Destination
+              </span>
+              ${stuartArrivedBeacon}
+            </div>
+            <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+              ${escapeHtml(finalNode ? finalNode.time : '')}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    schematicContainer.innerHTML = html;
+  }
+
   function updateDomTelemetry(data) {
     if (!data) return;
     const j = data.selected_journey;
@@ -311,123 +570,8 @@ document.addEventListener('DOMContentLoaded', () => {
       telemetryLastUpdated.textContent = `Updated: ${person.updated_at || 'Just now'}`;
     }
 
-    // 4. Stepper Legs
-    if (journeyLegsContainer && j.legs) {
-      renderLegsContainer(j.legs, j.is_active);
-    }
-  }
-
-  function renderLegsContainer(legs, isActive) {
-    if (!journeyLegsContainer) return;
-    if (!legs || legs.length === 0) {
-      journeyLegsContainer.innerHTML = `
-        <div class="p-6 text-center text-sm text-slate-500 dark:text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-800/40">
-          No active itinerary stages discovered for the selected journey.
-        </div>
-      `;
-      return;
-    }
-
-    const html = legs
-      .map((leg) => {
-        const isCurrent = leg.is_current && isActive;
-        const isCompleted = leg.is_completed;
-
-        let cardClass =
-          'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40';
-        if (isCurrent) {
-          cardClass =
-            'border-sky-500 bg-sky-50/40 dark:border-sky-500/80 dark:bg-sky-950/30 ring-2 ring-sky-500/20';
-        } else if (isCompleted) {
-          cardClass =
-            'border-slate-200/60 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 opacity-75';
-        }
-
-        let modeIcon = 'directions_transit';
-        let modeBg = 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300';
-        if (leg.mode === 'walk') {
-          modeIcon = 'directions_walk';
-          modeBg = 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300';
-        } else if (leg.mode === 'rail') {
-          modeIcon = 'train';
-          modeBg = 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300';
-        } else if (leg.mode === 'bus') {
-          modeIcon = 'directions_bus';
-          modeBg = 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300';
-        }
-
-        const modeTitle =
-          leg.mode === 'walk'
-            ? `Walk (${leg.duration_minutes}m)`
-            : `${leg.line || leg.mode.toUpperCase()}${leg.operator ? ` <span class="font-normal text-xs text-slate-500">(${escapeHtml(leg.operator)})</span>` : ''}`;
-
-        let statusBadge = '';
-        if (isCurrent) {
-          statusBadge = `
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-600 text-white shadow-xs">
-              <span class="material-symbols-outlined text-[13px]">person</span>
-              <span>Stuart is here</span>
-            </span>
-          `;
-        } else if (isCompleted) {
-          statusBadge = `
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-              <span class="material-symbols-outlined text-[13px]">check</span>
-              <span>Completed</span>
-            </span>
-          `;
-        }
-
-        const platformHtml = leg.origin.platform
-          ? `
-          <div class="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200/80 dark:bg-indigo-950/60 dark:border-indigo-800/80 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-            Plat ${escapeHtml(leg.origin.platform)}
-          </div>
-        `
-          : '';
-
-        return `
-          <div class="p-4 rounded-xl border transition-all duration-200 ${cardClass}" id="leg-card-${leg.leg_index}">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div class="flex items-start sm:items-center gap-3">
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${modeBg}">
-                  <span class="material-symbols-outlined text-xl">${modeIcon}</span>
-                </div>
-                <div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Stage ${leg.leg_index + 1}
-                    </span>
-                    <span class="text-sm font-bold text-slate-900 dark:text-white">
-                      ${modeTitle}
-                    </span>
-                    ${statusBadge}
-                  </div>
-                  <div class="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
-                    <span class="font-medium text-slate-800 dark:text-slate-200">${escapeHtml(leg.origin.name)}</span>
-                    <span>&rarr;</span>
-                    <span class="font-medium text-slate-800 dark:text-slate-200">${escapeHtml(leg.destination.name)}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center gap-3 self-end sm:self-auto shrink-0">
-                ${platformHtml}
-                <div class="text-right">
-                  <div class="text-sm font-mono font-bold text-slate-900 dark:text-white">
-                    ${escapeHtml(leg.dep_time)} &rarr; ${escapeHtml(leg.arr_time)}
-                  </div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">
-                    ${leg.duration_minutes} mins
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
-
-    journeyLegsContainer.innerHTML = html;
+    // 4. Update the abstract vertical schematic diagram
+    renderSchematicDiagram(data);
   }
 
   function escapeHtml(str) {
@@ -475,7 +619,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Event Listeners
+  // View Switcher Event Handlers
+  if (btnViewSchematic && btnViewMap) {
+    btnViewSchematic.addEventListener('click', () => {
+      schematicViewWrapper.classList.remove('hidden');
+      schematicViewWrapper.classList.add('block');
+      geographicMapWrapper.classList.add('hidden');
+
+      btnViewSchematic.className =
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs transition-all cursor-pointer';
+      btnViewSchematic.setAttribute('aria-selected', 'true');
+
+      btnViewMap.className =
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer';
+      btnViewMap.setAttribute('aria-selected', 'false');
+    });
+
+    btnViewMap.addEventListener('click', () => {
+      schematicViewWrapper.classList.add('hidden');
+      schematicViewWrapper.classList.remove('block');
+      geographicMapWrapper.classList.remove('hidden');
+
+      btnViewMap.className =
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs transition-all cursor-pointer';
+      btnViewMap.setAttribute('aria-selected', 'true');
+
+      btnViewSchematic.className =
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer';
+      btnViewSchematic.setAttribute('aria-selected', 'false');
+
+      if (map) {
+        setTimeout(() => {
+          map.invalidateSize();
+          if (trackingData) {
+            renderJourneyMap(trackingData);
+          }
+        }, 100);
+      }
+    });
+  }
+
+  // Journey Selection Handler
   if (journeySelect) {
     journeySelect.addEventListener('change', () => {
       const newId = journeySelect.value;
