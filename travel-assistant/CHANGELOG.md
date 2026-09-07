@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Journey Departure Detection and Notification Dispatcher (`app/services/dispatcher/`) with automated background monitoring daemon (`DepartureMonitor`):
+  - Automatically detects Stuart (`person.stuart`) near the start of any configured journey (within 200 metres GPS distance or inside the origin Home Assistant zone) during active scheduled time windows (`time_settings`).
+  - Calculates the optimal departure leave-by time ($T_{\text{leave}} = T_{\text{transit\_dep}} - T_{\text{walk\_mins}}$) using the in-memory RAPTOR solver (`plan_journey`) and live departure probe adjustments (National Rail Darwin Live).
+  - Dispatches rich departure notifications to Stuart's mobile device (`notify.mobile_app_stuart_mobile` with no fallback) exactly 15 minutes before the calculated leave time ($T_{\text{leave}} - 15\text{ mins}$), including leave-by time, walking duration, transit mode/line, origin boarding stop, scheduled vehicle departure time, estimated destination arrival, and dashboard tap action metadata.
+  - Automatically progresses to subsequent transit departures if Stuart does not leave as expected, alerting 15 minutes prior to the next viable service's leave time to minimise waiting time once the journey begins.
+  - Added `get_entity_state`, `call_service`, and `send_mobile_notification` methods to `HomeAssistantClient` in `app/datasources/homeassistant.py`.
 - Added modal sequence validation rules to Mode 1 Route Generator (`find_routes` and `prune_route_templates`):
+
   - **No Consecutive Walking**: Walking legs cannot be immediately followed by another walking leg (`walk` → `walk` rejected, including intermediate stop interchanges and platform transfers). Single direct walking journeys remain valid.
   - **Maximum of 2 Consecutive Legs of Same Mode**: Enforced a strict maximum of 2 consecutive legs sharing the identical transport mode in a row (e.g. 3 or more buses or trains in a row rejected unless separated by an intervening mode).
 - Added manual refresh buttons and 1-minute automatic background polling to both the Database (`/config/db`) and Background Synchronisation (`/config/sync`) configuration pages. Updated `/config/db/data` to include formatted database size metrics for live metric updates without full page reloads.
