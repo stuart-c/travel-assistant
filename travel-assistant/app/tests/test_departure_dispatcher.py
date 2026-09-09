@@ -16,6 +16,7 @@ from app.services.dispatcher.evaluator import (
     evaluate_journey_notification,
     extract_departure_candidates,
     format_departure_notification,
+    get_journey_estimated_duration_minutes,
     is_journey_active_for_datetime,
 )
 
@@ -820,3 +821,240 @@ def test_extract_departure_candidates_empty_legs() -> None:
         ]
         cands = extract_departure_candidates(journey, now)
         assert cands == []
+
+
+def test_get_journey_estimated_duration_minutes(app: Flask) -> None:
+    """Test get_journey_estimated_duration_minutes extracts durations correctly."""
+    with app.app_context():
+        journey = _seed_commute_data()
+
+        # 1. No calculated routes -> default fallback (120 min)
+        assert get_journey_estimated_duration_minutes(journey) == 120
+        assert get_journey_estimated_duration_minutes(journey, default_minutes=90) == 90
+
+        # 2. Calculated routes with durations
+        journey.set_calculated_routes(
+            [
+                {"total_duration_est_minutes": 45},
+                {"total_duration_est_minutes": 85},
+            ]
+        )
+        # Max of [45, 85] is 85
+        assert get_journey_estimated_duration_minutes(journey) == 85
+
+        # 3. Short routes below 60 min are capped at minimum 60 min
+        journey.set_calculated_routes([{"total_duration_est_minutes": 30}])
+        assert get_journey_estimated_duration_minutes(journey) == 60
+
+
+def test_is_journey_active_for_datetime_arrive_mode(app: Flask) -> None:
+    """Test is_journey_active_for_datetime correctly supports arrive mode."""
+    with app.app_context():
+        journey = _seed_commute_data()
+        # Set arrive mode: arrive between 08:30 and 10:00 on weekdays
+        journey.set_time_settings(
+            [
+                {
+                    "days": ["mon", "tue", "wed", "thu", "fri"],
+                    "mode": "arrive",
+                    "start_time": "08:30",
+                    "end_time": "10:00",
+                }
+            ]
+        )
+        journey.set_calculated_routes([{"total_duration_est_minutes": 85}])
+
+        # Estimated duration = 85m. Advance margin = 85 + 45 = 130m.
+        # Start: 08:30 (510 min) - 130 min = 380 min (06:20).
+        # End: 10:00 (600 min).
+
+        # Wednesday 2026-09-09
+        # 06:10 is before 06:20 -> False
+        active_early, _ = is_journey_active_for_datetime(
+            journey, datetime.datetime(2026, 9, 9, 6, 10)
+        )
+        assert active_early is False
+
+        # 07:15, 07:22, 07:37, 08:00, 09:30, 10:00 -> True
+        for h, m in [(7, 15), (7, 22), (7, 37), (8, 0), (9, 30), (10, 0)]:
+            active, ts = is_journey_active_for_datetime(
+                journey, datetime.datetime(2026, 9, 9, h, m)
+            )
+            assert active is True, f"Expected active at {h:02d}:{m:02d}"
+            assert ts.mode == "arrive"
+
+        # 10:05 is after 10:00 -> False
+        active_late, _ = is_journey_active_for_datetime(
+            journey, datetime.datetime(2026, 9, 9, 10, 5)
+        )
+        assert active_late is False
+
+        # Saturday 2026-09-12 08:00 -> False (day mismatch)
+        active_weekend, _ = is_journey_active_for_datetime(
+            journey, datetime.datetime(2026, 9, 12, 8, 0)
+        )
+        assert active_weekend is False
+
+
+def test_evaluate_journey_notification_time_window_filtering(app: Flask) -> None:
+    """Test evaluate_journey_notification filters out candidates exceeding window."""
+    with app.app_context():
+        journey = _seed_commute_data()
+        journey.set_time_settings(
+            [
+                {
+                    "days": ["mon"],
+                    "mode": "arrive",
+                    "start_time": "08:30",
+                    "end_time": "09:00",
+                }
+            ]
+        )
+        now = datetime.datetime(2026, 9, 7, 7, 45)
+
+        # Candidate arriving at 09:30 (exceeds end_time 09:00 + 15m)
+        cand_late = DepartureCandidate(
+            journey_id=journey.id,
+            journey_name=journey.name,
+            service_key="j1_bus_late",
+            transit_mode="bus",
+            line_name="73",
+            operator_name="TfL",
+            origin_stop_name="King's Cross",
+            origin_stop_id="490000077E",
+            dest_stop_name="Euston",
+            dest_stop_id="490000077C",
+            final_dest_name="Tech Campus",
+            transit_dep_minutes=480,
+            transit_dep_time="08:00",
+            walk_minutes=0,
+            leave_minutes=480,
+            leave_time="08:00",
+            arrival_time="09:30",
+            notification_trigger_minutes=465,  # 07:45 -> matches now!
+        )
+
+        with patch(
+            "app.services.dispatcher.evaluator.extract_departure_candidates",
+            return_value=[cand_late],
+        ):
+            res = evaluate_journey_notification(journey, now, sent_keys=set())
+            # Rejected because candidate arrives too late for 09:00 window
+            assert res is None
+
+        # Candidate arriving at 08:50 (within 08:30-09:00 window)
+        cand_valid = DepartureCandidate(
+            journey_id=journey.id,
+            journey_name=journey.name,
+            service_key="j1_bus_valid",
+            transit_mode="bus",
+            line_name="73",
+            operator_name="TfL",
+            origin_stop_name="King's Cross",
+            origin_stop_id="490000077E",
+            dest_stop_name="Euston",
+            dest_stop_id="490000077C",
+            final_dest_name="Tech Campus",
+            transit_dep_minutes=480,
+            transit_dep_time="08:00",
+            walk_minutes=0,
+            leave_minutes=480,
+            leave_time="08:00",
+            arrival_time="08:50",
+            notification_trigger_minutes=465,  # 07:45
+        )
+        with patch(
+            "app.services.dispatcher.evaluator.extract_departure_candidates",
+            return_value=[cand_valid],
+        ):
+            res = evaluate_journey_notification(journey, now, sent_keys=set())
+            assert res is not None
+            assert res.service_key == "j1_bus_valid"
+
+
+def test_departure_monitor_en_route_recovery(app: Flask) -> None:
+    """Test DepartureMonitor recovers an in-progress journey if Stuart is already travelling."""
+    with app.app_context():
+        journey = _seed_commute_data()
+        journey.set_time_settings(
+            [{"days": ["mon"], "start_time": "07:00", "end_time": "10:00"}]
+        )
+
+        monitor = DepartureMonitor(app=app)
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        mock_ha.token = "valid_token"
+        # Stuart is NOT near origin
+        mock_ha.get_entity_state.return_value = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5281, "longitude": -0.1325},
+        }
+        mock_ha.send_mobile_notification.return_value = True
+
+        # Mock detect_en_route_journey to return a recovered active journey
+        from app.services.dispatcher.tracker import (
+            ActiveJourney,
+            JourneyStepStatus,
+        )
+        from app.services.planner.models import (
+            ItineraryEndpoint,
+            ItineraryLeg,
+            ScheduledItinerary,
+        )
+
+        sample_itin = ScheduledItinerary(
+            departure_time="08:00",
+            arrival_time="08:30",
+            total_duration_minutes=30,
+            transfers_count=0,
+            robustness_score="High",
+            legs=[
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="bus",
+                    line="73",
+                    origin=ItineraryEndpoint(
+                        id="490000077E", name="King's Cross Station"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="490000077C", name="Euston Station"
+                    ),
+                    dep_time="08:00",
+                    arr_time="08:20",
+                    duration_minutes=20,
+                )
+            ],
+        )
+        recovered_active = ActiveJourney(
+            journey_id=journey.id,
+            journey_name=journey.name,
+            from_type=journey.from_type,
+            from_id=journey.from_id,
+            from_name=journey.from_name,
+            to_type=journey.to_type,
+            to_id=journey.to_id,
+            to_name=journey.to_name,
+            itinerary=sample_itin,
+            legs=list(sample_itin.legs),
+            current_leg_index=0,
+            current_status=JourneyStepStatus.AT_INTERCHANGE,
+            started_at=datetime.datetime(2026, 9, 7, 8, 10),
+            expected_arrival_time="08:30",
+        )
+
+        with patch(
+            "app.services.dispatcher.monitor.is_person_near_origin", return_value=False
+        ):
+            with patch(
+                "app.services.dispatcher.monitor.detect_en_route_journey",
+                return_value=recovered_active,
+            ):
+                now = datetime.datetime(2026, 9, 7, 8, 15)
+                dispatched = monitor.check_and_dispatch(ha_client=mock_ha, now=now)
+                assert dispatched == 1
+                assert journey.id in monitor.active_journeys
+                assert (
+                    monitor.active_journeys[journey.id].current_status
+                    == JourneyStepStatus.AT_INTERCHANGE
+                )
+                mock_ha.send_mobile_notification.assert_called_once()

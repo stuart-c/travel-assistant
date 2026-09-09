@@ -6,6 +6,7 @@ from app.services.dispatcher.evaluator import (
     evaluate_journey_notification,
     extract_departure_candidates,
     format_departure_notification,
+    get_journey_estimated_duration_minutes,
     is_journey_active_for_datetime,
 )
 
@@ -22,6 +23,7 @@ from app.services.dispatcher.proximity import (
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
+    detect_en_route_journey,
     format_progress_notification,
     get_journey_live_tracking_data,
     update_journey_progress,
@@ -33,11 +35,13 @@ __all__ = [
     "DepartureMonitor",
     "JourneyStepStatus",
     "apply_live_departure_adjustments",
+    "detect_en_route_journey",
     "evaluate_journey_notification",
     "extract_departure_candidates",
     "format_departure_notification",
     "format_progress_notification",
     "get_departure_monitor",
+    "get_journey_estimated_duration_minutes",
     "get_journey_live_tracking_data",
     "haversine_distance",
     "is_journey_active_for_datetime",

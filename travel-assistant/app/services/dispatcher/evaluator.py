@@ -46,6 +46,27 @@ class DepartureCandidate:
     itinerary: Optional[Any] = None
 
 
+def get_journey_estimated_duration_minutes(
+    journey: Journey,
+    default_minutes: int = 120,
+) -> int:
+    """Estimate journey duration in minutes from calculated routes or fallback default."""
+    try:
+        routes = journey.get_calculated_routes()
+        if routes and isinstance(routes, list):
+            durations = [
+                int(r.get("total_duration_est_minutes"))
+                for r in routes
+                if isinstance(r, dict)
+                and r.get("total_duration_est_minutes") is not None
+            ]
+            if durations:
+                return max(max(durations), 60)
+    except Exception:
+        pass
+    return default_minutes
+
+
 def is_journey_active_for_datetime(
     journey: Journey,
     dt: datetime.datetime,
@@ -53,7 +74,9 @@ def is_journey_active_for_datetime(
     """Determine whether a journey has an active time window matching the specified datetime.
 
     Checks day of week matching (mon..sun, bank_holiday) and whether current time is within
-    or approaching the configured active time window (with a 30-minute advance evaluation margin).
+    or approaching the configured active time window. For departure mode, allows a 30-minute
+    advance evaluation margin. For arrival mode, factors in estimated journey duration and
+    advance notification trigger margins.
     """
     time_settings = journey.get_time_settings()
     if not time_settings:
@@ -95,9 +118,20 @@ def is_journey_active_for_datetime(
         if start_min is None and end_min is None:
             return True, ts
 
-        # Allow 30 minutes advance evaluation before window start to detect upcoming departures
-        effective_start = (start_min - 30) if start_min is not None else 0
-        effective_end = end_min if end_min is not None else 1440
+        mode = (ts.mode or "depart").strip().lower()
+
+        if mode == "arrive":
+            est_duration = get_journey_estimated_duration_minutes(journey)
+            # Advance evaluation margin: journey duration + 15m notification window + 30m buffer
+            advance_margin = est_duration + 45
+            effective_start = (
+                max(0, start_min - advance_margin) if start_min is not None else 0
+            )
+            effective_end = end_min if end_min is not None else 1440
+        else:
+            # Standard "depart" mode: 30 minutes advance evaluation before departure window start
+            effective_start = (start_min - 30) if start_min is not None else 0
+            effective_end = end_min if end_min is not None else 1440
 
         if effective_start <= current_minutes <= effective_end:
             return True, ts
@@ -278,7 +312,7 @@ def evaluate_journey_notification(
     Identifies the next viable upcoming transit candidate whose leave time has not passed.
     Triggers when current time is 15 minutes before the leave time and hasn't been sent.
     """
-    is_active, _ = is_journey_active_for_datetime(journey, dt)
+    is_active, active_ts = is_journey_active_for_datetime(journey, dt)
     if not is_active:
         return None
 
@@ -295,6 +329,23 @@ def evaluate_journey_notification(
 
         # Adjust for live feeds if available
         adjusted = apply_live_departure_adjustments(candidate, live_client)
+
+        # Filter candidate against active time window constraints if present
+        if active_ts:
+            mode = (active_ts.mode or "depart").strip().lower()
+            if mode == "arrive" and active_ts.end_time:
+                end_arr = parse_time_to_minutes(active_ts.end_time)
+                cand_arr = parse_time_to_minutes(adjusted.arrival_time)
+                if (
+                    end_arr is not None
+                    and cand_arr is not None
+                    and cand_arr > end_arr + 15
+                ):
+                    continue
+            elif mode != "arrive" and active_ts.end_time:
+                end_dep = parse_time_to_minutes(active_ts.end_time)
+                if end_dep is not None and adjusted.leave_minutes > end_dep + 15:
+                    continue
 
         # Check if already notified
         if adjusted.service_key in sent_keys:
