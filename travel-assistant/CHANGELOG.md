@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed Model Context Protocol (MCP) configuration web UI rendering and module shadowing (`app/static/js/mcp.js`, `app/main.py`, `app/views/config/mcp.py`):
+  - Fixed client-side Grid.js runtime exception caused by improper array method invocation on `StagedChangesetManager.getUpdated()`.
+  - Corrected configuration dirty tracking and discard handling to synchronise cleanly with `window.ConfigDirtyManager`.
+  - Resolved `mcp` module namespace collision where running `main.py` directly caused `app/mcp` to shadow the external `mcp` library from site-packages.
+  - Deferred cache invalidation import in `app/views/config/mcp.py` to eliminate circular import during application bootstrap.
+
 ### Added
 - Added Optional Model Context Protocol (MCP) Server and Web UI Configuration (`app/mcp/`, `app/views/config/mcp.py`, and `/config/mcp`):
   - Built an asynchronous Model Context Protocol (MCP) server running over Server-Sent Events (SSE) on port `8098` via `MCPServer`, allowing external AI assistants (e.g. Antigravity) to query and debug live transit data.
