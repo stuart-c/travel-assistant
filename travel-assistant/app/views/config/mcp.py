@@ -3,7 +3,6 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.mcp.server import invalidate_permission_cache
 from app.models.mcp import MCPTool, MCP_ACCESS_LEVELS
 from app.views.config import config_bp
 from app.views.config.common import (
@@ -94,6 +93,8 @@ def get_mcp_tools_data() -> List[Dict[str, Any]]:
 
 def on_mcp_tools_saved(stats: Dict[str, int], changeset: Dict[str, List[Any]]) -> None:
     """Invalidate in-memory MCP permission cache on successful changeset save."""
+    from app.mcp.server import invalidate_permission_cache
+
     invalidate_permission_cache()
     logger.info("Invalidated MCP tool permission cache following configuration update.")
 
