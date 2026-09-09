@@ -2,6 +2,7 @@
 
 import json
 from io import BytesIO
+from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import BotoCoreError, ClientError
@@ -364,7 +365,7 @@ def test_train_s3_parse_darwin_timetables_gzip_and_plain() -> None:
     assert tt["transport_type"] == "rail"
     assert tt["auto_added"] is True
     assert str(tt["start_date"]) == "2026-08-17"
-    assert str(tt["end_date"]) == "2026-08-17"
+    assert tt["end_date"] is None
 
     content = tt["content"]
     assert len(content["stops"]) == 3
@@ -583,3 +584,45 @@ def test_fetch_timetables_multi_snapshot(mock_download: MagicMock) -> None:
     assert any(t["monday"] for t in timetables)
     assert any(t["saturday"] for t in timetables)
     assert any("(Sat)" in t["name"] for t in timetables)
+    assert all(t["end_date"] is None for t in timetables)
+
+
+def test_get_latest_timetable_keys_pagination() -> None:
+    """Test get_latest_timetable_keys_by_day_profile paginates across multiple S3 pages."""
+    mock_s3 = MagicMock()
+    # Page 1 has older files and IsTruncated=True
+    page1 = {
+        "Contents": [
+            {"Key": "PPTimetable/20260815020529_v8.xml.gz"},
+            {"Key": "PPTimetable/20260816020531_v8.xml.gz"},
+        ],
+        "IsTruncated": True,
+        "NextContinuationToken": "token-page-2",
+    }
+    # Page 2 has newer files and IsTruncated=False
+    page2 = {
+        "Contents": [
+            {"Key": "PPTimetable/20260908020538_v8.xml.gz"},  # Tuesday (Weekday)
+            {"Key": "PPTimetable/20260905020530_v8.xml.gz"},  # Saturday
+            {"Key": "PPTimetable/20260906020530_v8.xml.gz"},  # Sunday
+        ],
+        "IsTruncated": False,
+    }
+
+    def list_objects_side_effect(**kwargs: Any) -> Dict[str, Any]:
+        if kwargs.get("ContinuationToken") == "token-page-2":
+            return page2
+        return page1
+
+    mock_s3.list_objects_v2.side_effect = list_objects_side_effect
+    client = TrainS3Client(bucket_name="rail-bucket", s3_client=mock_s3)
+    keys = client.get_latest_timetable_keys_by_day_profile()
+
+    assert len(keys) == 3
+    assert "PPTimetable/20260908020538_v8.xml.gz" in keys
+    assert "PPTimetable/20260905020530_v8.xml.gz" in keys
+    assert "PPTimetable/20260906020530_v8.xml.gz" in keys
+
+    # Also verify get_latest_timetable_key paginates
+    latest_single = client.get_latest_timetable_key()
+    assert latest_single == "PPTimetable/20260908020538_v8.xml.gz"

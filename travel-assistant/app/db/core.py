@@ -337,6 +337,18 @@ def run_migrations(database: SqliteDatabase) -> None:
     except Exception:
         pass
 
+    try:
+        # Clear legacy single-day end_date on auto_added rail timetables so recurring services stay active
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='timetables'"
+        )
+        if cursor.fetchone():
+            database.execute_sql(
+                "UPDATE timetables SET end_date = NULL WHERE auto_added = 1 AND transport_type = 'rail' AND end_date IS NOT NULL;"
+            )
+    except Exception:
+        pass
+
     logger.info("Database schema verification and migrations complete.")
 
 
