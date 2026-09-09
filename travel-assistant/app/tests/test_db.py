@@ -790,6 +790,60 @@ def test_run_migrations_cleans_up_sync_metadata() -> None:
     test_db.close()
 
 
+def test_run_migrations_clears_legacy_rail_timetable_end_date() -> None:
+    """Test run_migrations clears legacy single-day end_date on auto-added rail timetables."""
+    test_db = SqliteDatabase(":memory:")
+    test_db.connect()
+
+    with test_db.bind_ctx([Timetable]):
+        Timetable.create_table()
+        Timetable.create(
+            name="LNER",
+            transport_type="rail",
+            auto_added=True,
+            start_date="2026-09-08",
+            end_date="2026-09-08",
+        )
+        Timetable.create(
+            name="Bus 73",
+            transport_type="bus",
+            auto_added=True,
+            start_date="2026-09-01",
+            end_date="2026-10-01",
+        )
+        Timetable.create(
+            name="Custom Rail",
+            transport_type="rail",
+            auto_added=False,
+            start_date="2026-09-08",
+            end_date="2026-09-08",
+        )
+        Timetable.create(
+            name="Southern",
+            transport_type="rail",
+            auto_added=True,
+            start_date="2026-09-08",
+            end_date=None,
+        )
+
+    run_migrations(test_db)
+
+    with test_db.bind_ctx([Timetable]):
+        tt_lner = Timetable.get(Timetable.name == "LNER")
+        assert tt_lner.end_date is None
+
+        tt_bus = Timetable.get(Timetable.name == "Bus 73")
+        assert str(tt_bus.end_date) == "2026-10-01"
+
+        tt_custom = Timetable.get(Timetable.name == "Custom Rail")
+        assert str(tt_custom.end_date) == "2026-09-08"
+
+        tt_southern = Timetable.get(Timetable.name == "Southern")
+        assert tt_southern.end_date is None
+
+    test_db.close()
+
+
 def test_pydantic_field_serialization() -> None:
     """Test Peewee PydanticField automated serialisation and deserialisation."""
     from typing import Any, Dict, List

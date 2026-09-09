@@ -203,17 +203,24 @@ class TrainS3Client(BaseDataSource):
 
         try:
             client = self.get_client()
-            resp = client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
-
             matching_keys: List[str] = []
-            for obj in resp.get("Contents", []):
-                k = obj.get("Key", "")
-                if (
-                    k.endswith("_v8.xml.gz")
-                    or k.endswith(".xml.gz")
-                    or k.endswith(".xml")
-                ):
-                    matching_keys.append(k)
+            continuation_token = None
+            while True:
+                kwargs: Dict[str, Any] = {"Bucket": self.bucket_name, "Prefix": prefix}
+                if continuation_token:
+                    kwargs["ContinuationToken"] = continuation_token
+                resp = client.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents", []):
+                    k = obj.get("Key", "")
+                    if (
+                        k.endswith("_v8.xml.gz")
+                        or k.endswith(".xml.gz")
+                        or k.endswith(".xml")
+                    ):
+                        matching_keys.append(k)
+                if not resp.get("IsTruncated"):
+                    break
+                continuation_token = resp.get("NextContinuationToken")
 
             if not matching_keys:
                 return []
@@ -270,17 +277,24 @@ class TrainS3Client(BaseDataSource):
 
         try:
             client = self.get_client()
-            resp = client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
-
             matching_keys: List[str] = []
-            for obj in resp.get("Contents", []):
-                k = obj.get("Key", "")
-                if (
-                    k.endswith("_v8.xml.gz")
-                    or k.endswith(".xml.gz")
-                    or k.endswith(".xml")
-                ):
-                    matching_keys.append(k)
+            continuation_token = None
+            while True:
+                kwargs: Dict[str, Any] = {"Bucket": self.bucket_name, "Prefix": prefix}
+                if continuation_token:
+                    kwargs["ContinuationToken"] = continuation_token
+                resp = client.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents", []):
+                    k = obj.get("Key", "")
+                    if (
+                        k.endswith("_v8.xml.gz")
+                        or k.endswith(".xml.gz")
+                        or k.endswith(".xml")
+                    ):
+                        matching_keys.append(k)
+                if not resp.get("IsTruncated"):
+                    break
+                continuation_token = resp.get("NextContinuationToken")
 
             if not matching_keys:
                 return None
@@ -496,7 +510,7 @@ class TrainS3Client(BaseDataSource):
                                     "origin_name": origin_meta["name"],
                                     "dest_name": dest_meta["name"],
                                     "start_date": ssd,
-                                    "end_date": ssd,
+                                    "end_date": None,
                                     "journeys": [],
                                     "seen_trains": set(),
                                 }
@@ -621,13 +635,11 @@ class TrainS3Client(BaseDataSource):
             elif len(base_counts[corr["base_id"]]) > 1 and day_prof == "weekday":
                 name = f"{name} (Mon-Fri)"
 
-            # Parse start/end dates from ssd if available
+            # Parse start date from ssd if available; recurring rail timetables remain open-ended (end_date=None)
             start_d = None
-            end_d = None
             if corr.get("start_date"):
                 try:
                     start_d = datetime.date.fromisoformat(corr["start_date"])
-                    end_d = start_d
                 except ValueError:
                     pass
 
@@ -636,7 +648,7 @@ class TrainS3Client(BaseDataSource):
                     "name": name,
                     "transport_type": "rail",
                     "start_date": start_d,
-                    "end_date": end_d,
+                    "end_date": None,
                     **corr["day_flags"],
                     "auto_added": True,
                     "content": {
