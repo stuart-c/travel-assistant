@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Generator
 from unittest.mock import patch
 import pytest
@@ -661,17 +662,46 @@ def test_create_mcp_app_allows_lan_host_headers(app: Flask) -> None:
     """Verify create_mcp_app permits arbitrary LAN host headers by default without 421."""
     with app.app_context():
         mcp_app = create_mcp_app(host="0.0.0.0")
-        client = TestClient(mcp_app)
+        with TestClient(mcp_app) as client:
+            # POST /sse with LAN IP host header (e.g. 192.168.3.2:8098)
+            response = client.post(
+                "/sse",
+                headers={"host": "192.168.3.2:8098"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert response.status_code == 200
+            assert "Travel Assistant" in response.text
+            for line in response.text.splitlines():
+                if line.startswith("data: "):
+                    payload = json.loads(line[6:])
+                    assert payload["result"]["serverInfo"]["name"] == "Travel Assistant"
 
-        # POST /messages/ with LAN IP host header (e.g. 192.168.3.2:8098)
-        response = client.post(
-            "/messages/",
-            headers={"host": "192.168.3.2:8098"},
-            json={"jsonrpc": "2.0"},
-        )
-        # Passes DNS rebinding validation (400 session_id required instead of 421 Misdirected Request)
-        assert response.status_code != 421
-        assert response.status_code == 400
+            # Verify alias routes /mcp and / also route successfully
+            mcp_resp = client.post(
+                "/mcp",
+                headers={"host": "192.168.3.2:8098"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert mcp_resp.status_code == 200
+            assert "Travel Assistant" in mcp_resp.text
 
 
 def test_create_mcp_app_with_allowed_hosts_enforces_protection(app: Flask) -> None:
@@ -681,51 +711,84 @@ def test_create_mcp_app_with_allowed_hosts_enforces_protection(app: Flask) -> No
             host="0.0.0.0",
             allowed_hosts=["allowed.local:*", "localhost:*"],
         )
-        client = TestClient(mcp_app)
+        with TestClient(mcp_app) as client:
+            # Valid allowed host
+            valid_resp = client.post(
+                "/sse",
+                headers={"host": "allowed.local:8098"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert valid_resp.status_code == 200
 
-        # Valid allowed host
-        valid_resp = client.post(
-            "/messages/",
-            headers={"host": "allowed.local:8098"},
-            json={"jsonrpc": "2.0"},
-        )
-        assert valid_resp.status_code != 421
-        assert valid_resp.status_code == 400
-
-        # Invalid host should be rejected by transport security with 421
-        invalid_resp = client.post(
-            "/messages/",
-            headers={"host": "attacker.com:8098"},
-            json={"jsonrpc": "2.0"},
-        )
-        assert invalid_resp.status_code == 421
-        assert "Invalid Host header" in invalid_resp.text
+            # Invalid host should be rejected by transport security with 421
+            invalid_resp = client.post(
+                "/sse",
+                headers={"host": "attacker.com:8098"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert invalid_resp.status_code == 421
+            assert "Invalid Host header" in invalid_resp.text
 
 
 def test_create_mcp_app_with_api_token(app: Flask) -> None:
     """Verify create_mcp_app enforces Bearer token authentication when configured."""
     with app.app_context():
         mcp_app = create_mcp_app(api_token="super-secret")
-        client = TestClient(mcp_app)
+        with TestClient(mcp_app) as client:
+            # Missing token -> 401
+            unauth_resp = client.post(
+                "/sse",
+                headers={"host": "192.168.3.2:8098"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert unauth_resp.status_code == 401
 
-        # Missing token -> 401
-        unauth_resp = client.post(
-            "/messages/",
-            headers={"host": "192.168.3.2:8098"},
-            json={"jsonrpc": "2.0"},
-        )
-        assert unauth_resp.status_code == 401
-
-        # Valid token -> 400 (passes auth)
-        auth_resp = client.post(
-            "/messages/",
-            headers={
-                "host": "192.168.3.2:8098",
-                "authorization": "Bearer super-secret",
-            },
-            json={"jsonrpc": "2.0"},
-        )
-        assert auth_resp.status_code == 400
+            # Valid token -> 200 (passes auth)
+            auth_resp = client.post(
+                "/sse",
+                headers={
+                    "host": "192.168.3.2:8098",
+                    "authorization": "Bearer super-secret",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                    },
+                },
+            )
+            assert auth_resp.status_code == 200
 
 
 def test_cli_main_entrypoint(monkeypatch: pytest.MonkeyPatch, app: Flask) -> None:

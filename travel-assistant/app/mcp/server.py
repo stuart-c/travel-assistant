@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
+from starlette.routing import Route
 
 try:
     from mcp.server.mcpserver import MCPServer
@@ -172,10 +173,11 @@ class TravelAssistantMCPServer(MCPServer):
 def create_mcp_app(
     api_token: str = "",
     host: str = "0.0.0.0",
+    streamable_http_path: str = "/sse",
     transport_security: Optional[Any] = None,
     allowed_hosts: Optional[List[str]] = None,
 ) -> Any:
-    """Application factory creating the Starlette ASGI application for MCP over SSE.
+    """Application factory creating the Starlette ASGI application for MCP over Streamable HTTP.
 
     By default, disables strict DNS rebinding protection so that local area network
     (LAN) clients and Home Assistant reverse proxy requests with arbitrary Host headers
@@ -185,7 +187,10 @@ def create_mcp_app(
     sync_mcp_tools_with_db()
     server = TravelAssistantMCPServer("Travel Assistant")
 
-    kwargs: Dict[str, Any] = {"host": host}
+    kwargs: Dict[str, Any] = {
+        "host": host,
+        "streamable_http_path": streamable_http_path,
+    }
     if transport_security is not None:
         kwargs["transport_security"] = transport_security
     elif allowed_hosts is not None:
@@ -200,7 +205,16 @@ def create_mcp_app(
                 enable_dns_rebinding_protection=False
             )
 
-    app = server.sse_app(**kwargs)
+    app = server.streamable_http_app(**kwargs)
+
+    # Alias common endpoint paths (/sse, /mcp, /) so clients work regardless of URL configuration
+    if hasattr(app, "routes") and app.routes:
+        main_endpoint = app.routes[0].endpoint
+        existing_paths = {getattr(r, "path", "") for r in app.routes}
+        for alt_path in ("/sse", "/mcp", "/"):
+            if alt_path not in existing_paths:
+                app.routes.append(Route(alt_path, endpoint=main_endpoint))
+
     if api_token:
         app.add_middleware(BearerAuthMiddleware, api_token=api_token)
     return app
