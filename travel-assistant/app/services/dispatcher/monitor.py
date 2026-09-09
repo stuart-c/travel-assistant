@@ -18,6 +18,8 @@ from app.services.dispatcher.proximity import is_person_near_origin
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
+    detect_en_route_journey,
+    format_progress_notification,
     update_journey_progress,
 )
 
@@ -157,12 +159,48 @@ class DepartureMonitor:
                 from_id=journey.from_id,
             )
             if not is_near:
-                logger.debug(
-                    "Stuart is not near origin %s (%s) for journey %d.",
-                    journey.from_id,
-                    journey.from_name,
-                    journey.id,
+                # 2c. En-route recovery: Detect if Stuart is in transit along journey corridor
+                recovered = detect_en_route_journey(
+                    journey=journey,
+                    person_state=stuart_state,
+                    current_dt=current_dt,
+                    live_client=live_client,
                 )
+                if recovered:
+                    self.active_journeys[journey.id] = recovered
+                    title, message, data = format_progress_notification(recovered)
+                    try:
+                        sent = client.send_mobile_notification(
+                            title=title,
+                            message=message,
+                            service_name=self.target_notify_service,
+                            data=data,
+                        )
+                        if sent:
+                            recovered.last_notification_message = message
+                            dispatched_count += 1
+                            logger.info(
+                                "Recovered en-route active journey %d (%s) for %s at [%s]: %s",
+                                journey.id,
+                                journey.name,
+                                self.target_person,
+                                recovered.current_status.value,
+                                message,
+                            )
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to dispatch en-route recovery notification for journey %d (%s): %s",
+                            journey.id,
+                            journey.name,
+                            exc,
+                        )
+                else:
+                    logger.debug(
+                        "Stuart is not near origin %s (%s) for journey %d.",
+                        journey.from_id,
+                        journey.from_name,
+                        journey.id,
+                    )
                 continue
 
             # 2c. Evaluate timing and find upcoming candidate

@@ -524,6 +524,248 @@ def update_journey_progress(
     return False
 
 
+def detect_en_route_journey(
+    journey: Journey,
+    person_state: Optional[Dict[str, Any]],
+    current_dt: datetime.datetime,
+    live_client: Optional[TrainLiveClient] = None,
+    max_proximity_metres: float = 200.0,
+) -> Optional[ActiveJourney]:
+    """Detect if Stuart is currently en route along a scheduled journey corridor.
+
+    Evaluates recent scheduled itineraries for the journey to determine if Stuart's
+    current GPS location matches any intermediate transit stop, interchange, or transit leg.
+    If a matching progression stage is detected, instantiates and returns an ActiveJourney.
+    """
+    if not person_state or not isinstance(person_state, dict):
+        return None
+
+    # Stuart cannot be en route if still near the origin or already at destination
+    if is_person_near_origin(person_state, journey.from_type, journey.from_id):
+        return None
+    if is_person_near_origin(person_state, journey.to_type, journey.to_id):
+        return None
+
+    attrs = person_state.get("attributes", {}) or {}
+    raw_lat = attrs.get("latitude")
+    raw_lon = attrs.get("longitude")
+    if raw_lat is None or raw_lon is None:
+        return None
+
+    try:
+        person_lat = float(raw_lat)
+        person_lon = float(raw_lon)
+    except (ValueError, TypeError):
+        return None
+
+    current_minutes = current_dt.hour * 60 + current_dt.minute
+    weekday_idx = current_dt.weekday()
+    day_names = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ]
+    day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+
+    # Search for itineraries that departed within the last 2 hours
+    search_start_min = max(0, current_minutes - 120)
+    search_time_str = format_minutes_to_time(search_start_min)
+
+    try:
+        from app.services.planner.raptor import plan_journey
+
+        itineraries = plan_journey(
+            from_type=journey.from_type,
+            from_id=journey.from_id,
+            to_type=journey.to_type,
+            to_id=journey.to_id,
+            timing_mode="depart",
+            time_str=search_time_str,
+            days_of_week=[day_code],
+            target_date=current_dt.date(),
+            max_itineraries=8,
+        )
+    except Exception as exc:
+        logger.debug(
+            "Could not plan candidate itineraries for en-route detection on journey %d: %s",
+            journey.id,
+            exc,
+        )
+        return None
+
+    if not itineraries:
+        return None
+
+    for itin in itineraries:
+        if not itin.legs:
+            continue
+
+        dep_m = parse_time_to_minutes(itin.departure_time)
+        arr_m = parse_time_to_minutes(itin.arrival_time)
+        if dep_m is None or arr_m is None:
+            continue
+
+        # Candidate must cover current time (dep_m <= current_minutes <= arr_m + 60)
+        if dep_m > current_minutes or current_minutes > arr_m + 60:
+            continue
+
+        for leg_idx, leg in enumerate(itin.legs):
+            orig_lat, orig_lon, _ = resolve_endpoint_coordinates(
+                leg.mode, leg.origin.id
+            )
+            dest_lat, dest_lon, _ = resolve_endpoint_coordinates(
+                leg.mode, leg.destination.id
+            )
+
+            dist_orig = (
+                haversine_distance(person_lat, person_lon, orig_lat, orig_lon)
+                if (orig_lat is not None and orig_lon is not None)
+                else None
+            )
+            dist_dest = (
+                haversine_distance(person_lat, person_lon, dest_lat, dest_lon)
+                if (dest_lat is not None and dest_lon is not None)
+                else None
+            )
+
+            leg_dep_m = parse_time_to_minutes(leg.dep_time)
+            leg_arr_m = parse_time_to_minutes(leg.arr_time)
+
+            # 1. At the departure stop or interchange for this leg
+            if dist_orig is not None and dist_orig <= max_proximity_metres:
+                if leg_idx == 0 or (leg_idx == 1 and itin.legs[0].mode == "walk"):
+                    status = JourneyStepStatus.AT_DEPARTURE_STOP
+                else:
+                    status = JourneyStepStatus.AT_INTERCHANGE
+
+                plat = None
+                live_stat = None
+                if leg.mode == "rail" and live_client:
+                    plat, live_stat = resolve_live_rail_platform(
+                        origin_id=leg.origin.id,
+                        dest_id=leg.destination.id,
+                        scheduled_time=leg.dep_time,
+                        live_client=live_client,
+                    )
+
+                return ActiveJourney(
+                    journey_id=journey.id,
+                    journey_name=journey.name,
+                    from_type=journey.from_type,
+                    from_id=journey.from_id,
+                    from_name=journey.from_name,
+                    to_type=journey.to_type,
+                    to_id=journey.to_id,
+                    to_name=journey.to_name,
+                    itinerary=itin,
+                    legs=list(itin.legs),
+                    current_leg_index=leg_idx,
+                    current_status=status,
+                    started_at=current_dt,
+                    expected_arrival_time=itin.arrival_time,
+                    platform=plat,
+                    live_status=live_stat,
+                )
+
+            # 2. At the destination of this leg
+            if dist_dest is not None and dist_dest <= max_proximity_metres:
+                next_idx = leg_idx + 1
+                if leg_idx == 0 and leg.mode == "walk":
+                    status = JourneyStepStatus.AT_DEPARTURE_STOP
+                elif next_idx >= len(itin.legs):
+                    status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                elif (
+                    next_idx == len(itin.legs) - 1
+                    and itin.legs[next_idx].mode == "walk"
+                ):
+                    status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                else:
+                    status = JourneyStepStatus.AT_INTERCHANGE
+
+                plat = None
+                live_stat = None
+                next_leg = itin.legs[next_idx] if next_idx < len(itin.legs) else None
+                if next_leg and next_leg.mode == "rail" and live_client:
+                    plat, live_stat = resolve_live_rail_platform(
+                        origin_id=next_leg.origin.id,
+                        dest_id=next_leg.destination.id,
+                        scheduled_time=next_leg.dep_time,
+                        live_client=live_client,
+                    )
+
+                return ActiveJourney(
+                    journey_id=journey.id,
+                    journey_name=journey.name,
+                    from_type=journey.from_type,
+                    from_id=journey.from_id,
+                    from_name=journey.from_name,
+                    to_type=journey.to_type,
+                    to_id=journey.to_id,
+                    to_name=journey.to_name,
+                    itinerary=itin,
+                    legs=list(itin.legs),
+                    current_leg_index=(
+                        next_idx if next_idx < len(itin.legs) else leg_idx
+                    ),
+                    current_status=status,
+                    started_at=current_dt,
+                    expected_arrival_time=itin.arrival_time,
+                    platform=plat,
+                    live_status=live_stat,
+                )
+
+            # 3. En route on board transit during transit leg duration
+            if (
+                leg_dep_m is not None
+                and leg_arr_m is not None
+                and leg_dep_m <= current_minutes <= leg_arr_m
+                and leg.mode != "walk"
+                and orig_lat is not None
+                and dest_lat is not None
+            ):
+                leg_span = haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
+                if (
+                    dist_orig is not None
+                    and dist_dest is not None
+                    and (dist_orig + dist_dest)
+                    <= max(leg_span * 1.5, leg_span + 1000.0)
+                ):
+                    plat = None
+                    live_stat = None
+                    if leg.mode == "rail" and live_client:
+                        plat, live_stat = resolve_live_rail_platform(
+                            origin_id=leg.origin.id,
+                            dest_id=leg.destination.id,
+                            scheduled_time=leg.dep_time,
+                            live_client=live_client,
+                        )
+
+                    return ActiveJourney(
+                        journey_id=journey.id,
+                        journey_name=journey.name,
+                        from_type=journey.from_type,
+                        from_id=journey.from_id,
+                        from_name=journey.from_name,
+                        to_type=journey.to_type,
+                        to_id=journey.to_id,
+                        to_name=journey.to_name,
+                        itinerary=itin,
+                        legs=list(itin.legs),
+                        current_leg_index=leg_idx,
+                        current_status=JourneyStepStatus.ON_TRANSIT,
+                        started_at=current_dt,
+                        expected_arrival_time=itin.arrival_time,
+                        platform=plat,
+                        live_status=live_stat,
+                    )
+
+    return None
+
+
 STATUS_METADATA: Dict[JourneyStepStatus, Dict[str, str]] = {
     JourneyStepStatus.PRE_DEPARTURE: {
         "label": "Preparing to leave",
