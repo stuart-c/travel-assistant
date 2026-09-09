@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 from peewee import SqliteDatabase
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ class ToolDefinition:
     description: str
     is_mutating: bool
     func: Callable[..., Any]
+    allowed_levels: Tuple[str, ...] = ()
 
 
 REGISTERED_TOOLS: Dict[str, ToolDefinition] = {}
@@ -27,8 +28,14 @@ def register_tool(
     domain: str,
     description: str,
     is_mutating: bool = False,
+    allowed_levels: Optional[Tuple[str, ...]] = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to register an MCP tool definition with domain metadata."""
+    resolved_levels = (
+        allowed_levels
+        if allowed_levels is not None
+        else (("disabled", "read_write") if is_mutating else ("disabled", "read"))
+    )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         tool_def = ToolDefinition(
@@ -37,6 +44,7 @@ def register_tool(
             description=description,
             is_mutating=is_mutating,
             func=func,
+            allowed_levels=resolved_levels,
         )
         REGISTERED_TOOLS[name] = tool_def
         return func
@@ -113,6 +121,7 @@ def _ensure_all_tools_imported() -> None:
     import app.mcp.tools_stops  # noqa: F401
     import app.mcp.tools_dispatcher  # noqa: F401
     import app.mcp.tools_sync  # noqa: F401
+    import app.mcp.tools_database  # noqa: F401
 
 
 __all__ = [

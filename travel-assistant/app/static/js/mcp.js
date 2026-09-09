@@ -60,6 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (d === 'sync') {
       badgeClass = 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300';
       icon = 'sync';
+    } else if (d === 'database') {
+      badgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300';
+      icon = 'database';
     }
 
     const label = d.charAt(0).toUpperCase() + d.slice(1);
@@ -75,8 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return items.map((item) => {
       const stagedUpdate = changesetManager.getUpdated().find((u) => u.id === item.id);
       const currentLevel = stagedUpdate ? stagedUpdate.access_level : item.access_level;
+      const allowed = item.allowed_levels || (item.is_mutating ? ['disabled', 'read_write'] : ['disabled', 'read']);
+      const isHybrid = allowed.includes('read') && allowed.includes('read_write');
 
-      const typeBadge = item.is_mutating
+      const typeBadge = isHybrid
+        ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300">
+             <span class="material-symbols-outlined text-xs leading-none">tune</span> Configurable
+           </span>`
+        : item.is_mutating
         ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
              <span class="material-symbols-outlined text-xs leading-none">edit</span> Mutating
            </span>`
@@ -85,16 +94,16 @@ document.addEventListener('DOMContentLoaded', () => {
            </span>`;
 
       let optionsHtml = '';
-      if (item.is_mutating) {
-        optionsHtml = `
-          <option value="disabled" ${currentLevel === 'disabled' ? 'selected' : ''}>Disabled</option>
-          <option value="read_write" ${currentLevel === 'read_write' ? 'selected' : ''}>Read / Write (Enabled)</option>
-        `;
-      } else {
-        optionsHtml = `
-          <option value="disabled" ${currentLevel === 'disabled' ? 'selected' : ''}>Disabled</option>
-          <option value="read" ${currentLevel === 'read' ? 'selected' : ''}>Read (Enabled)</option>
-        `;
+      if (allowed.includes('disabled')) {
+        optionsHtml += `<option value="disabled" ${currentLevel === 'disabled' ? 'selected' : ''}>Disabled</option>`;
+      }
+      if (allowed.includes('read')) {
+        const readLabel = item.tool_name === 'db_query' ? 'Read (SELECT only)' : 'Read (Enabled)';
+        optionsHtml += `<option value="read" ${currentLevel === 'read' ? 'selected' : ''}>${readLabel}</option>`;
+      }
+      if (allowed.includes('read_write')) {
+        const rwLabel = item.tool_name === 'db_query' ? 'Read / Write (Full SQL)' : 'Read / Write (Enabled)';
+        optionsHtml += `<option value="read_write" ${currentLevel === 'read_write' ? 'selected' : ''}>${rwLabel}</option>`;
       }
 
       const isChanged = stagedUpdate && stagedUpdate.access_level !== item.access_level;

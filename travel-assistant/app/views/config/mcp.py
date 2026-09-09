@@ -36,13 +36,23 @@ def clean_mcp_tool_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "disabled",
     )
 
-    # UI constraint enforcement:
-    # Read-only tools can only be 'read' or 'disabled'.
-    # Mutating tools can only be 'read_write' or 'disabled'.
-    if tool.is_mutating:
-        access_level = "read_write" if raw_level == "read_write" else "disabled"
+    # UI constraint enforcement based on tool definition allowed levels:
+    from app.mcp.registry import REGISTERED_TOOLS
+
+    tool_def = REGISTERED_TOOLS.get(tool.tool_name)
+    if tool_def and tool_def.allowed_levels:
+        allowed = tool_def.allowed_levels
+    elif tool.is_mutating:
+        allowed = ("disabled", "read_write")
     else:
-        access_level = "read" if raw_level in ("read", "read_write") else "disabled"
+        allowed = ("disabled", "read")
+
+    if raw_level in allowed:
+        access_level = raw_level
+    elif "read" in allowed and raw_level == "read_write":
+        access_level = "read"
+    else:
+        access_level = "disabled"
 
     return {
         "id": item_id,
@@ -52,9 +62,19 @@ def clean_mcp_tool_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def get_mcp_tools_data() -> List[Dict[str, Any]]:
     """Retrieve all configured tools formatted for Grid.js table loading."""
+    from app.mcp.registry import REGISTERED_TOOLS
+
     tools = MCPTool.get_all_tools()
     results: List[Dict[str, Any]] = []
     for tool in tools:
+        tool_def = REGISTERED_TOOLS.get(tool.tool_name)
+        if tool_def and tool_def.allowed_levels:
+            allowed = list(tool_def.allowed_levels)
+        elif tool.is_mutating:
+            allowed = ["disabled", "read_write"]
+        else:
+            allowed = ["disabled", "read"]
+
         results.append(
             {
                 "id": tool.id,
@@ -63,6 +83,7 @@ def get_mcp_tools_data() -> List[Dict[str, Any]]:
                 "description": tool.description,
                 "is_mutating": tool.is_mutating,
                 "access_level": tool.access_level,
+                "allowed_levels": allowed,
                 "updated_at": (
                     tool.updated_at.isoformat() if tool.updated_at else None
                 ),

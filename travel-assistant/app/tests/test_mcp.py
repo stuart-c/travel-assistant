@@ -16,6 +16,10 @@ from app.mcp.server import (
     TravelAssistantMCPServer,
     invalidate_permission_cache,
 )
+from app.mcp.tools_database import (
+    db_get_table_info,
+    db_query,
+)
 from app.mcp.tools_dispatcher import (
     dispatcher_evaluate,
     dispatcher_get_status,
@@ -132,9 +136,13 @@ def test_config_mcp_views(client: FlaskClient, app: Flask) -> None:
         items = payload["data"]
         assert len(items) > 0
 
-        # Pick a read-only and mutating tool
+        # Pick a read-only and strictly mutating tool
         read_tool = next(t for t in items if not t["is_mutating"])
-        mutating_tool = next(t for t in items if t["is_mutating"])
+        mutating_tool = next(
+            t
+            for t in items
+            if t["is_mutating"] and "read" not in t.get("allowed_levels", [])
+        )
 
         # 3. POST /config/mcp/data to update access levels
         save_resp = client.post(
@@ -486,6 +494,166 @@ def test_sync_tools(app: Flask) -> None:
             val_res = sync_trigger("stops")
             assert val_res["success"] is True
             mock_req.assert_called_once_with("stops")
+
+
+def test_database_tools(app: Flask) -> None:
+    """Test db_get_table_info and db_query tools with permission constraints."""
+    with app.app_context():
+        # 1. db_get_table_info (all tables)
+        info_all = db_get_table_info()
+        assert info_all["success"] is True
+        assert info_all["table_count"] > 0
+        names = [t["name"] for t in info_all["tables"]]
+        assert "journeys" in names
+        assert "mcp_tools" in names
+
+        # 2. db_get_table_info (single table)
+        info_single = db_get_table_info("journeys")
+        assert info_single["success"] is True
+        assert info_single["table"]["name"] == "journeys"
+        col_names = [c["name"] for c in info_single["table"]["columns"]]
+        assert "id" in col_names
+        assert "name" in col_names
+
+        # Invalid table names
+        assert db_get_table_info("invalid;name")["success"] is False
+        assert db_get_table_info("non_existent_table_xyz")["success"] is False
+
+        # 3. db_query with 'read' permission
+        sync_mcp_tools_with_db()
+        MCPTool.update(access_level="read").where(
+            MCPTool.tool_name == "db_query"
+        ).execute()
+        invalidate_permission_cache()
+
+        # Empty and multi-statements
+        assert db_query("")["success"] is False
+        assert db_query("SELECT 1; SELECT 2;")["success"] is False
+
+        # SELECT succeeds
+        sel_res = db_query("SELECT name FROM journeys LIMIT 5")
+        assert sel_res["success"] is True
+        assert sel_res["type"] == "SELECT"
+        assert isinstance(sel_res["rows"], list)
+
+        # Mutating operations rejected under 'read'
+        ins_rej = db_query(
+            "INSERT INTO journeys (name) VALUES ('Hacked')",
+        )
+        assert ins_rej["success"] is False
+        assert "read" in ins_rej["error"]
+
+        upd_rej = db_query(
+            "UPDATE journeys SET name = 'Hacked'",
+        )
+        assert upd_rej["success"] is False
+        assert "read" in upd_rej["error"]
+
+        del_rej = db_query("DELETE FROM journeys")
+        assert del_rej["success"] is False
+        assert "read" in del_rej["error"]
+
+        # 4. db_query with 'read_write' permission
+        MCPTool.update(access_level="read_write").where(
+            MCPTool.tool_name == "db_query"
+        ).execute()
+        invalidate_permission_cache()
+
+        ins_res = db_query(
+            "INSERT INTO journeys (name, from_type, from_id, from_name, to_type, to_id, to_name, time_settings, created_at, updated_at) "
+            "VALUES (?, 'rail', 'KGX', 'London King''s Cross', 'rail', 'EUS', 'London Euston', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            params=["Test Commute DB Tool"],
+        )
+        assert ins_res["success"] is True
+        assert ins_res["rows_affected"] == 1
+        new_id = ins_res["last_insert_id"]
+        assert new_id is not None
+
+        # Verify inserted row
+        check_res = db_query(
+            "SELECT name FROM journeys WHERE id = ?",
+            params=[new_id],
+        )
+        assert check_res["success"] is True
+        assert check_res["rows"][0]["name"] == "Test Commute DB Tool"
+
+        # UPDATE succeeds under read_write
+        upd_res = db_query(
+            "UPDATE journeys SET name = ? WHERE id = ?",
+            params=["Updated Commute DB Tool", new_id],
+        )
+        assert upd_res["success"] is True
+        assert upd_res["rows_affected"] == 1
+
+        # DELETE succeeds under read_write
+        del_res = db_query(
+            "DELETE FROM journeys WHERE id = ?",
+            params=[new_id],
+        )
+        assert del_res["success"] is True
+        assert del_res["rows_affected"] == 1
+
+        # Prohibited DDL (DROP TABLE) rejected under read_write
+        drop_rej = db_query("DROP TABLE journeys")
+        assert drop_rej["success"] is False
+        assert "DROP" in drop_rej["error"]
+
+
+def test_database_tools_server_enforcement(app: Flask) -> None:
+    """Test server-level permission dispatching for database tools."""
+    with app.app_context():
+        sync_mcp_tools_with_db()
+        server = TravelAssistantMCPServer("DB Test Server")
+
+        async def _run() -> None:
+            # 1. When db_query is disabled -> rejected
+            MCPTool.update(access_level="disabled").where(
+                MCPTool.tool_name == "db_query"
+            ).execute()
+            invalidate_permission_cache()
+
+            call_disabled = await server.call_tool(
+                "db_query", {"query": "SELECT count(*) FROM journeys"}
+            )
+            assert call_disabled.is_error is True
+
+            # 2. When db_query is set to 'read'
+            MCPTool.update(access_level="read").where(
+                MCPTool.tool_name == "db_query"
+            ).execute()
+            invalidate_permission_cache()
+
+            call_read_sel = await server.call_tool(
+                "db_query", {"query": "SELECT count(*) as count FROM journeys"}
+            )
+            assert call_read_sel.is_error is False
+            assert "count" in call_read_sel.content[0].text
+
+            # INSERT rejected when access is 'read'
+            call_read_ins = await server.call_tool(
+                "db_query", {"query": "INSERT INTO journeys (name) VALUES ('Test')"}
+            )
+            assert "rejected" in call_read_ins.content[0].text
+
+            # 3. When db_query is set to 'read_write'
+            MCPTool.update(access_level="read_write").where(
+                MCPTool.tool_name == "db_query"
+            ).execute()
+            invalidate_permission_cache()
+
+            call_rw_ins = await server.call_tool(
+                "db_query",
+                {
+                    "query": (
+                        "INSERT INTO journeys (name, from_type, from_id, from_name, to_type, to_id, to_name, time_settings, created_at, updated_at) "
+                        "VALUES ('RW Test', 'rail', 'KGX', 'London King''s Cross', 'rail', 'EUS', 'London Euston', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    )
+                },
+            )
+            assert call_rw_ins.is_error is False
+            assert "rows_affected" in call_rw_ins.content[0].text
+
+        asyncio.run(_run())
 
 
 def test_cli_main_entrypoint(monkeypatch: pytest.MonkeyPatch, app: Flask) -> None:

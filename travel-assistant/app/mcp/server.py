@@ -140,24 +140,26 @@ class TravelAssistantMCPServer(MCPServer):
             )
 
         tool_def = REGISTERED_TOOLS.get(name)
-        if tool_def and tool_def.is_mutating and access_level != "read_write":
-            logger.warning(
-                "Rejected mutating call to MCP tool '%s' with access level '%s'.",
-                name,
-                access_level,
-            )
-            return CallToolResult(
-                content=[
-                    TextContent(
-                        type="text",
-                        text=(
-                            f"Tool '{name}' requires read/write permission, "
-                            f"but current access level is '{access_level}'."
-                        ),
-                    )
-                ],
-                is_error=True,
-            )
+        if tool_def:
+            # If tool strictly requires read_write (does not support read-only mode)
+            if "read" not in tool_def.allowed_levels and access_level != "read_write":
+                logger.warning(
+                    "Rejected mutating call to MCP tool '%s' with access level '%s'.",
+                    name,
+                    access_level,
+                )
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Tool '{name}' requires read/write permission, "
+                                f"but current access level is '{access_level}'."
+                            ),
+                        )
+                    ],
+                    is_error=True,
+                )
 
         return await super().call_tool(name, arguments, context)
 
