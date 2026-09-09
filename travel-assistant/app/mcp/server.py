@@ -12,6 +12,11 @@ except ImportError:  # pragma: no cover
 
 from mcp.types import CallToolResult, TextContent, Tool
 
+try:
+    from mcp.server.transport_security import TransportSecuritySettings
+except ImportError:  # pragma: no cover
+    TransportSecuritySettings = None  # type: ignore[assignment,misc]
+
 from app.db import get_db_stats, get_sync_stats
 from app.mcp.auth import BearerAuthMiddleware
 from app.mcp.registry import (
@@ -164,11 +169,38 @@ class TravelAssistantMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
-def create_mcp_app(api_token: str = "") -> Any:
-    """Application factory creating the Starlette ASGI application for MCP over SSE."""
+def create_mcp_app(
+    api_token: str = "",
+    host: str = "0.0.0.0",
+    transport_security: Optional[Any] = None,
+    allowed_hosts: Optional[List[str]] = None,
+) -> Any:
+    """Application factory creating the Starlette ASGI application for MCP over SSE.
+
+    By default, disables strict DNS rebinding protection so that local area network
+    (LAN) clients and Home Assistant reverse proxy requests with arbitrary Host headers
+    (e.g. ``192.168.x.x``, ``homeassistant.local``) are permitted without triggering
+    HTTP 421 Misdirected Request errors.
+    """
     sync_mcp_tools_with_db()
     server = TravelAssistantMCPServer("Travel Assistant")
-    app = server.sse_app()
+
+    kwargs: Dict[str, Any] = {"host": host}
+    if transport_security is not None:
+        kwargs["transport_security"] = transport_security
+    elif allowed_hosts is not None:
+        if TransportSecuritySettings is not None:
+            kwargs["transport_security"] = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=allowed_hosts,
+            )
+    else:
+        if TransportSecuritySettings is not None:
+            kwargs["transport_security"] = TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            )
+
+    app = server.sse_app(**kwargs)
     if api_token:
         app.add_middleware(BearerAuthMiddleware, api_token=api_token)
     return app

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed Model Context Protocol (MCP) server DNS rebinding rejection on local area networks (`app/mcp/server.py`, `app/mcp/__main__.py`, `app/tests/test_mcp.py`):
+  - Configured `MCPServer.sse_app` to disable strict DNS rebinding protection by default so that local network clients and Home Assistant reverse proxy requests with LAN Host headers (e.g. `192.168.x.x:8098`, `homeassistant.local:8098`) are accepted rather than rejected with `HTTP 421 Misdirected Request`.
+  - Added `--allowed-hosts` CLI flag and `MCP_ALLOWED_HOSTS` environment variable to enable selective host restriction when desired.
 - Fixed Model Context Protocol (MCP) configuration web UI rendering and module shadowing (`app/static/js/mcp.js`, `app/main.py`, `app/views/config/mcp.py`):
   - Fixed client-side Grid.js runtime exception caused by improper array method invocation on `StagedChangesetManager.getUpdated()`.
   - Corrected configuration dirty tracking and discard handling to synchronise cleanly with `window.ConfigDirtyManager`.
