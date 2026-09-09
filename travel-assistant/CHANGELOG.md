@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fixed Model Context Protocol (MCP) server transport mismatch by adopting Streamable HTTP (`app/mcp/server.py`, `app/tests/test_mcp.py`):
+  - Migrated `create_mcp_app` from legacy `MCPServer.sse_app` to `MCPServer.streamable_http_app`, providing native support for modern Streamable HTTP POST initialisation and JSON-RPC method execution alongside GET SSE streams and DELETE session teardown.
+  - Added route aliases on the Starlette application so `/sse`, `/mcp`, and `/` are accepted interchangeably by connected AI agents and autonomous assistants.
+  - Resolved `HTTP 405 Method Not Allowed` errors when agents connect via remote HTTP URLs.
 - Fixed Model Context Protocol (MCP) server DNS rebinding rejection on local area networks (`app/mcp/server.py`, `app/mcp/__main__.py`, `app/tests/test_mcp.py`):
   - Configured `MCPServer.sse_app` to disable strict DNS rebinding protection by default so that local network clients and Home Assistant reverse proxy requests with LAN Host headers (e.g. `192.168.x.x:8098`, `homeassistant.local:8098`) are accepted rather than rejected with `HTTP 421 Misdirected Request`.
   - Added `--allowed-hosts` CLI flag and `MCP_ALLOWED_HOSTS` environment variable to enable selective host restriction when desired.
