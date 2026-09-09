@@ -35,6 +35,12 @@ def main() -> None:
         help="Optional Bearer token for client authentication",
     )
     parser.add_argument(
+        "--allowed-hosts",
+        type=str,
+        default=os.environ.get("MCP_ALLOWED_HOSTS", ""),
+        help="Optional comma-separated list of allowed Host header values for DNS rebinding protection",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default=os.environ.get("LOG_LEVEL", "info").lower(),
@@ -51,14 +57,25 @@ def main() -> None:
     # Ensure database tables and migrations are initialised
     init_db()
 
+    allowed_hosts = (
+        [h.strip() for h in args.allowed_hosts.split(",") if h.strip()]
+        if args.allowed_hosts
+        else None
+    )
+
     logger.info(
-        "Starting Travel Assistant MCP service on %s:%d (Auth: %s)...",
+        "Starting Travel Assistant MCP service on %s:%d (Auth: %s, DNS Rebinding Protection: %s)...",
         args.host,
         args.port,
         "Enabled" if args.token else "Disabled (Open)",
+        f"Restricted to {allowed_hosts}" if allowed_hosts else "Disabled (Open LAN)",
     )
 
-    app = create_mcp_app(api_token=args.token)
+    app = create_mcp_app(
+        api_token=args.token,
+        host=args.host,
+        allowed_hosts=allowed_hosts,
+    )
 
     uvicorn.run(
         app,

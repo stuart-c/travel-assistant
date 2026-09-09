@@ -14,6 +14,7 @@ from app.mcp.registry import (
 )
 from app.mcp.server import (
     TravelAssistantMCPServer,
+    create_mcp_app,
     invalidate_permission_cache,
 )
 from app.mcp.tools_database import (
@@ -656,17 +657,105 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
         asyncio.run(_run())
 
 
+def test_create_mcp_app_allows_lan_host_headers(app: Flask) -> None:
+    """Verify create_mcp_app permits arbitrary LAN host headers by default without 421."""
+    with app.app_context():
+        mcp_app = create_mcp_app(host="0.0.0.0")
+        client = TestClient(mcp_app)
+
+        # POST /messages/ with LAN IP host header (e.g. 192.168.3.2:8098)
+        response = client.post(
+            "/messages/",
+            headers={"host": "192.168.3.2:8098"},
+            json={"jsonrpc": "2.0"},
+        )
+        # Passes DNS rebinding validation (400 session_id required instead of 421 Misdirected Request)
+        assert response.status_code != 421
+        assert response.status_code == 400
+
+
+def test_create_mcp_app_with_allowed_hosts_enforces_protection(app: Flask) -> None:
+    """Verify create_mcp_app with allowed_hosts rejects invalid host headers with 421."""
+    with app.app_context():
+        mcp_app = create_mcp_app(
+            host="0.0.0.0",
+            allowed_hosts=["allowed.local:*", "localhost:*"],
+        )
+        client = TestClient(mcp_app)
+
+        # Valid allowed host
+        valid_resp = client.post(
+            "/messages/",
+            headers={"host": "allowed.local:8098"},
+            json={"jsonrpc": "2.0"},
+        )
+        assert valid_resp.status_code != 421
+        assert valid_resp.status_code == 400
+
+        # Invalid host should be rejected by transport security with 421
+        invalid_resp = client.post(
+            "/messages/",
+            headers={"host": "attacker.com:8098"},
+            json={"jsonrpc": "2.0"},
+        )
+        assert invalid_resp.status_code == 421
+        assert "Invalid Host header" in invalid_resp.text
+
+
+def test_create_mcp_app_with_api_token(app: Flask) -> None:
+    """Verify create_mcp_app enforces Bearer token authentication when configured."""
+    with app.app_context():
+        mcp_app = create_mcp_app(api_token="super-secret")
+        client = TestClient(mcp_app)
+
+        # Missing token -> 401
+        unauth_resp = client.post(
+            "/messages/",
+            headers={"host": "192.168.3.2:8098"},
+            json={"jsonrpc": "2.0"},
+        )
+        assert unauth_resp.status_code == 401
+
+        # Valid token -> 400 (passes auth)
+        auth_resp = client.post(
+            "/messages/",
+            headers={
+                "host": "192.168.3.2:8098",
+                "authorization": "Bearer super-secret",
+            },
+            json={"jsonrpc": "2.0"},
+        )
+        assert auth_resp.status_code == 400
+
+
 def test_cli_main_entrypoint(monkeypatch: pytest.MonkeyPatch, app: Flask) -> None:
     """Test python3 -m app.mcp entrypoint invocation with mocked uvicorn."""
     from app.mcp.__main__ import main
 
     monkeypatch.setattr(
         "sys.argv",
-        ["app.mcp", "--port", "8098", "--host", "127.0.0.1", "--token", "test-token"],
+        [
+            "app.mcp",
+            "--port",
+            "8098",
+            "--host",
+            "127.0.0.1",
+            "--token",
+            "test-token",
+            "--allowed-hosts",
+            "127.0.0.1:*,localhost:*",
+        ],
     )
 
-    with patch("uvicorn.run") as mock_uvicorn:
+    with patch("uvicorn.run") as mock_uvicorn, patch(
+        "app.mcp.__main__.create_mcp_app"
+    ) as mock_create_app:
         main()
+        mock_create_app.assert_called_once_with(
+            api_token="test-token",
+            host="127.0.0.1",
+            allowed_hosts=["127.0.0.1:*", "localhost:*"],
+        )
         mock_uvicorn.assert_called_once()
         _, kwargs = mock_uvicorn.call_args
         assert kwargs["port"] == 8098
