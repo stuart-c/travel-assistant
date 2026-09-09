@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Optional Model Context Protocol (MCP) Server and Web UI Configuration (`app/mcp/`, `app/views/config/mcp.py`, and `/config/mcp`):
+  - Built an asynchronous Model Context Protocol (MCP) server running over Server-Sent Events (SSE) on port `8098` via `MCPServer`, allowing external AI assistants (e.g. Antigravity) to query and debug live transit data.
+  - Implemented granular per-tool access control backed by a new SQLite database table (`mcp_tools` via Peewee model `MCPTool`) supporting `disabled`, `read`, and `read_write` permission states.
+  - Added a strict opt-in security model where newly discovered tools default to `disabled` and are dynamically omitted from the agent's tool discovery catalogue.
+  - Built a dedicated configuration page at `/config/mcp` with an interactive Grid.js table and differential changeset persistence (`config-save.js`) for managing tool permissions, with UI constraints enforcing read-only permissions for query tools and read/write permissions for action tools.
+  - Added full tool suite across journey management (`journey_*`), timetable scheduling (`timetable_*`), walking and transfers (`walking_*`, `transfer_*`), transit stop searches and live departures (`stops_*`), live journey dispatcher controls and test alerts (`dispatcher_*`), and background synchronisation triggers (`sync_*`).
+  - Added optional pre-shared Bearer token authentication via `mcp_api_token` add-on configuration.
+  - Added standalone runner entrypoint (`python3 -m app.mcp`) for local development and process supervision in `run.sh`.
 - Added Abstract Vertical Route Corridor Diagram to Live Journey Tracking (`/journey`, `journey_tracker.js`, and `tracker.py`):
   - Replaced the map with an abstract vertical route corridor diagram as the default primary display on `/journey`, styled after British transport apps (TfL Go, Citymapper, and National Rail).
   - Implemented mode-specific vertical transit spines connecting station stops with distinct British colours and line styles: dashed amber for walking, solid deep indigo for mainline rail, solid rose for bus, solid sky for metro/tube, and solid emerald for tram.

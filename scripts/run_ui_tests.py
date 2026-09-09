@@ -74,6 +74,7 @@ class UITester:
             "/config/walking",
             "/config/db",
             "/config/sync",
+            "/config/mcp",
         ]
         static_assets = set()
 
@@ -332,6 +333,31 @@ class UITester:
             r_w_post.status_code == 200
             and any(w.get("time_needed_minutes") == 15 for w in w_data),
             f"Verified {len(w_data)} walking routes in payload",
+        )
+
+        # MCP Tools Grid.js
+        r_mcp_get = self.client.get("/config/mcp/data")
+        mcp_data = (
+            r_mcp_get.get_json().get("data", []) if r_mcp_get.status_code == 200 else []
+        )
+        mcp_post_ok = False
+        if mcp_data:
+            target_tool = mcp_data[0]
+            new_level = "read" if not target_tool.get("is_mutating") else "read_write"
+            r_mcp_post = self.client.post(
+                "/config/mcp/data",
+                json={
+                    "added": [],
+                    "updated": [{"id": target_tool["id"], "access_level": new_level}],
+                    "deleted": [],
+                },
+            )
+            mcp_post_ok = r_mcp_post.status_code == 200
+
+        self.record(
+            "MCP Tools Grid.js Data Persistence",
+            len(mcp_data) > 0 and mcp_post_ok,
+            f"Verified {len(mcp_data)} MCP tools in catalogue",
         )
 
         # Sync Datasets Grid.js & Human Display Labels

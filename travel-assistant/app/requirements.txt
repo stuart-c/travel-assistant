@@ -8,3 +8,5 @@ peewee>=4.4.0
 googlemaps>=4.10.0
 pydantic>=2.13.5
 networkx>=3.6.1
+mcp>=1.0.0
+uvicorn>=0.30.0

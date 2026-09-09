@@ -14,7 +14,17 @@ ingress: true
 ingress_port: 8099
 host_network: false
 homeassistant_api: true
+ports:
+  8098/tcp: 8098
+ports_description:
+  8098/tcp: "Optional Model Context Protocol (MCP) Server"
 options:
   log_level: "info"
+  enable_mcp: false
+  mcp_port: 8098
+  mcp_api_token: ""
 schema:
   log_level: "list(trace|debug|info|notice|warning|error|fatal|critical)?"
+  enable_mcp: "bool"
+  mcp_port: "port?"
+  mcp_api_token: "password?"

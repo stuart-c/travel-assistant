@@ -97,6 +97,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         StopInterchange,
         SyncMetadata,
     )
+    from app.models.mcp import MCPTool
     from app.models.walking import Walking
 
     try:
@@ -118,6 +119,7 @@ def run_migrations(database: SqliteDatabase) -> None:
         Location,
         Journey,
         Walking,
+        MCPTool,
     ]
 
     with database.bind_ctx(all_models):
@@ -348,6 +350,14 @@ def run_migrations(database: SqliteDatabase) -> None:
             )
     except Exception:
         pass
+
+    try:
+        from app.mcp.registry import sync_mcp_tools_with_db
+
+        with database.bind_ctx([MCPTool]):
+            sync_mcp_tools_with_db(database)
+    except Exception as err:
+        logger.debug("MCP tools synchronisation deferred: %s", err)
 
     logger.info("Database schema verification and migrations complete.")
 
