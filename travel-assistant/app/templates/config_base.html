@@ -115,6 +115,15 @@
         <div class="h-px bg-slate-100 dark:bg-slate-800 my-1"></div>
 
         <a 
+          href="{{ ingress_path }}/config/mcp" 
+          class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'mcp' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
+          id="nav-link-mcp"
+        >
+          <span class="material-symbols-outlined text-lg leading-none text-sky-500 dark:text-sky-400">smart_toy</span>
+          <span>MCP Tools</span>
+        </a>
+
+        <a 
           href="{{ ingress_path }}/config/credentials" 
           class="config-nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors {% if active_tab == 'credentials' %}bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 border border-transparent{% endif %}"
           id="nav-link-credentials"

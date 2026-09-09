@@ -24,6 +24,8 @@ The **Travel Assistant** add-on provides travel and transport intelligence insid
 - **Journey Progress Tracking, Live In-Place Notification Updates & En-Route Recovery**: During an active journey, the background monitor continuously tracks Stuart's location (`person.stuart`) and updates the persistent mobile notification in-place (`tag: journey_{id}`) on Stuart's mobile device (`notify.mobile_app_stuart_mobile`). If Stuart departs without an initial departure notification firing (e.g. early departure or travelling outside the origin boundary), en-route journey recovery automatically detects Stuart's position along active route corridors, at intermediate stops/interchanges, or on board transit, registering the active journey session and dispatching progress notifications seamlessly. As Stuart progresses through journey stages (walking to stop, waiting at departure stop, on board transit, transfer at interchange, walking to destination, and arrival), the notification dynamically displays real-time departure platforms (queried live from National Rail Darwin), expected arrival times, line details, interchange transfer instructions, and completion alerts upon arrival at the final destination.
 - **Live Journey Tracking Screen (`/journey`)**: Dedicated user-facing screen (accessible directly via top navigation outside the `/config/...` settings section) providing interactive, real-time tracking of active and scheduled journeys. Features an abstract vertical route corridor diagram styled after British transport apps (TfL Go and National Rail) as the primary visual display—rendering mode-coloured vertical transit spines (indigo for rail, rose for bus, dashed amber for walking, sky for metro, emerald for tram), TfL double-ring interchange discs, platform badges, prominent transfer callout cards (`Change here: Board [Line] from Platform [X]`), and Stuart's real-time position anchored to stations or floating along transit lines with live distance-to-next-stop telemetry. Includes a segmented view switcher (`[ Route Diagram (Default) | Geographic Map ]`) to toggle the Leaflet geographic map, real-time telemetry cards (Darwin LDBWS platforms, service delay status, next action instructions), and an auto-polling endpoint (`GET /api/journey/live`) refreshing client telemetry every 10 seconds.
 - **RESTful API**: Endpoints for service status, ping checks, live journey tracking (`GET /api/journey/live`), timetable search lookup, and on-demand transit dataset synchronisation (`POST /api/sync/<table_name>` and `/config/db/sync/<table_name>`).
+- **Optional Model Context Protocol (MCP) Server**: Server-Sent Events (SSE) server on port `8098` exposing rich transit intelligence and database tools (journey management, timetable scheduling, walking links, stops lookup, live departure boards, dispatcher controls, sync triggers, schema table inspection, and granular SQL querying) directly to AI coding assistants and autonomous agents.
+- **MCP Tools Configuration & Access Control**: Dedicated configuration page at `/config/mcp` with an interactive Grid.js table and differential changeset persistence for managing per-tool access levels (`disabled`, `read`, `read_write`). Features strict opt-in security (newly discovered tools default to `disabled`), dynamic tool catalogue filtering, and granular query boundaries (e.g. read access permits `SELECT` only, whereas read/write permits `SELECT`, `INSERT`, `UPDATE`, and `DELETE`).
 
 - **Lightweight Execution**: Powered by Python, Flask, and Gunicorn on Debian Bookworm.
 
@@ -56,6 +58,18 @@ The `log_level` option controls the verbosity of log output across the applicati
 - `info` (default): Operational logs, dataset synchronisation summaries, and standard page/API HTTP access logs (static JS and CSS asset access logs are filtered out to keep logs concise).
 - `notice` / `warning`: Operational warnings and skipped operations.
 - `error` / `fatal`: Errors and fatal failures only.
+
+### Option: `enable_mcp`
+
+Controls whether the optional Model Context Protocol (MCP) Server daemon is started on container launch (default: `false`).
+
+### Option: `mcp_port`
+
+Defines the TCP port used by the MCP Server for Server-Sent Events (SSE) connections (default: `8098`).
+
+### Option: `mcp_api_token`
+
+Optional pre-shared Bearer authentication token. If left blank, local network connections are permitted without authentication. When specified, incoming MCP SSE connections must include `Authorization: Bearer <token>`.
 
 ## Ingress
 

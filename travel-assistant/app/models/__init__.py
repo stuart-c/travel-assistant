@@ -22,6 +22,7 @@ from app.models.transit import (
     StopInterchange,
     SyncMetadata,
 )
+from app.models.mcp import MCPTool
 from app.models.walking import Walking
 
 ALL_MODELS = [
@@ -35,6 +36,7 @@ ALL_MODELS = [
     Location,
     Journey,
     Walking,
+    MCPTool,
 ]
 
 __all__ = [
@@ -55,5 +57,6 @@ __all__ = [
     "StopInterchange",
     "SyncMetadata",
     "PlatformTransfer",
+    "MCPTool",
     "ALL_MODELS",
 ]

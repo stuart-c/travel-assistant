@@ -70,6 +70,6 @@ LABEL \
     io.hass.arch="amd64|aarch64" \
     io.hass.type="addon"
 
-EXPOSE 8099
+EXPOSE 8099 8098
 
 CMD [ "/app/run.sh" ]
