@@ -32,4 +32,5 @@ if [ "${USE_SAMPLE_DB:-0}" == "1" ]; then
 fi
 
 echo "=== Starting Travel Assistant Development Server on http://localhost:${PORT} ==="
-python3 "$TOP_DIR/travel-assistant/app/main.py"
+cd "$TOP_DIR/travel-assistant"
+python3 -m app.main

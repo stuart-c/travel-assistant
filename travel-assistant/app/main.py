@@ -8,13 +8,26 @@ import os
 import sys
 import uuid
 from typing import Any, Dict
-from flask import Flask, render_template, jsonify, request
 
-from app import db
-from app.logging_config import GunicornLogger, StaticAccessLogFilter, configure_logging
-from app.sync import request_sync, start_background_worker
-from app.views.config import config_bp
-from app.views.journey import journey_bp
+# Ensure app directory does not shadow top-level third-party packages (e.g. mcp)
+_app_dir = os.path.dirname(os.path.abspath(__file__))
+if sys.path and sys.path[0] == _app_dir:
+    sys.path.pop(0)
+_parent_dir = os.path.dirname(_app_dir)
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
+from flask import Flask, render_template, jsonify, request  # noqa: E402
+
+from app import db  # noqa: E402
+from app.logging_config import (  # noqa: E402
+    GunicornLogger,
+    StaticAccessLogFilter,
+    configure_logging,
+)
+from app.sync import request_sync, start_background_worker  # noqa: E402
+from app.views.config import config_bp  # noqa: E402
+from app.views.journey import journey_bp  # noqa: E402
 
 __all__ = [
     "app",

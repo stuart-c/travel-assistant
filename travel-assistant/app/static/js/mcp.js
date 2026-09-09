@@ -27,12 +27,11 @@ document.addEventListener('DOMContentLoaded', () => {
     ((str) => (str ? String(str) : ''));
 
   function syncDirtyStatus() {
-    const isDirty = changesetManager.hasChanges();
     if (window.ConfigDirtyManager) {
-      if (isDirty) {
+      if (changesetManager.isDirty()) {
         window.ConfigDirtyManager.markDirty();
       } else {
-        window.ConfigDirtyManager.markClean();
+        window.ConfigDirtyManager.clearDirty();
       }
     }
   }
@@ -76,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function formatGridData(items) {
     return items.map((item) => {
-      const stagedUpdate = changesetManager.getUpdated().find((u) => u.id === item.id);
+      const stagedUpdate = changesetManager.getUpdated(item.id);
       const currentLevel = stagedUpdate ? stagedUpdate.access_level : item.access_level;
       const allowed = item.allowed_levels || (item.is_mutating ? ['disabled', 'read_write'] : ['disabled', 'read']);
       const isHybrid = allowed.includes('read') && allowed.includes('read_write');
@@ -183,26 +182,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const itemId = parseInt(select.getAttribute('data-item-id'), 10);
       const newLevel = select.value;
+      const originalItem = currentPageItems.find((i) => i.id === itemId);
 
-      changesetManager.stageUpdated({
-        id: itemId,
-        access_level: newLevel,
-      });
+      if (originalItem && originalItem.access_level === newLevel) {
+        changesetManager.updated.delete(String(itemId));
+      } else {
+        changesetManager.update(itemId, {
+          id: itemId,
+          access_level: newLevel,
+        });
+      }
 
       syncDirtyStatus();
       mcpGrid.forceRender();
     });
   }
 
+  function handleDiscard() {
+    if (changesetManager.isDirty()) {
+      changesetManager.reset();
+      syncDirtyStatus();
+      mcpGrid.forceRender();
+    }
+  }
+
   // Discard changes
   if (discardBtn) {
-    discardBtn.addEventListener('click', () => {
-      if (changesetManager.hasChanges()) {
-        changesetManager.reset();
-        syncDirtyStatus();
-        mcpGrid.forceRender();
-      }
-    });
+    discardBtn.addEventListener('click', handleDiscard);
+  }
+
+  if (window.ConfigDirtyManager) {
+    window.ConfigDirtyManager.registerDiscardHandler(handleDiscard);
   }
 
   // Register with ConfigSave
