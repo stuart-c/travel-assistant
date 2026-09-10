@@ -1,5 +1,6 @@
 """Unit tests for Live Journey tracking screen and real-time telemetry API."""
 
+import datetime
 from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
@@ -523,3 +524,157 @@ def test_journey_schematic_mode_colours(app: Flask) -> None:
         assert stages[1]["line_style"] == "solid"
         assert stages[2]["line_colour"] == "sky"
         assert stages[2]["line_style"] == "solid"
+
+
+def test_get_journey_live_tracking_data_outside_window_corridor_fallback(
+    app: Flask,
+) -> None:
+    """Test that viewing a journey outside operating hours falls back to calculated route corridor."""
+    from app.services.dispatcher.tracker import clear_tracking_cache
+
+    clear_tracking_cache()
+    with app.app_context():
+        j = _seed_sample_journey()
+        sample_routes = [
+            {
+                "corridor_id": "corridor_1",
+                "name": "Northern Line Corridor",
+                "summary_text": "King's Cross to Euston via Northern Line",
+                "primary_mode": "rail",
+                "total_duration_est_minutes": 20,
+                "transfer_count": 0,
+                "stages_count": 3,
+                "active_days": ["mon", "tue", "wed", "thu", "fri"],
+                "legs": [
+                    {
+                        "stage_index": 0,
+                        "step_index": 0,
+                        "leg_type": "walk",
+                        "from_type": "ha",
+                        "from_id": "ha:home",
+                        "from_name": "London King's Cross Residential",
+                        "to_type": "rail",
+                        "to_id": "490000001",
+                        "to_name": "London King's Cross Station",
+                        "duration_minutes": 6,
+                        "transport_mode": "walk",
+                    },
+                    {
+                        "stage_index": 1,
+                        "step_index": 1,
+                        "leg_type": "transit",
+                        "from_type": "rail",
+                        "from_id": "490000001",
+                        "from_name": "London King's Cross Station",
+                        "to_type": "rail",
+                        "to_id": "490000002",
+                        "to_name": "London Euston Station",
+                        "duration_minutes": 8,
+                        "transport_mode": "rail",
+                        "line_name": "Northern Line",
+                        "operator_name": "London Underground",
+                    },
+                    {
+                        "stage_index": 2,
+                        "step_index": 2,
+                        "leg_type": "walk",
+                        "from_type": "rail",
+                        "from_id": "490000002",
+                        "from_name": "London Euston Station",
+                        "to_type": "ha",
+                        "to_id": "ha:work",
+                        "to_name": "London Euston Offices",
+                        "duration_minutes": 6,
+                        "transport_mode": "walk",
+                    },
+                ],
+            }
+        ]
+        j.set_calculated_routes(sample_routes)
+        j.save()
+
+        # Target evening outside the 08:00 - 09:00 morning window
+        evening_dt = datetime.datetime(2026, 9, 10, 20, 0)
+
+        with patch("app.services.planner.raptor.plan_journey") as mock_raptor:
+            data = get_journey_live_tracking_data(journey_id=j.id, dt=evening_dt)
+            mock_raptor.assert_not_called()
+
+        assert data["selected_journey"]["name"] == "Commute to Euston"
+        assert len(data["selected_journey"]["legs"]) == 3
+        assert len(data["selected_journey"]["schematic"]["stages"]) == 3
+        assert (
+            data["selected_journey"]["status"]["message"]
+            == "Scheduled route from London King's Cross Residential to London Euston Offices."
+        )
+
+
+def test_get_journey_live_tracking_data_caches_itinerary_none(app: Flask) -> None:
+    """Test that itinerary resolution outcome is cached for 300s to avoid repeated RAPTOR runs."""
+    from app.services.dispatcher.tracker import clear_tracking_cache
+
+    clear_tracking_cache()
+    with app.app_context():
+        j = _seed_sample_journey()
+        # Morning time within window
+        morning_dt = datetime.datetime(2026, 9, 10, 8, 30)
+
+        with patch(
+            "app.services.planner.raptor.plan_journey", return_value=[]
+        ) as mock_raptor:
+            # First call executes plan_journey
+            d1 = get_journey_live_tracking_data(journey_id=j.id, dt=morning_dt)
+            assert mock_raptor.call_count == 1
+
+            # Second call within TTL hits cache and does not call RAPTOR again
+            d2 = get_journey_live_tracking_data(journey_id=j.id, dt=morning_dt)
+            assert mock_raptor.call_count == 1
+            assert d1["selected_journey"]["id"] == d2["selected_journey"]["id"]
+
+
+def test_get_journey_live_tracking_data_selects_active_or_nearest_window(
+    app: Flask,
+) -> None:
+    """Test automatic journey selection favours the active or upcoming window."""
+    from app.services.dispatcher.tracker import clear_tracking_cache
+
+    clear_tracking_cache()
+    with app.app_context():
+        _seed_sample_journey()  # Morning commute (08:00 - 09:00)
+        j_evening = Journey.create(
+            name="Evening Commute Home",
+            from_type="ha",
+            from_id="ha:work",
+            from_name="London Euston Offices",
+            to_type="ha",
+            to_id="ha:home",
+            to_name="London King's Cross Residential",
+            time_settings=[
+                {
+                    "days": ["mon", "tue", "wed", "thu", "fri"],
+                    "mode": "depart",
+                    "start_time": "17:30",
+                    "end_time": "18:30",
+                }
+            ],
+        )
+
+        # At 17:45, evening commute is actively in-window
+        at_1745 = datetime.datetime(2026, 9, 10, 17, 45)
+        data = get_journey_live_tracking_data(dt=at_1745)
+        assert data["selected_journey"]["id"] == j_evening.id
+        assert data["selected_journey"]["name"] == "Evening Commute Home"
+
+
+def test_timetable_and_journey_config_cache_clearing(app: Flask) -> None:
+    """Test cache invalidation when saving timetables or journeys."""
+    from app.services.dispatcher.tracker import _UPCOMING_ITINERARY_CACHE
+    from app.services.planner.raptor import _TRIPS_CACHE
+    from app.views.config.timetables import _clear_planner_caches
+
+    _TRIPS_CACHE[("dummy", None)] = (100.0, [], set())
+    _UPCOMING_ITINERARY_CACHE[999] = (100.0, None)
+
+    _clear_planner_caches({}, {})
+    assert len(_TRIPS_CACHE) == 0
+    assert len(_UPCOMING_ITINERARY_CACHE) == 0

@@ -13,12 +13,17 @@ from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey
 from app.models.setting import Setting
+from app.services.dispatcher.evaluator import is_journey_active_for_datetime
 from app.services.dispatcher.proximity import (
     haversine_distance,
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
-from app.services.planner.models import ItineraryLeg, ScheduledItinerary
+from app.services.planner.models import (
+    ItineraryEndpoint,
+    ItineraryLeg,
+    ScheduledItinerary,
+)
 from app.services.planner.transfers import (
     DAY_NAME_TO_CODE,
     format_minutes_to_time,
@@ -29,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 FOOT_MODES: Set[str] = {"walk", "walking", "foot", "interchange", "platform_transfer"}
 
-_UPCOMING_ITINERARY_CACHE: Dict[int, Tuple[float, str, Any]] = {}
-_TRACKING_CACHE_TTL_SECONDS = 60.0
+_UPCOMING_ITINERARY_CACHE: Dict[int, Tuple[float, Any]] = {}
+_TRACKING_CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
 
 def clear_tracking_cache() -> None:
@@ -1264,7 +1269,36 @@ def get_journey_live_tracking_data(
     elif current_active_journeys:
         target_id = next(iter(current_active_journeys.keys()))
     elif journeys_list:
-        target_id = journeys_list[0]["id"]
+        # Prioritise journey with active time window, or closest upcoming window
+        matching_journey_id = None
+        for j in all_journeys:
+            is_active_window, _ = is_journey_active_for_datetime(j, current_dt)
+            if is_active_window:
+                matching_journey_id = j.id
+                break
+        if matching_journey_id is not None:
+            target_id = matching_journey_id
+        else:
+            current_minutes = current_dt.hour * 60 + current_dt.minute
+            closest_j_id = None
+            min_diff = float("inf")
+            for j in all_journeys:
+                t_settings = j.get_time_settings()
+                for ts in t_settings:
+                    st = (
+                        ts.get("start_time")
+                        if isinstance(ts, dict)
+                        else getattr(ts, "start_time", None)
+                    )
+                    sm = parse_time_to_minutes(st) if st else None
+                    if sm is not None:
+                        diff = (sm - current_minutes) % 1440
+                        if diff < min_diff:
+                            min_diff = diff
+                            closest_j_id = j.id
+            target_id = (
+                closest_j_id if closest_j_id is not None else journeys_list[0]["id"]
+            )
 
     if target_id is None:
         return {
@@ -1342,48 +1376,56 @@ def get_journey_live_tracking_data(
         if (
             cached_entry is not None
             and (now_ts - cached_entry[0]) < _TRACKING_CACHE_TTL_SECONDS
-            and cached_entry[1] == time_str
         ):
-            upcoming_itinerary = cached_entry[2]
+            upcoming_itinerary = cached_entry[1]
         else:
-            weekday_idx = current_dt.weekday()
-            day_names = [
-                "monday",
-                "tuesday",
-                "wednesday",
-                "thursday",
-                "friday",
-                "saturday",
-                "sunday",
-            ]
-            day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
-            try:
-                from app.services.planner.raptor import plan_journey
+            # Only run RAPTOR if journey is active/approaching or if no time window restrictions are set
+            time_settings = j_obj.get_time_settings()
+            should_plan = False
+            if not time_settings:
+                should_plan = True
+            else:
+                is_active_window, _ = is_journey_active_for_datetime(j_obj, current_dt)
+                if is_active_window:
+                    should_plan = True
 
-                plans = plan_journey(
-                    from_type=j_obj.from_type,
-                    from_id=j_obj.from_id,
-                    to_type=j_obj.to_type,
-                    to_id=j_obj.to_id,
-                    timing_mode="depart",
-                    time_str=time_str,
-                    days_of_week=[day_code],
-                    target_date=current_dt.date(),
-                    max_itineraries=1,
-                )
-                if plans:
-                    upcoming_itinerary = plans[0]
-                _UPCOMING_ITINERARY_CACHE[target_id] = (
-                    now_ts,
-                    time_str,
-                    upcoming_itinerary,
-                )
-            except Exception as exc:
-                logger.debug(
-                    "Could not plan upcoming itinerary for journey %d: %s",
-                    target_id,
-                    exc,
-                )
+            if should_plan:
+                weekday_idx = current_dt.weekday()
+                day_names = [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                ]
+                day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+                try:
+                    from app.services.planner.raptor import plan_journey
+
+                    plans = plan_journey(
+                        from_type=j_obj.from_type,
+                        from_id=j_obj.from_id,
+                        to_type=j_obj.to_type,
+                        to_id=j_obj.to_id,
+                        timing_mode="depart",
+                        time_str=time_str,
+                        days_of_week=[day_code],
+                        target_date=current_dt.date(),
+                        max_itineraries=1,
+                    )
+                    if plans:
+                        upcoming_itinerary = plans[0]
+                except Exception as exc:
+                    logger.debug(
+                        "Could not plan upcoming itinerary for journey %d: %s",
+                        target_id,
+                        exc,
+                    )
+
+            # Cache outcome (including None) to prevent repeated re-computation
+            _UPCOMING_ITINERARY_CACHE[target_id] = (now_ts, upcoming_itinerary)
 
         if upcoming_itinerary:
             legs = list(upcoming_itinerary.legs)
@@ -1393,6 +1435,50 @@ def get_journey_live_tracking_data(
             legs = []
             departure_time = ""
             expected_arrival_time = ""
+            calc_routes = j_obj.get_calculated_routes()
+            if calc_routes and isinstance(calc_routes, list):
+                primary_route = calc_routes[0]
+                route_legs = (
+                    primary_route.get("legs", [])
+                    if isinstance(primary_route, dict)
+                    else getattr(primary_route, "legs", [])
+                )
+                for r_idx, r_leg in enumerate(route_legs):
+                    r_leg_dict = (
+                        r_leg
+                        if isinstance(r_leg, dict)
+                        else (
+                            r_leg.model_dump()
+                            if hasattr(r_leg, "model_dump")
+                            else dict(r_leg)
+                        )
+                    )
+                    mode = (
+                        r_leg_dict.get("transport_mode")
+                        or r_leg_dict.get("leg_type")
+                        or "walk"
+                    )
+                    legs.append(
+                        ItineraryLeg(
+                            leg_index=r_idx,
+                            mode=mode,
+                            origin=ItineraryEndpoint(
+                                id=str(r_leg_dict.get("from_id", "")),
+                                name=str(r_leg_dict.get("from_name", "")),
+                            ),
+                            destination=ItineraryEndpoint(
+                                id=str(r_leg_dict.get("to_id", "")),
+                                name=str(r_leg_dict.get("to_name", "")),
+                            ),
+                            dep_time="",
+                            arr_time="",
+                            duration_minutes=int(
+                                r_leg_dict.get("duration_minutes") or 0
+                            ),
+                            line=r_leg_dict.get("line_name"),
+                            operator=r_leg_dict.get("operator_name"),
+                        )
+                    )
 
     # Check live rail platform if applicable
     if current_leg_index < len(legs):
@@ -1564,9 +1650,7 @@ def get_journey_live_tracking_data(
                     f"to {to_name} (ETA: {expected_arrival_time})."
                 )
             else:
-                notification_message = (
-                    f"Configured journey from {from_name} to {to_name}."
-                )
+                notification_message = f"Scheduled route from {from_name} to {to_name}."
         else:
             _, notification_message, _ = format_progress_notification(active)
 
@@ -1584,9 +1668,14 @@ def get_journey_live_tracking_data(
             line_display = mode_str
 
         if current_status == JourneyStepStatus.PRE_DEPARTURE:
-            next_step_instruction = (
-                f"Prepare to depart {from_name} for the {departure_time} departure."
-            )
+            if departure_time:
+                next_step_instruction = (
+                    f"Prepare to depart {from_name} for the {departure_time} departure."
+                )
+            else:
+                next_step_instruction = (
+                    f"Scheduled route from {from_name} to {to_name}."
+                )
         elif current_status == JourneyStepStatus.EN_ROUTE_TO_STOP:
             next_step_instruction = (
                 f"Walk to {c_leg['destination']['name']} for connection."

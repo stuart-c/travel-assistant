@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
 
 ### Fixed
+- Fixed live journey tracking navigation and RAPTOR timetable cache OOM freezing (`app/services/planner/raptor.py`, `app/services/dispatcher/tracker.py`, `app/views/config/timetables.py`, `app/views/config/journeys.py`, `app/tests/test_journey_view.py`):
+  - Resolved Out-Of-Memory (OOM) killer events and worker timeouts freezing the dashboard and live tracking pages by extending RAPTOR's in-memory parsed trip cache (`_TRIPS_CACHE_TTL_SECONDS = 86400.0`), combining stop extraction and trip conversion into a single pass, and deduplicating timetable stop index dictionaries.
+  - Implemented journey operating window pre-filtering in `get_journey_live_tracking_data` before invoking RAPTOR, and cached planner outputs (including empty results) in `_UPCOMING_ITINERARY_CACHE` with a 300-second TTL to eliminate repetitive planner re-computations during 10-second client polling.
+  - Added seamless topological route corridor fallback in live tracking (`j_obj.get_calculated_routes()`), ensuring schematic route diagrams and waypoint corridors render immediately even when viewing journeys outside scheduled operating hours.
+  - Integrated cache invalidation hooks (`_clear_planner_caches`) triggered automatically whenever timetables or journeys are created, updated, or removed in the configuration panel.
 - Fixed journey progress forward leg tracking and transfer notification formatting (`app/services/dispatcher/tracker.py`, `app/tests/test_journey_tracker.py`):
   - Added forward leg scanning in `update_journey_progress` evaluating future transit corridors and destination proximity, automatically advancing `current_leg_index` when boarding transit before an intermediate GPS point is captured (e.g. bypassing an interchange stop at Stevenage).
   - Unified foot and transfer modes (`walk`, `walking`, `foot`, `interchange`, `platform_transfer`) under `FOOT_MODES`, preventing transfer legs from erroneously triggering in-vehicle transit states ("On board Interchange").

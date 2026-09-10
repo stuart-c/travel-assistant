@@ -38,7 +38,7 @@ _TRIPS_CACHE: Dict[
     Tuple[Tuple[str, ...], Optional[str]],
     Tuple[float, List[_ParsedTrip], Set[str]],
 ] = {}
-_TRIPS_CACHE_TTL_SECONDS = 60.0
+_TRIPS_CACHE_TTL_SECONDS = 86400.0  # 24 hours (flushed via clear_raptor_cache)
 
 
 def clear_raptor_cache() -> None:
@@ -60,6 +60,7 @@ class _ParsedTrip:
         stops: List[str],
         arr_times: List[Optional[int]],
         dep_times: List[Optional[int]],
+        stop_indices: Optional[Dict[str, int]] = None,
     ) -> None:
         self.trip_id = trip_id
         self.timetable_id = timetable_id
@@ -70,12 +71,19 @@ class _ParsedTrip:
         self.stops = stops
         self.arr_times = arr_times
         self.dep_times = dep_times
-        self.stop_indices = {s: i for i, s in enumerate(stops)}
+        self.stop_indices = (
+            stop_indices
+            if stop_indices is not None
+            else {s: i for i, s in enumerate(stops)}
+        )
 
 
-def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
-    """Convert Peewee Timetable models to structured in-memory trips."""
+def _extract_parsed_trips(
+    timetables: List[Timetable],
+) -> Tuple[List[_ParsedTrip], Set[str]]:
+    """Convert Peewee Timetable models to structured in-memory trips and collect stop IDs."""
     parsed_trips: List[_ParsedTrip] = []
+    timetable_stop_ids: Set[str] = set()
 
     for tt in timetables:
         content_dict = tt.get_content()
@@ -86,6 +94,12 @@ def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
             continue
 
         stop_ids = [str(s.get("id", "")).strip() for s in stops_raw]
+        for s in stops_raw:
+            s_id = s.get("id", "") if isinstance(s, dict) else str(s)
+            if s_id:
+                timetable_stop_ids.add(normalise_id(s_id))
+
+        stop_indices = {s: i for i, s in enumerate(stop_ids)}
 
         for tr in trips_raw:
             times = tr.get("times", [])
@@ -145,10 +159,11 @@ def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
                     stops=stop_ids,
                     arr_times=arr_list,
                     dep_times=dep_list,
+                    stop_indices=stop_indices,
                 )
             )
 
-    return parsed_trips
+    return parsed_trips, timetable_stop_ids
 
 
 def _check_corridor_connectivity(
@@ -297,13 +312,8 @@ def plan_journey(
         _, trips, timetable_stop_ids = cached
     else:
         active_timetables = get_active_timetables(active_days, date_obj)
-        trips = _extract_parsed_trips(active_timetables)
-        timetable_stop_ids = {
-            normalise_id(s.get("id", "") if isinstance(s, dict) else str(s))
-            for tt in active_timetables
-            for s in tt.get_content().get("stops", [])
-        }
-        _TRIPS_CACHE[cache_key] = (now_ts, trips, timetable_stop_ids)
+        trips, timetable_stop_ids = _extract_parsed_trips(active_timetables)
+        _TRIPS_CACHE[cache_key] = (time.time(), trips, timetable_stop_ids)
 
     # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)
