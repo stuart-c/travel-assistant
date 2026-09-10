@@ -361,3 +361,66 @@ def test_config_transfers_pagination_and_sorting(
     assert resp_sort_desc.status_code == 200
     desc_data = resp_sort_desc.get_json()
     assert desc_data["data"][0]["location_name"] == "Station O"
+
+
+def test_get_active_timetables_filtering(app: Flask) -> None:
+    """Test SQL pre-filtering of timetables by active day and date range."""
+    with app.app_context():
+        import datetime
+        from app.models.timetable import Timetable
+        from app.services.planner.transfers import get_active_timetables
+
+        # Monday only in Sept 2026
+        Timetable.create(
+            name="Monday Express",
+            monday=True,
+            tuesday=False,
+            wednesday=False,
+            thursday=False,
+            friday=False,
+            saturday=False,
+            sunday=False,
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+        )
+        # Tuesday only in Sept 2026
+        Timetable.create(
+            name="Tuesday Local",
+            monday=False,
+            tuesday=True,
+            wednesday=False,
+            thursday=False,
+            friday=False,
+            saturday=False,
+            sunday=False,
+            start_date="2026-09-01",
+            end_date="2026-09-30",
+        )
+        # Expired August timetable
+        Timetable.create(
+            name="August Special",
+            monday=True,
+            tuesday=True,
+            start_date="2026-08-01",
+            end_date="2026-08-31",
+        )
+
+        # Query Monday on 2026-09-07
+        active = get_active_timetables(["mon"], datetime.date(2026, 9, 7))
+        active_names = [t.name for t in active]
+        assert "Monday Express" in active_names
+        assert "Tuesday Local" not in active_names
+        assert "August Special" not in active_names
+
+        # Query Tuesday on 2026-09-08
+        active_tue = get_active_timetables(["tue"], datetime.date(2026, 9, 8))
+        active_tue_names = [t.name for t in active_tue]
+        assert "Tuesday Local" in active_tue_names
+        assert "Monday Express" not in active_tue_names
+
+        # Empty active_days returns all within date range
+        all_in_date = get_active_timetables([], datetime.date(2026, 9, 7))
+        all_in_date_names = [t.name for t in all_in_date]
+        assert "Monday Express" in all_in_date_names
+        assert "Tuesday Local" in all_in_date_names
+        assert "August Special" not in all_in_date_names

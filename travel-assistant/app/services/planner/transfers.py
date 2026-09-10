@@ -242,6 +242,31 @@ def is_timetable_active(
     return operates_on_day
 
 
+def get_active_timetables(
+    active_days: List[str],
+    target_date: Optional[datetime.date] = None,
+) -> List[Timetable]:
+    """Retrieve active timetables using database-level filtering for days and dates."""
+    query = Timetable.select()
+    if active_days:
+        day_conditions = []
+        for code in active_days:
+            attr_name = CODE_TO_TIMETABLE_ATTR.get(code)
+            if attr_name and hasattr(Timetable, attr_name):
+                day_conditions.append(getattr(Timetable, attr_name) == 1)
+        if day_conditions:
+            import functools
+            import operator
+
+            query = query.where(functools.reduce(operator.or_, day_conditions))
+    if target_date:
+        query = query.where(
+            (Timetable.start_date.is_null() | (Timetable.start_date <= target_date))
+            & (Timetable.end_date.is_null() | (Timetable.end_date >= target_date))
+        )
+    return list(query)
+
+
 def get_access_edges(
     loc_type: str, loc_id: str, is_origin: bool
 ) -> List[Tuple[str, str, str, str, int, str]]:
@@ -328,5 +353,6 @@ __all__ = [
     "resolve_transfer_duration",
     "resolve_active_days_and_date",
     "is_timetable_active",
+    "get_active_timetables",
     "get_access_edges",
 ]

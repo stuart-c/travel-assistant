@@ -3,8 +3,9 @@
 export LOG_LEVEL=$(bashio::config 'log_level')
 bashio::log.info "Starting Travel Assistant with log level: ${LOG_LEVEL}"
 
-# Set Ingress port
+# Set Ingress port and default panel slug
 export PORT=8099
+export ADDON_PANEL_PATH="${ADDON_PANEL_PATH:-1a842e7e_travel_assistant_dev}"
 
 MCP_PID=""
 if bashio::config.true 'enable_mcp'; then

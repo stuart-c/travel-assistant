@@ -7,6 +7,7 @@ from flask import Flask
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
 from app.models.location import Location
+from app.models.setting import Setting
 from app.models.transit import Stop
 from app.services.dispatcher.tracker import (
     ActiveJourney,
@@ -988,3 +989,31 @@ def test_detect_en_route_journey_success_scenarios(app: Flask) -> None:
             assert recovered_mid is not None
             assert recovered_mid.current_leg_index == 1
             assert recovered_mid.current_status == JourneyStepStatus.ON_TRANSIT
+
+        # 4. Stuart is walking towards King's Cross Stop E (en route to stop)
+        # Coordinates ~51.5330, -0.1240 (between Home and King's Cross)
+        state_walking = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5330, "longitude": -0.1240},
+        }
+        with patch(
+            "app.services.planner.raptor.plan_journey",
+            return_value=[sample_itin],
+        ):
+            now_walk = datetime.datetime(2026, 9, 7, 8, 2)  # Between 08:00 and 08:05
+            recovered_walk = detect_en_route_journey(journey, state_walking, now_walk)
+            assert recovered_walk is not None
+            assert recovered_walk.current_leg_index == 0
+            assert recovered_walk.current_status == JourneyStepStatus.EN_ROUTE_TO_STOP
+
+
+def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
+    """Test that notifications route clickAction to the configured Home Assistant ingress panel slug."""
+    with app.app_context():
+        Setting.set_val("ingress_panel_slug", "1a842e7e_travel_assistant_dev")
+        active = _create_sample_active_journey(with_rail=True)
+        active.current_status = JourneyStepStatus.ON_TRANSIT
+        title, msg, data = format_progress_notification(active)
+        assert data["url"] == "/1a842e7e_travel_assistant_dev"
+        assert data["clickAction"] == "/1a842e7e_travel_assistant_dev"

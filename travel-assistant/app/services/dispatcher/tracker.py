@@ -2,18 +2,21 @@
 
 import datetime
 import logging
+import os
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
+from app.models.journey import Journey
+from app.models.setting import Setting
 from app.services.dispatcher.proximity import (
     haversine_distance,
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
-from app.models.journey import Journey
 from app.services.planner.models import ItineraryLeg, ScheduledItinerary
 from app.services.planner.transfers import (
     DAY_NAME_TO_CODE,
@@ -22,6 +25,14 @@ from app.services.planner.transfers import (
 )
 
 logger = logging.getLogger(__name__)
+
+_UPCOMING_ITINERARY_CACHE: Dict[int, Tuple[float, str, Any]] = {}
+_TRACKING_CACHE_TTL_SECONDS = 60.0
+
+
+def clear_tracking_cache() -> None:
+    """Flush in-memory planned itinerary cache for live tracking."""
+    _UPCOMING_ITINERARY_CACHE.clear()
 
 
 class JourneyStepStatus(str, Enum):
@@ -288,9 +299,18 @@ def format_progress_notification(
     else:
         message = f"Journey update: en route to {active.to_name}."
 
+    panel_slug = (
+        Setting.get_val(
+            "ingress_panel_slug",
+            os.environ.get("ADDON_PANEL_PATH", ""),
+        )
+        or ""
+    ).strip("/")
+    nav_url = f"/{panel_slug}" if panel_slug else "/journey"
+
     data: Dict[str, Any] = {
-        "url": "/journey",
-        "clickAction": "/journey",
+        "url": nav_url,
+        "clickAction": nav_url,
         "tag": f"journey_{active.journey_id}",
         "group": "travel_assistant_journeys",
     }
@@ -571,9 +591,11 @@ def detect_en_route_journey(
     ]
     day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
 
-    # Search for itineraries that departed within the last 2 hours
+    # Search for candidate itineraries covering a 2-hour window up to 15 minutes ahead
     search_start_min = max(0, current_minutes - 120)
     search_time_str = format_minutes_to_time(search_start_min)
+    search_end_min = min(1439, current_minutes + 15)
+    search_end_str = format_minutes_to_time(search_end_min)
 
     try:
         from app.services.planner.raptor import plan_journey
@@ -583,8 +605,9 @@ def detect_en_route_journey(
             from_id=journey.from_id,
             to_type=journey.to_type,
             to_id=journey.to_id,
-            timing_mode="depart",
+            timing_mode="window",
             time_str=search_time_str,
+            time_window_end=search_end_str,
             days_of_week=[day_code],
             target_date=current_dt.date(),
             max_itineraries=8,
@@ -609,8 +632,17 @@ def detect_en_route_journey(
         if dep_m is None or arr_m is None:
             continue
 
-        # Candidate must cover current time (dep_m <= current_minutes <= arr_m + 60)
-        if dep_m > current_minutes or current_minutes > arr_m + 60:
+        if arr_m < dep_m:
+            arr_m += 1440
+
+        cur_m_effective = (
+            current_minutes + 1440
+            if (current_minutes < 120 and dep_m > 1200)
+            else current_minutes
+        )
+
+        # Candidate must cover current time (dep_m <= cur_m_effective <= arr_m + 60)
+        if dep_m > cur_m_effective or cur_m_effective > arr_m + 60:
             continue
 
         for leg_idx, leg in enumerate(itin.legs):
@@ -634,6 +666,12 @@ def detect_en_route_journey(
 
             leg_dep_m = parse_time_to_minutes(leg.dep_time)
             leg_arr_m = parse_time_to_minutes(leg.arr_time)
+            if (
+                leg_dep_m is not None
+                and leg_arr_m is not None
+                and leg_arr_m < leg_dep_m
+            ):
+                leg_arr_m += 1440
 
             # 1. At the departure stop or interchange for this leg
             if dist_orig is not None and dist_orig <= max_proximity_metres:
@@ -719,10 +757,17 @@ def detect_en_route_journey(
                 )
 
             # 3. En route on board transit during transit leg duration
+            leg_cur_m = (
+                current_minutes + 1440
+                if (
+                    leg_dep_m is not None and current_minutes < 120 and leg_dep_m > 1200
+                )
+                else current_minutes
+            )
             if (
                 leg_dep_m is not None
                 and leg_arr_m is not None
-                and leg_dep_m <= current_minutes <= leg_arr_m
+                and leg_dep_m <= leg_cur_m <= leg_arr_m
                 and leg.mode != "walk"
                 and orig_lat is not None
                 and dest_lat is not None
@@ -762,6 +807,59 @@ def detect_en_route_journey(
                         platform=plat,
                         live_status=live_stat,
                     )
+
+            # 4. Walking to departure stop (first leg is walk, left origin corridor towards transit stop)
+            if (
+                leg_idx == 0
+                and leg.mode == "walk"
+                and orig_lat is not None
+                and dest_lat is not None
+            ):
+                walk_dep = leg_dep_m if leg_dep_m is not None else 0
+                walk_arr = leg_arr_m if leg_arr_m is not None else 1440
+                next_leg = itin.legs[1] if len(itin.legs) > 1 else None
+                next_dep_m = (
+                    parse_time_to_minutes(next_leg.dep_time) if next_leg else None
+                )
+                max_walk_time = next_dep_m if next_dep_m is not None else (walk_arr + 5)
+                if (walk_dep - 15) <= leg_cur_m < max_walk_time:
+                    leg_span = haversine_distance(
+                        orig_lat, orig_lon, dest_lat, dest_lon
+                    )
+                    if (
+                        dist_orig is not None
+                        and dist_dest is not None
+                        and (dist_orig + dist_dest)
+                        <= max(leg_span * 1.5, leg_span + 1000.0)
+                    ):
+                        plat = None
+                        live_stat = None
+                        if next_leg and next_leg.mode == "rail" and live_client:
+                            plat, live_stat = resolve_live_rail_platform(
+                                origin_id=next_leg.origin.id,
+                                dest_id=next_leg.destination.id,
+                                scheduled_time=next_leg.dep_time,
+                                live_client=live_client,
+                            )
+
+                        return ActiveJourney(
+                            journey_id=journey.id,
+                            journey_name=journey.name,
+                            from_type=journey.from_type,
+                            from_id=journey.from_id,
+                            from_name=journey.from_name,
+                            to_type=journey.to_type,
+                            to_id=journey.to_id,
+                            to_name=journey.to_name,
+                            itinerary=itin,
+                            legs=list(itin.legs),
+                            current_leg_index=0,
+                            current_status=JourneyStepStatus.EN_ROUTE_TO_STOP,
+                            started_at=current_dt,
+                            expected_arrival_time=itin.arrival_time,
+                            platform=plat,
+                            live_status=live_stat,
+                        )
 
     return None
 
@@ -924,40 +1022,56 @@ def get_journey_live_tracking_data(
         live_status = None
         notification_message = None
 
-        # Plan upcoming itinerary
+        # Plan upcoming itinerary (cached to avoid repeated RAPTOR runs on auto-refresh)
         upcoming_itinerary = None
         time_str = current_dt.strftime("%H:%M")
-        weekday_idx = current_dt.weekday()
-        day_names = [
-            "monday",
-            "tuesday",
-            "wednesday",
-            "thursday",
-            "friday",
-            "saturday",
-            "sunday",
-        ]
-        day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
-        try:
-            from app.services.planner.raptor import plan_journey
+        now_ts = time.time()
+        cached_entry = _UPCOMING_ITINERARY_CACHE.get(target_id)
+        if (
+            cached_entry is not None
+            and (now_ts - cached_entry[0]) < _TRACKING_CACHE_TTL_SECONDS
+            and cached_entry[1] == time_str
+        ):
+            upcoming_itinerary = cached_entry[2]
+        else:
+            weekday_idx = current_dt.weekday()
+            day_names = [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+            ]
+            day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+            try:
+                from app.services.planner.raptor import plan_journey
 
-            plans = plan_journey(
-                from_type=j_obj.from_type,
-                from_id=j_obj.from_id,
-                to_type=j_obj.to_type,
-                to_id=j_obj.to_id,
-                timing_mode="depart",
-                time_str=time_str,
-                days_of_week=[day_code],
-                target_date=current_dt.date(),
-                max_itineraries=1,
-            )
-            if plans:
-                upcoming_itinerary = plans[0]
-        except Exception as exc:
-            logger.debug(
-                "Could not plan upcoming itinerary for journey %d: %s", target_id, exc
-            )
+                plans = plan_journey(
+                    from_type=j_obj.from_type,
+                    from_id=j_obj.from_id,
+                    to_type=j_obj.to_type,
+                    to_id=j_obj.to_id,
+                    timing_mode="depart",
+                    time_str=time_str,
+                    days_of_week=[day_code],
+                    target_date=current_dt.date(),
+                    max_itineraries=1,
+                )
+                if plans:
+                    upcoming_itinerary = plans[0]
+                _UPCOMING_ITINERARY_CACHE[target_id] = (
+                    now_ts,
+                    time_str,
+                    upcoming_itinerary,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not plan upcoming itinerary for journey %d: %s",
+                    target_id,
+                    exc,
+                )
 
         if upcoming_itinerary:
             legs = list(upcoming_itinerary.legs)

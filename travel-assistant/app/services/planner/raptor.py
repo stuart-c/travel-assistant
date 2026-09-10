@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from app.models.timetable import Timetable
@@ -26,13 +27,24 @@ from app.services.planner.route_finder import find_routes
 from app.services.planner.transfers import (
     format_minutes_to_time,
     get_access_edges,
-    is_timetable_active,
+    get_active_timetables,
     normalise_id,
     parse_time_to_minutes,
     resolve_active_days_and_date,
     resolve_endpoint_name,
     resolve_transfer_duration,
 )
+
+_TRIPS_CACHE: Dict[
+    Tuple[Tuple[str, ...], Optional[str]],
+    Tuple[float, List[_ParsedTrip], Set[str]],
+] = {}
+_TRIPS_CACHE_TTL_SECONDS = 60.0
+
+
+def clear_raptor_cache() -> None:
+    """Flush in-memory RAPTOR timetable trips and stops cache."""
+    _TRIPS_CACHE.clear()
 
 
 class _ParsedTrip:
@@ -80,6 +92,8 @@ def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
             times = tr.get("times", [])
             arr_list: List[Optional[int]] = []
             dep_list: List[Optional[int]] = []
+            rollover_offset = 0
+            last_minute: Optional[int] = None
 
             for t_item in times:
                 if isinstance(t_item, dict):
@@ -89,13 +103,30 @@ def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
                     arr_s = str(t_item or "")
                     dep_s = str(t_item or "")
 
-                arr_m = parse_time_to_minutes(arr_s)
-                dep_m = parse_time_to_minutes(dep_s)
+                raw_arr = parse_time_to_minutes(arr_s)
+                raw_dep = parse_time_to_minutes(dep_s)
 
-                if arr_m is None and dep_m is not None:
-                    arr_m = dep_m
-                elif dep_m is None and arr_m is not None:
-                    dep_m = arr_m
+                if raw_arr is None and raw_dep is not None:
+                    raw_arr = raw_dep
+                elif raw_dep is None and raw_arr is not None:
+                    raw_dep = raw_arr
+
+                arr_m = raw_arr
+                dep_m = raw_dep
+
+                if arr_m is not None:
+                    arr_m += rollover_offset
+                    if last_minute is not None and arr_m < last_minute:
+                        rollover_offset += 1440
+                        arr_m += 1440
+                    last_minute = arr_m
+
+                if dep_m is not None:
+                    dep_m += rollover_offset
+                    if last_minute is not None and dep_m < last_minute:
+                        rollover_offset += 1440
+                        dep_m += 1440
+                    last_minute = dep_m
 
                 arr_list.append(arr_m)
                 dep_list.append(dep_m)
@@ -195,23 +226,30 @@ def plan_journey(
 
     active_days, date_obj = resolve_active_days_and_date(days_of_week, target_date)
 
-    # 1. Filter Active Timetables & Trips
-    all_timetables = list(Timetable.select())
-    active_timetables = [
-        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
-    ]
-    trips = _extract_parsed_trips(active_timetables)
+    # 1. Filter Active Timetables & Trips (with in-memory caching)
+    cache_key = (
+        tuple(sorted(active_days)),
+        date_obj.isoformat() if date_obj else None,
+    )
+    now_ts = time.time()
+    cached = _TRIPS_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) < _TRIPS_CACHE_TTL_SECONDS:
+        _, trips, timetable_stop_ids = cached
+    else:
+        active_timetables = get_active_timetables(active_days, date_obj)
+        trips = _extract_parsed_trips(active_timetables)
+        timetable_stop_ids = {
+            normalise_id(s.get("id", "") if isinstance(s, dict) else str(s))
+            for tt in active_timetables
+            for s in tt.get_content().get("stops", [])
+        }
+        _TRIPS_CACHE[cache_key] = (now_ts, trips, timetable_stop_ids)
 
     # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)
     dest_walks = get_access_edges(t_type, t_id, is_origin=False)
 
     # Check if origin or destination endpoint is directly served by active timetables
-    timetable_stop_ids = {
-        normalise_id(s.get("id", "") if isinstance(s, dict) else str(s))
-        for tt in active_timetables
-        for s in tt.get_content().get("stops", [])
-    }
     if normalise_id(f_id) in timetable_stop_ids and not any(
         w[2] == f_type and normalise_id(w[3]) == normalise_id(f_id)
         for w in origin_walks
@@ -636,6 +674,8 @@ def _run_raptor_forward(
         l2 = final_legs[i + 1]
         l1_arr = parse_time_to_minutes(l1.arr_time) or 0
         l2_dep = parse_time_to_minutes(l2.dep_time) or 0
+        if l2_dep < l1_arr:
+            l2_dep += 1440
         slack = l2_dep - l1_arr
         if l1.mode != "walk" or l2.mode != "walk":
             slack_minutes_list.append(slack)
@@ -652,6 +692,8 @@ def _run_raptor_forward(
     final_arr_str = final_legs[-1].arr_time
     dep_m = parse_time_to_minutes(initial_dep_str) or 0
     arr_m = parse_time_to_minutes(final_arr_str) or 0
+    if arr_m < dep_m:
+        arr_m += 1440
     total_dur = max(1, arr_m - dep_m)
     transfers = (
         sum(
