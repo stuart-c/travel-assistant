@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
 
 ### Fixed
+- Fixed RAPTOR journey planning failing on direct timetable origin/destination stops (`app/services/planner/raptor.py`, `app/tests/test_journey_planner.py`):
+  - Added timetable stop detection in `plan_journey` to inject 0-minute direct access/egress edges when origin or destination endpoints (e.g. `ha:office`) are served directly by active timetable stops, mirroring `route_finder.py`.
+  - Resolved failure where journeys terminating directly on transit (such as campus shuttle buses) returned zero scheduled itineraries, eliminating fallback corridor search locking and enabling departure notifications to evaluate and dispatch correctly.
 - Fixed Model Context Protocol (MCP) server transport mismatch by adopting Streamable HTTP (`app/mcp/server.py`, `app/tests/test_mcp.py`):
   - Migrated `create_mcp_app` from legacy `MCPServer.sse_app` to `MCPServer.streamable_http_app`, providing native support for modern Streamable HTTP POST initialisation and JSON-RPC method execution alongside GET SSE streams and DELETE session teardown.
   - Added route aliases on the Starlette application so `/sse`, `/mcp`, and `/` are accepted interchangeably by connected AI agents and autonomous assistants.
