@@ -63,7 +63,7 @@ def dispatcher_get_status() -> Dict[str, Any]:
     name="dispatcher_evaluate",
     domain="dispatcher",
     description="Force immediate departure evaluation for a configured journey using live Darwin/BODS feeds.",
-    is_mutating=True,
+    is_mutating=False,
 )
 def dispatcher_evaluate(journey_id: int) -> Dict[str, Any]:
     """Evaluate upcoming transit departures for a journey."""

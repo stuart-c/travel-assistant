@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Updated Model Context Protocol (MCP) server permission architecture and tool separation (`app/models/mcp.py`, `app/mcp/`, `app/views/config/mcp.py`, `app/static/js/mcp.js`, `app/templates/config_mcp.html`, `app/tests/test_mcp.py`):
+  - Transitioned MCP tool permissions from a 3-state access level (`disabled`, `read`, `read_write`) to a clean, binary `disabled` / `enabled` schema (`enabled = BooleanField(default=False)`), enforcing strict opt-in security with no backward-compatibility wrappers.
+  - Split multi-purpose database tools into dedicated single-purpose tools: `db_query` (strictly read-only, permitting `SELECT` queries only) and `db_execute` (mutating, strictly permitting atomic `INSERT`, `UPDATE`, and `DELETE` commands).
+  - Configured `dispatcher_evaluate` as non-mutating (`is_mutating=False`) as it evaluates upcoming departures and returns candidate telemetry without modifying state or dispatching alerts.
+  - Replaced the access level dropdown in `/config/mcp` with an accessible, modern toggle switch control for each tool row with differential changeset tracking (`ConfigSave`).
+  - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
+
 ### Fixed
 - Fixed Model Context Protocol (MCP) server transport mismatch by adopting Streamable HTTP (`app/mcp/server.py`, `app/tests/test_mcp.py`):
   - Migrated `create_mcp_app` from legacy `MCPServer.sse_app` to `MCPServer.streamable_http_app`, providing native support for modern Streamable HTTP POST initialisation and JSON-RPC method execution alongside GET SSE streams and DELETE session teardown.

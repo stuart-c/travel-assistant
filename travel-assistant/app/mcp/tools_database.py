@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 
 from app.db.core import db
 from app.mcp.registry import register_tool
-from app.mcp.server import get_cached_tool_permissions
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,6 @@ def _extract_statement_type(cleaned_sql: str) -> str:
     domain="database",
     description="Fetch database table names, schema definitions, column types, primary keys, and row counts.",
     is_mutating=False,
-    allowed_levels=("disabled", "read"),
 )
 def db_get_table_info(
     table_name: Optional[str] = None,
@@ -203,45 +201,22 @@ def db_get_table_info(
 @register_tool(
     name="db_query",
     domain="database",
-    description=(
-        "Execute a SQL query against the SQLite database. "
-        "Under 'read' permission, only SELECT queries are permitted. "
-        "Under 'read_write' permission, SELECT, INSERT, UPDATE, and DELETE are permitted."
-    ),
-    is_mutating=True,
-    allowed_levels=("disabled", "read", "read_write"),
+    description="Execute a read-only SQL query against the SQLite database (SELECT queries only).",
+    is_mutating=False,
 )
 def db_query(
     query: str,
     params: Optional[List[Any]] = None,
     limit: int = 200,
 ) -> Dict[str, Any]:
-    """Execute SQL query with granular permission boundaries for SELECT vs mutating commands."""
+    """Execute a read-only SELECT query against the SQLite database."""
     if not query or not query.strip():
         return {
             "success": False,
             "error": "Query parameter cannot be empty.",
         }
 
-    # 1. Resolve active permission level
-    permissions = get_cached_tool_permissions()
-    access_level = permissions.get("db_query")
-
-    if not access_level:
-        try:
-            from app.models.mcp import MCPTool
-
-            access_level = MCPTool.get_tool_permission("db_query") or "disabled"
-        except Exception:
-            access_level = "disabled"
-
-    if access_level == "disabled":
-        return {
-            "success": False,
-            "error": "Tool 'db_query' is disabled in Travel Assistant settings.",
-        }
-
-    # 2. Sanitise and validate SQL
+    # 1. Sanitise and validate SQL
     cleaned_sql = _clean_sql(query)
     if not cleaned_sql:
         return {
@@ -257,63 +232,102 @@ def db_query(
 
     stmt_type = _extract_statement_type(cleaned_sql)
 
-    # 3. Enforce permission boundary
-    if access_level == "read":
-        if stmt_type != "SELECT":
-            return {
-                "success": False,
-                "error": (
-                    f"Operation '{stmt_type}' rejected: tool 'db_query' is configured "
-                    "with 'read' access, which only permits SELECT queries. "
-                    "Configure 'read_write' access in the Web UI to execute mutating operations."
-                ),
-            }
-    elif access_level == "read_write":
-        if stmt_type != "SELECT" and stmt_type not in PERMITTED_MUTATING_STATEMENTS:
-            return {
-                "success": False,
-                "error": (
-                    f"Operation '{stmt_type}' rejected: only SELECT, INSERT, UPDATE, "
-                    "and DELETE statements are permitted."
-                ),
-            }
+    # 2. Enforce read-only constraint
+    if stmt_type != "SELECT":
+        return {
+            "success": False,
+            "error": (
+                f"Operation '{stmt_type}' rejected: tool 'db_query' is read-only and "
+                "strictly permits SELECT queries. Use 'db_execute' to perform mutating operations."
+            ),
+        }
 
-    # 4. Execute SQL
+    # 3. Execute SELECT query
     try:
-        if stmt_type == "SELECT":
-            max_rows = max(1, min(limit, 1000))
-            cursor = db.execute_sql(cleaned_sql, params or ())
-            columns = (
-                [col[0] for col in cursor.description] if cursor.description else []
-            )
-            raw_rows = cursor.fetchmany(max_rows + 1)
-            truncated = len(raw_rows) > max_rows
-            if truncated:
-                raw_rows = raw_rows[:max_rows]
+        max_rows = max(1, min(limit, 1000))
+        cursor = db.execute_sql(cleaned_sql, params or ())
+        columns = [col[0] for col in cursor.description] if cursor.description else []
+        raw_rows = cursor.fetchmany(max_rows + 1)
+        truncated = len(raw_rows) > max_rows
+        if truncated:
+            raw_rows = raw_rows[:max_rows]
 
-            rows = [dict(zip(columns, r)) for r in raw_rows]
-            return {
-                "success": True,
-                "type": "SELECT",
-                "columns": columns,
-                "rows": rows,
-                "row_count": len(rows),
-                "truncated": truncated,
-            }
-        else:
-            with db.atomic():
-                cursor = db.execute_sql(cleaned_sql, params or ())
-                rows_affected = cursor.rowcount
-                last_insert_id = cursor.lastrowid if stmt_type == "INSERT" else None
-
-            return {
-                "success": True,
-                "type": stmt_type,
-                "rows_affected": rows_affected,
-                "last_insert_id": last_insert_id,
-            }
+        rows = [dict(zip(columns, r)) for r in raw_rows]
+        return {
+            "success": True,
+            "type": "SELECT",
+            "columns": columns,
+            "rows": rows,
+            "row_count": len(rows),
+            "truncated": truncated,
+        }
     except Exception as err:
         logger.warning("Database query execution failed: %s", err)
+        return {
+            "success": False,
+            "error": str(err),
+            "query": query,
+        }
+
+
+@register_tool(
+    name="db_execute",
+    domain="database",
+    description="Execute a mutating SQL statement (INSERT, UPDATE, or DELETE) against the SQLite database.",
+    is_mutating=True,
+)
+def db_execute(
+    query: str,
+    params: Optional[List[Any]] = None,
+) -> Dict[str, Any]:
+    """Execute a mutating SQL command (INSERT, UPDATE, DELETE) inside an atomic transaction."""
+    if not query or not query.strip():
+        return {
+            "success": False,
+            "error": "Query parameter cannot be empty.",
+        }
+
+    # 1. Sanitise and validate SQL
+    cleaned_sql = _clean_sql(query)
+    if not cleaned_sql:
+        return {
+            "success": False,
+            "error": "Query contains no executable SQL statements.",
+        }
+
+    if _has_multiple_statements(cleaned_sql):
+        return {
+            "success": False,
+            "error": "Multiple SQL statements in a single call are not permitted.",
+        }
+
+    stmt_type = _extract_statement_type(cleaned_sql)
+
+    # 2. Enforce mutating statements constraint
+    if stmt_type not in PERMITTED_MUTATING_STATEMENTS:
+        return {
+            "success": False,
+            "error": (
+                f"Operation '{stmt_type}' rejected: tool 'db_execute' strictly permits "
+                "INSERT, UPDATE, and DELETE statements. Use 'db_query' for SELECT queries."
+            ),
+        }
+
+    # 3. Execute mutating SQL in transaction
+    try:
+        with db.atomic():
+            cursor = db.execute_sql(cleaned_sql, params or ())
+            rows_affected = cursor.rowcount
+            last_insert_id = cursor.lastrowid if stmt_type == "INSERT" else None
+
+        return {
+            "success": True,
+            "type": stmt_type,
+            "rows_affected": rows_affected,
+            "last_insert_id": last_insert_id,
+        }
+    except Exception as err:
+        logger.warning("Database statement execution failed: %s", err)
         return {
             "success": False,
             "error": str(err),
@@ -324,4 +338,5 @@ def db_query(
 __all__ = [
     "db_get_table_info",
     "db_query",
+    "db_execute",
 ]

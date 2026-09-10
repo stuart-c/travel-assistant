@@ -19,6 +19,7 @@ from app.mcp.server import (
     invalidate_permission_cache,
 )
 from app.mcp.tools_database import (
+    db_execute,
     db_get_table_info,
     db_query,
 )
@@ -72,15 +73,17 @@ def test_mcp_tool_model_lifecycle(app: Flask) -> None:
             domain="test",
             description="Test Tool Description",
             is_mutating=False,
-            access_level="disabled",
+            enabled=False,
         )
         assert tool.id is not None
-        assert MCPTool.get_tool_permission("test_tool") == "disabled"
-        assert MCPTool.get_tool_permission("non_existent") is None
+        assert MCPTool.is_tool_enabled("test_tool") is False
+        assert MCPTool.is_tool_enabled("non_existent") is False
 
         # Enable tool and test query helpers
-        tool.access_level = "read"
+        tool.enabled = True
         tool.save()
+
+        assert MCPTool.is_tool_enabled("test_tool") is True
 
         all_tools = MCPTool.get_all_tools()
         assert any(t.tool_name == "test_tool" for t in all_tools)
@@ -100,23 +103,23 @@ def test_startup_discovery_defaults_to_disabled(app: Flask) -> None:
         stats = sync_mcp_tools_with_db()
         assert stats["added"] > 0
 
-        # All newly added tools must be 'disabled'
+        # All newly added tools must be disabled (enabled=False)
         all_tools = MCPTool.select()
         assert all_tools.count() > 0
         for tool in all_tools:
             assert (
-                tool.access_level == "disabled"
+                tool.enabled is False
             ), f"Tool {tool.tool_name} was not disabled by default."
 
-        # Modify one tool to 'read', re-run sync, and verify override is preserved
+        # Modify one tool to enabled, re-run sync, and verify override is preserved
         sample = all_tools.first()
-        sample.access_level = "read"
+        sample.enabled = True
         sample.save()
 
         stats2 = sync_mcp_tools_with_db()
         assert stats2["added"] == 0
         reloaded = MCPTool.get_by_id(sample.id)
-        assert reloaded.access_level == "read"
+        assert reloaded.enabled is True
 
 
 def test_config_mcp_views(client: FlaskClient, app: Flask) -> None:
@@ -138,22 +141,18 @@ def test_config_mcp_views(client: FlaskClient, app: Flask) -> None:
         items = payload["data"]
         assert len(items) > 0
 
-        # Pick a read-only and strictly mutating tool
+        # Pick a read-only and mutating tool
         read_tool = next(t for t in items if not t["is_mutating"])
-        mutating_tool = next(
-            t
-            for t in items
-            if t["is_mutating"] and "read" not in t.get("allowed_levels", [])
-        )
+        mutating_tool = next(t for t in items if t["is_mutating"])
 
-        # 3. POST /config/mcp/data to update access levels
+        # 3. POST /config/mcp/data to enable tools
         save_resp = client.post(
             "/config/mcp/data",
             json={
                 "added": [],
                 "updated": [
-                    {"id": read_tool["id"], "access_level": "read"},
-                    {"id": mutating_tool["id"], "access_level": "read_write"},
+                    {"id": read_tool["id"], "enabled": True},
+                    {"id": mutating_tool["id"], "enabled": True},
                 ],
                 "deleted": [],
             },
@@ -165,29 +164,24 @@ def test_config_mcp_views(client: FlaskClient, app: Flask) -> None:
 
         # Verify persisted values
         t1 = MCPTool.get_by_id(read_tool["id"])
-        assert t1.access_level == "read"
+        assert t1.enabled is True
         t2 = MCPTool.get_by_id(mutating_tool["id"])
-        assert t2.access_level == "read_write"
+        assert t2.enabled is True
 
-        # 4. Test UI constraints:
-        # Mutating tool set to 'read' must be coerced to 'disabled'
-        # Read-only tool set to 'read_write' must be coerced to 'read'
-        constraint_resp = client.post(
+        # 4. POST /config/mcp/data to disable a tool
+        disable_resp = client.post(
             "/config/mcp/data",
             json={
                 "added": [],
                 "updated": [
-                    {"id": read_tool["id"], "access_level": "read_write"},
-                    {"id": mutating_tool["id"], "access_level": "read"},
+                    {"id": read_tool["id"], "enabled": False},
                 ],
                 "deleted": [],
             },
         )
-        assert constraint_resp.status_code == 200
+        assert disable_resp.status_code == 200
         t1_reload = MCPTool.get_by_id(read_tool["id"])
-        assert t1_reload.access_level == "read"
-        t2_reload = MCPTool.get_by_id(mutating_tool["id"])
-        assert t2_reload.access_level == "disabled"
+        assert t1_reload.enabled is False
 
 
 def test_mcp_server_dynamic_tool_omission_and_permission_enforcement(
@@ -198,7 +192,7 @@ def test_mcp_server_dynamic_tool_omission_and_permission_enforcement(
         sync_mcp_tools_with_db()
 
         # Set all tools to disabled initially
-        MCPTool.update(access_level="disabled").execute()
+        MCPTool.update(enabled=False).execute()
         invalidate_permission_cache()
 
         server = TravelAssistantMCPServer("Test Server")
@@ -213,9 +207,9 @@ def test_mcp_server_dynamic_tool_omission_and_permission_enforcement(
             assert call_res.is_error is True
             assert "disabled" in call_res.content[0].text
 
-            # 3. Enable read-only tool 'stops_search' to 'read'
+            # 3. Enable read-only tool 'stops_search'
             stop_tool = MCPTool.get(MCPTool.tool_name == "stops_search")
-            stop_tool.access_level = "read"
+            stop_tool.enabled = True
             stop_tool.save()
             invalidate_permission_cache()
 
@@ -229,9 +223,9 @@ def test_mcp_server_dynamic_tool_omission_and_permission_enforcement(
             assert sync_call_res.is_error is True
             assert "disabled" in sync_call_res.content[0].text
 
-            # 5. Mutating tool given 'read_write' permission
+            # 5. Enable mutating tool 'sync_trigger'
             sync_tool = MCPTool.get(MCPTool.tool_name == "sync_trigger")
-            sync_tool.access_level = "read_write"
+            sync_tool.enabled = True
             sync_tool.save()
             invalidate_permission_cache()
 
@@ -521,14 +515,8 @@ def test_database_tools(app: Flask) -> None:
         assert db_get_table_info("invalid;name")["success"] is False
         assert db_get_table_info("non_existent_table_xyz")["success"] is False
 
-        # 3. db_query with 'read' permission
-        sync_mcp_tools_with_db()
-        MCPTool.update(access_level="read").where(
-            MCPTool.tool_name == "db_query"
-        ).execute()
-        invalidate_permission_cache()
-
-        # Empty and multi-statements
+        # 3. db_query (read-only)
+        # Empty and multi-statements rejected
         assert db_query("")["success"] is False
         assert db_query("SELECT 1; SELECT 2;")["success"] is False
 
@@ -538,30 +526,43 @@ def test_database_tools(app: Flask) -> None:
         assert sel_res["type"] == "SELECT"
         assert isinstance(sel_res["rows"], list)
 
-        # Mutating operations rejected under 'read'
+        # Mutating operations rejected under db_query
         ins_rej = db_query(
             "INSERT INTO journeys (name) VALUES ('Hacked')",
         )
         assert ins_rej["success"] is False
-        assert "read" in ins_rej["error"]
+        assert "read-only" in ins_rej["error"]
 
         upd_rej = db_query(
             "UPDATE journeys SET name = 'Hacked'",
         )
         assert upd_rej["success"] is False
-        assert "read" in upd_rej["error"]
+        assert "read-only" in upd_rej["error"]
 
         del_rej = db_query("DELETE FROM journeys")
         assert del_rej["success"] is False
-        assert "read" in del_rej["error"]
+        assert "read-only" in del_rej["error"]
 
-        # 4. db_query with 'read_write' permission
-        MCPTool.update(access_level="read_write").where(
-            MCPTool.tool_name == "db_query"
-        ).execute()
-        invalidate_permission_cache()
+        # Prohibited DDL rejected
+        assert db_query("DROP TABLE journeys")["success"] is False
 
-        ins_res = db_query(
+        # 4. db_execute (mutating statements)
+        # Empty and multi-statements rejected
+        assert db_execute("")["success"] is False
+        assert (
+            db_execute(
+                "INSERT INTO journeys (name) VALUES ('A'); INSERT INTO journeys (name) VALUES ('B');"
+            )["success"]
+            is False
+        )
+
+        # SELECT rejected under db_execute
+        sel_execute_rej = db_execute("SELECT name FROM journeys")
+        assert sel_execute_rej["success"] is False
+        assert "strictly permits INSERT, UPDATE, and DELETE" in sel_execute_rej["error"]
+
+        # INSERT succeeds
+        ins_res = db_execute(
             "INSERT INTO journeys (name, from_type, from_id, from_name, to_type, to_id, to_name, time_settings, created_at, updated_at) "
             "VALUES (?, 'rail', 'KGX', 'London King''s Cross', 'rail', 'EUS', 'London Euston', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
             params=["Test Commute DB Tool"],
@@ -571,7 +572,7 @@ def test_database_tools(app: Flask) -> None:
         new_id = ins_res["last_insert_id"]
         assert new_id is not None
 
-        # Verify inserted row
+        # Verify inserted row via db_query
         check_res = db_query(
             "SELECT name FROM journeys WHERE id = ?",
             params=[new_id],
@@ -579,24 +580,24 @@ def test_database_tools(app: Flask) -> None:
         assert check_res["success"] is True
         assert check_res["rows"][0]["name"] == "Test Commute DB Tool"
 
-        # UPDATE succeeds under read_write
-        upd_res = db_query(
+        # UPDATE succeeds under db_execute
+        upd_res = db_execute(
             "UPDATE journeys SET name = ? WHERE id = ?",
             params=["Updated Commute DB Tool", new_id],
         )
         assert upd_res["success"] is True
         assert upd_res["rows_affected"] == 1
 
-        # DELETE succeeds under read_write
-        del_res = db_query(
+        # DELETE succeeds under db_execute
+        del_res = db_execute(
             "DELETE FROM journeys WHERE id = ?",
             params=[new_id],
         )
         assert del_res["success"] is True
         assert del_res["rows_affected"] == 1
 
-        # Prohibited DDL (DROP TABLE) rejected under read_write
-        drop_rej = db_query("DROP TABLE journeys")
+        # Prohibited DDL (DROP TABLE) rejected under db_execute
+        drop_rej = db_execute("DROP TABLE journeys")
         assert drop_rej["success"] is False
         assert "DROP" in drop_rej["error"]
 
@@ -609,7 +610,7 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
 
         async def _run() -> None:
             # 1. When db_query is disabled -> rejected
-            MCPTool.update(access_level="disabled").where(
+            MCPTool.update(enabled=False).where(
                 MCPTool.tool_name == "db_query"
             ).execute()
             invalidate_permission_cache()
@@ -618,9 +619,10 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
                 "db_query", {"query": "SELECT count(*) FROM journeys"}
             )
             assert call_disabled.is_error is True
+            assert "disabled" in call_disabled.content[0].text
 
-            # 2. When db_query is set to 'read'
-            MCPTool.update(access_level="read").where(
+            # 2. When db_query is enabled -> succeeds for SELECT
+            MCPTool.update(enabled=True).where(
                 MCPTool.tool_name == "db_query"
             ).execute()
             invalidate_permission_cache()
@@ -631,20 +633,27 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
             assert call_read_sel.is_error is False
             assert "count" in call_read_sel.content[0].text
 
-            # INSERT rejected when access is 'read'
-            call_read_ins = await server.call_tool(
-                "db_query", {"query": "INSERT INTO journeys (name) VALUES ('Test')"}
-            )
-            assert "rejected" in call_read_ins.content[0].text
+            # 3. When db_execute is disabled -> rejected
+            MCPTool.update(enabled=False).where(
+                MCPTool.tool_name == "db_execute"
+            ).execute()
+            invalidate_permission_cache()
 
-            # 3. When db_query is set to 'read_write'
-            MCPTool.update(access_level="read_write").where(
-                MCPTool.tool_name == "db_query"
+            call_exec_disabled = await server.call_tool(
+                "db_execute",
+                {"query": "DELETE FROM journeys WHERE id = 99999"},
+            )
+            assert call_exec_disabled.is_error is True
+            assert "disabled" in call_exec_disabled.content[0].text
+
+            # 4. When db_execute is enabled -> succeeds
+            MCPTool.update(enabled=True).where(
+                MCPTool.tool_name == "db_execute"
             ).execute()
             invalidate_permission_cache()
 
             call_rw_ins = await server.call_tool(
-                "db_query",
+                "db_execute",
                 {
                     "query": (
                         "INSERT INTO journeys (name, from_type, from_id, from_name, to_type, to_id, to_name, time_settings, created_at, updated_at) "
@@ -656,6 +665,14 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
             assert "rows_affected" in call_rw_ins.content[0].text
 
         asyncio.run(_run())
+
+
+def test_dispatcher_evaluate_is_read_only() -> None:
+    """Verify dispatcher_evaluate tool metadata is configured as non-mutating."""
+    from app.mcp.registry import REGISTERED_TOOLS
+
+    assert "dispatcher_evaluate" in REGISTERED_TOOLS
+    assert REGISTERED_TOOLS["dispatcher_evaluate"].is_mutating is False
 
 
 def test_create_mcp_app_allows_lan_host_headers(app: Flask) -> None:

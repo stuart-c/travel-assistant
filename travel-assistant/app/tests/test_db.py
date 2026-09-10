@@ -905,3 +905,38 @@ def test_pydantic_field_serialization() -> None:
 
     j_fallback = j_field.python_value("bad-json-string")
     assert j_fallback == []
+
+
+def test_mcp_tools_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
+    """Test schema migration when legacy mcp_tools table has access_level column."""
+    db_file = str(tmp_path / "test_mcp_migration.db")
+    database = SqliteDatabase(db_file)
+    database.execute_sql("""
+        CREATE TABLE "mcp_tools" (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+            "created_at" DATETIME,
+            "updated_at" DATETIME,
+            "tool_name" VARCHAR(64) UNIQUE,
+            "domain" VARCHAR(32),
+            "description" VARCHAR(255),
+            "is_mutating" INTEGER,
+            "access_level" VARCHAR(16)
+        )
+    """)
+    database.execute_sql("""
+        INSERT INTO "mcp_tools" ("tool_name", "domain", "description", "is_mutating", "access_level")
+        VALUES ('old_tool', 'test', 'Desc', 0, 'read')
+    """)
+
+    run_migrations(database)
+
+    col_cursor = database.execute_sql('PRAGMA table_info("mcp_tools")')
+    cols = [col[1] for col in col_cursor.fetchall()]
+    assert "enabled" in cols
+    assert "access_level" not in cols
+
+    # Verified reset to enabled = 0
+    row = database.execute_sql(
+        'SELECT enabled FROM "mcp_tools" WHERE tool_name = "old_tool"'
+    ).fetchone()
+    assert row[0] == 0

@@ -3,20 +3,19 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.models.mcp import MCPTool, MCP_ACCESS_LEVELS
+from app.models.mcp import MCPTool
 from app.views.config import config_bp
 from app.views.config.common import (
     PageConfig,
     parse_optional_id,
     register_config_page,
-    sanitise_choice,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def clean_mcp_tool_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Validate and sanitise an MCP tool permission update from a changeset."""
+    """Validate and sanitise an MCP tool status update from a changeset."""
     if not isinstance(entry, dict):
         return None
 
@@ -25,55 +24,27 @@ def clean_mcp_tool_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        tool = MCPTool.get_by_id(item_id)
+        MCPTool.get_by_id(item_id)
     except MCPTool.DoesNotExist:
         return None
 
-    raw_level = sanitise_choice(
-        entry.get("access_level"),
-        MCP_ACCESS_LEVELS,
-        "disabled",
-    )
-
-    # UI constraint enforcement based on tool definition allowed levels:
-    from app.mcp.registry import REGISTERED_TOOLS
-
-    tool_def = REGISTERED_TOOLS.get(tool.tool_name)
-    if tool_def and tool_def.allowed_levels:
-        allowed = tool_def.allowed_levels
-    elif tool.is_mutating:
-        allowed = ("disabled", "read_write")
+    raw_enabled = entry.get("enabled")
+    if isinstance(raw_enabled, str):
+        enabled = raw_enabled.strip().lower() in ("true", "1", "yes", "on", "enabled")
     else:
-        allowed = ("disabled", "read")
-
-    if raw_level in allowed:
-        access_level = raw_level
-    elif "read" in allowed and raw_level == "read_write":
-        access_level = "read"
-    else:
-        access_level = "disabled"
+        enabled = bool(raw_enabled)
 
     return {
         "id": item_id,
-        "access_level": access_level,
+        "enabled": enabled,
     }
 
 
 def get_mcp_tools_data() -> List[Dict[str, Any]]:
     """Retrieve all configured tools formatted for Grid.js table loading."""
-    from app.mcp.registry import REGISTERED_TOOLS
-
     tools = MCPTool.get_all_tools()
     results: List[Dict[str, Any]] = []
     for tool in tools:
-        tool_def = REGISTERED_TOOLS.get(tool.tool_name)
-        if tool_def and tool_def.allowed_levels:
-            allowed = list(tool_def.allowed_levels)
-        elif tool.is_mutating:
-            allowed = ["disabled", "read_write"]
-        else:
-            allowed = ["disabled", "read"]
-
         results.append(
             {
                 "id": tool.id,
@@ -81,8 +52,7 @@ def get_mcp_tools_data() -> List[Dict[str, Any]]:
                 "domain": tool.domain,
                 "description": tool.description,
                 "is_mutating": tool.is_mutating,
-                "access_level": tool.access_level,
-                "allowed_levels": allowed,
+                "enabled": bool(tool.enabled),
                 "updated_at": (
                     tool.updated_at.isoformat() if tool.updated_at else None
                 ),

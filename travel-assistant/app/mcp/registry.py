@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 from peewee import SqliteDatabase
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,6 @@ class ToolDefinition:
     description: str
     is_mutating: bool
     func: Callable[..., Any]
-    allowed_levels: Tuple[str, ...] = ()
 
 
 REGISTERED_TOOLS: Dict[str, ToolDefinition] = {}
@@ -28,14 +27,8 @@ def register_tool(
     domain: str,
     description: str,
     is_mutating: bool = False,
-    allowed_levels: Optional[Tuple[str, ...]] = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to register an MCP tool definition with domain metadata."""
-    resolved_levels = (
-        allowed_levels
-        if allowed_levels is not None
-        else (("disabled", "read_write") if is_mutating else ("disabled", "read"))
-    )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         tool_def = ToolDefinition(
@@ -44,7 +37,6 @@ def register_tool(
             description=description,
             is_mutating=is_mutating,
             func=func,
-            allowed_levels=resolved_levels,
         )
         REGISTERED_TOOLS[name] = tool_def
         return func
@@ -55,9 +47,9 @@ def register_tool(
 def sync_mcp_tools_with_db(database: Optional[SqliteDatabase] = None) -> Dict[str, int]:
     """Synchronise in-memory registered tools with the SQLite database table.
 
-    Newly discovered tools default to 'disabled' (strict opt-in security),
+    Newly discovered tools default to disabled (enabled=False, strict opt-in security),
     ensuring tools remain inaccessible until explicitly enabled in the Web UI.
-    Existing user-configured access levels are preserved.
+    Existing user-configured status is preserved.
     """
     from app.models.mcp import MCPTool
 
@@ -83,7 +75,7 @@ def sync_mcp_tools_with_db(database: Optional[SqliteDatabase] = None) -> Dict[st
                     domain=tool_def.domain,
                     description=tool_def.description,
                     is_mutating=tool_def.is_mutating,
-                    access_level="disabled",
+                    enabled=False,
                 )
                 stats["added"] += 1
                 logger.info("Registered new MCP tool '%s' (default: disabled).", name)

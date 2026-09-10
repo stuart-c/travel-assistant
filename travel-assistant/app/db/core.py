@@ -352,6 +352,48 @@ def run_migrations(database: SqliteDatabase) -> None:
         pass
 
     try:
+        cursor = database.execute_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='mcp_tools'"
+        )
+        if cursor.fetchone():
+            col_cursor = database.execute_sql('PRAGMA table_info("mcp_tools")')
+            cols = [col[1] for col in col_cursor.fetchall()]
+            if "access_level" in cols or "enabled" not in cols:
+                # Schema migrated from 3-state access_level to binary enabled column.
+                # In accordance with strict opt-in security, all tools default to disabled (enabled = 0).
+                with database.atomic():
+                    database.execute_sql(
+                        'ALTER TABLE "mcp_tools" RENAME TO "_mcp_tools_old"'
+                    )
+                    with database.bind_ctx([MCPTool]):
+                        MCPTool.create_table(safe=True)
+                    has_created = "created_at" in cols
+                    has_updated = "updated_at" in cols
+                    created_col = (
+                        'COALESCE("created_at", CURRENT_TIMESTAMP)'
+                        if has_created
+                        else "CURRENT_TIMESTAMP"
+                    )
+                    updated_col = (
+                        'COALESCE("updated_at", CURRENT_TIMESTAMP)'
+                        if has_updated
+                        else "CURRENT_TIMESTAMP"
+                    )
+                    database.execute_sql(f"""
+                        INSERT INTO "mcp_tools" (
+                            "id", "created_at", "updated_at", "tool_name", "domain",
+                            "description", "is_mutating", "enabled"
+                        )
+                        SELECT
+                            "id", {created_col}, {updated_col}, "tool_name", "domain",
+                            "description", "is_mutating", 0
+                        FROM "_mcp_tools_old"
+                    """)
+                    database.execute_sql('DROP TABLE "_mcp_tools_old"')
+    except Exception as err:
+        logger.warning("MCP tools table migration encountered an issue: %s", err)
+
+    try:
         from app.mcp.registry import sync_mcp_tools_with_db
 
         with database.bind_ctx([MCPTool]):
