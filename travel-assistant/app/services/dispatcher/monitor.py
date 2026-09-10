@@ -117,6 +117,8 @@ class DepartureMonitor:
             )
             return 0
 
+        train_live = live_client or TrainLiveClient.from_settings()
+
         dispatched_count = 0
 
         # 1. Update in-progress journeys first
@@ -127,7 +129,7 @@ class DepartureMonitor:
                 person_state=stuart_state,
                 current_dt=current_dt,
                 ha_client=client,
-                live_client=live_client,
+                live_client=train_live,
             )
             if updated:
                 dispatched_count += 1
@@ -164,7 +166,7 @@ class DepartureMonitor:
                     journey=journey,
                     person_state=stuart_state,
                     current_dt=current_dt,
-                    live_client=live_client,
+                    live_client=train_live,
                 )
                 if recovered:
                     self.active_journeys[journey.id] = recovered
@@ -208,7 +210,7 @@ class DepartureMonitor:
                 journey=journey,
                 dt=current_dt,
                 sent_keys=self.sent_keys,
-                live_client=live_client,
+                live_client=train_live,
             )
             if not candidate:
                 continue

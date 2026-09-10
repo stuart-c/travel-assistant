@@ -19,6 +19,7 @@ from app.services.dispatcher.proximity import (
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
+from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.planner.models import (
     ItineraryEndpoint,
     ItineraryLeg,
@@ -95,54 +96,15 @@ def resolve_live_rail_platform(
     if not live_client:
         return None, None
 
-    crs = origin_id.strip()
-    if crs.startswith("naptan:"):
-        crs = crs[len("naptan:") :]
+    crs = resolve_station_crs(origin_id)
+    if not crs:
+        return None, None
 
-    if len(crs) != 3 or not crs.isalpha():
-        from app.models.transit import Stop
-
-        stop = (
-            Stop.select()
-            .where((Stop.atco_code == origin_id) | (Stop.naptan_code == origin_id))
-            .first()
-        )
-        if (
-            stop
-            and stop.naptan_code
-            and len(stop.naptan_code) == 3
-            and stop.naptan_code.isalpha()
-        ):
-            crs = stop.naptan_code
-        else:
-            return None, None
-
-    dest_crs = dest_id.strip()
-    if dest_crs.startswith("naptan:"):
-        dest_crs = dest_crs[len("naptan:") :]
-
-    if len(dest_crs) != 3 or not dest_crs.isalpha():
-        from app.models.transit import Stop
-
-        dest_stop = (
-            Stop.select()
-            .where((Stop.atco_code == dest_id) | (Stop.naptan_code == dest_id))
-            .first()
-        )
-        if (
-            dest_stop
-            and dest_stop.naptan_code
-            and len(dest_stop.naptan_code) == 3
-            and dest_stop.naptan_code.isalpha()
-        ):
-            dest_crs = dest_stop.naptan_code
-
-    filter_list = dest_crs if (len(dest_crs) == 3 and dest_crs.isalpha()) else None
+    dest_crs = resolve_station_crs(dest_id)
+    filter_list = [dest_crs] if dest_crs else None
 
     try:
-        departures = live_client.get_fastest_departures(
-            crs, [filter_list] if filter_list else None
-        )
+        departures = live_client.get_fastest_departures(crs, filter_list)
         if departures and isinstance(departures, list):
             for dep in departures:
                 std = dep.get("std")
@@ -1598,19 +1560,28 @@ def get_journey_live_tracking_data(
                     )
 
     # Check live rail platform if applicable
+    target_rail_leg = None
     if current_leg_index < len(legs):
         cur_leg = legs[current_leg_index]
-        if cur_leg.mode == "rail" and live_client:
-            plat, l_stat = resolve_live_rail_platform(
-                cur_leg.origin.id,
-                cur_leg.destination.id,
-                cur_leg.dep_time,
-                live_client,
+        if cur_leg.mode == "rail":
+            target_rail_leg = cur_leg
+        elif cur_leg.mode in FOOT_MODES:
+            target_rail_leg = next(
+                (lg for lg in legs[current_leg_index:] if lg.mode == "rail"),
+                None,
             )
-            if plat:
-                platform = plat
-            if l_stat:
-                live_status = l_stat
+
+    if target_rail_leg and live_client:
+        plat, l_stat = resolve_live_rail_platform(
+            target_rail_leg.origin.id,
+            target_rail_leg.destination.id,
+            target_rail_leg.dep_time,
+            live_client,
+        )
+        if plat:
+            platform = plat
+        if l_stat:
+            live_status = l_stat
 
     # 6. Resolve coordinates
     origin_lat, origin_lon, _ = resolve_endpoint_coordinates(from_type, from_id)

@@ -28,7 +28,10 @@ def dispatcher_get_status() -> Dict[str, Any]:
     """Retrieve active journey tracking session data."""
     monitor = get_departure_monitor()
     active_journeys = monitor.active_journeys if monitor else None
-    tracking_data = get_journey_live_tracking_data(active_journeys=active_journeys)
+    live_client = TrainLiveClient.from_settings()
+    tracking_data = get_journey_live_tracking_data(
+        active_journeys=active_journeys, live_client=live_client
+    )
 
     active_count = len(monitor.active_journeys) if monitor else 0
     active_summary = []
@@ -73,7 +76,7 @@ def dispatcher_evaluate(journey_id: int) -> Dict[str, Any]:
         return {"error": f"Journey with ID {journey_id} not found."}
 
     now = datetime.datetime.now()
-    live_client = TrainLiveClient()
+    live_client = TrainLiveClient.from_settings()
     monitor = get_departure_monitor()
     sent_keys = monitor.sent_keys if monitor else set()
 
@@ -129,7 +132,7 @@ def dispatcher_test_notification(journey_id: int) -> Dict[str, Any]:
         return {"error": f"Journey with ID {journey_id} not found."}
 
     now = datetime.datetime.now()
-    live_client = TrainLiveClient()
+    live_client = TrainLiveClient.from_settings()
     candidate = evaluate_journey_notification(
         journey=journey,
         dt=now,
