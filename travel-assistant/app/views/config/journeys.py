@@ -44,6 +44,10 @@ def _trigger_syncs_if_changed(
         if has_bus_endpoint:
             request_sync("bus_timetables")
         request_sync("journey_routes")
+
+        from app.services.dispatcher.tracker import clear_tracking_cache
+
+        clear_tracking_cache()
     except Exception:
         pass
 

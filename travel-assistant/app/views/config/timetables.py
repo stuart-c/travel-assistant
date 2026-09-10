@@ -183,6 +183,20 @@ def clean_timetable_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result
 
 
+def _clear_planner_caches(
+    stats: Dict[str, int], changeset: Dict[str, list[Any]]
+) -> None:
+    """Invalidate in-memory RAPTOR trip cache and live tracking cache when timetables change."""
+    try:
+        from app.services.dispatcher.tracker import clear_tracking_cache
+        from app.services.planner.raptor import clear_raptor_cache
+
+        clear_raptor_cache()
+        clear_tracking_cache()
+    except Exception:
+        pass
+
+
 register_config_page(
     config_bp,
     PageConfig(
@@ -193,5 +207,6 @@ register_config_page(
         clean_item_func=clean_timetable_item,
         entity_label="Timetables",
         scope_filter=(Timetable.auto_added == False),  # noqa: E712
+        post_save_hook=_clear_planner_caches,
     ),
 )
