@@ -1541,6 +1541,27 @@ def test_find_routes_transfer_preference_and_direct_dropoff(app: Flask) -> None:
             assert final_leg.leg_type == "transit"
             assert final_leg.transport_mode == "bus"
 
+        # Verify RAPTOR Mode 2 scheduled itinerary planning with direct drop-off
+        plans = plan_journey(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:office",
+            timing_mode="depart",
+            time_str="07:50",
+            days_of_week=["mon"],
+        )
+        assert len(plans) >= 1
+        plan = plans[0]
+        assert plan.arrival_time == "09:20"
+        final_plan_leg = plan.legs[-1]
+        assert final_plan_leg.destination.name == "Office"
+        assert (
+            final_plan_leg.destination.id == "office"
+            or final_plan_leg.destination.id == "ha:office"
+        )
+        assert final_plan_leg.mode == "bus"
+
 
 def _make_test_leg(
     leg_type: str = "transit",

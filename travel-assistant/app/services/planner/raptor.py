@@ -195,9 +195,32 @@ def plan_journey(
 
     active_days, date_obj = resolve_active_days_and_date(days_of_week, target_date)
 
-    # 1. Access & Egress Footpaths
+    # 1. Filter Active Timetables & Trips
+    all_timetables = list(Timetable.select())
+    active_timetables = [
+        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
+    ]
+    trips = _extract_parsed_trips(active_timetables)
+
+    # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)
     dest_walks = get_access_edges(t_type, t_id, is_origin=False)
+
+    # Check if origin or destination endpoint is directly served by active timetables
+    timetable_stop_ids = {
+        normalise_id(s.get("id", "") if isinstance(s, dict) else str(s))
+        for tt in active_timetables
+        for s in tt.get_content().get("stops", [])
+    }
+    if normalise_id(f_id) in timetable_stop_ids and not any(
+        w[2] == f_type and normalise_id(w[3]) == normalise_id(f_id)
+        for w in origin_walks
+    ):
+        origin_walks.append((f_type, f_id, f_type, f_id, 0, "direct"))
+    if normalise_id(t_id) in timetable_stop_ids and not any(
+        w[0] == t_type and normalise_id(w[1]) == normalise_id(t_id) for w in dest_walks
+    ):
+        dest_walks.append((t_type, t_id, t_type, t_id, 0, "direct"))
 
     direct_walk = Walking.find_walking_route(f_type, f_id, t_type, t_id)
     if not direct_walk:
@@ -216,14 +239,6 @@ def plan_journey(
             f"No reachable transit stops found within walking distance of destination '{t_id}'.",
             {"endpoint": t_id, "type": t_type},
         )
-
-    # 2. Extract and Filter Timetables & Trips
-    all_timetables = list(Timetable.select())
-    active_timetables = [
-        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
-    ]
-
-    trips = _extract_parsed_trips(active_timetables)
 
     candidate_itineraries: List[ScheduledItinerary] = []
     if direct_walk:
