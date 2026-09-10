@@ -30,12 +30,12 @@ from app.services.dispatcher.tracker import get_journey_live_tracking_data
 
 logger = logging.getLogger(__name__)
 
-_PERMISSION_CACHE: Dict[str, str] = {}
+_PERMISSION_CACHE: Dict[str, bool] = {}
 _PERMISSION_CACHE_TIME: float = 0.0
 _CACHE_TTL_SECONDS: float = 2.0
 
 
-def get_cached_tool_permissions() -> Dict[str, str]:
+def get_cached_tool_permissions() -> Dict[str, bool]:
     """Retrieve tool permissions from the database with a short in-memory cache."""
     global _PERMISSION_CACHE, _PERMISSION_CACHE_TIME
     now = time.time()
@@ -45,7 +45,7 @@ def get_cached_tool_permissions() -> Dict[str, str]:
     try:
         from app.models.mcp import MCPTool
 
-        perms = {tool.tool_name: tool.access_level for tool in MCPTool.select()}
+        perms = {tool.tool_name: bool(tool.enabled) for tool in MCPTool.select()}
         _PERMISSION_CACHE = perms
         _PERMISSION_CACHE_TIME = now
         return perms
@@ -117,11 +117,7 @@ class TravelAssistantMCPServer(MCPServer):
         """Return available tools, dynamically omitting any tool marked as disabled."""
         all_tools = await super().list_tools()
         permissions = get_cached_tool_permissions()
-        return [
-            tool
-            for tool in all_tools
-            if permissions.get(tool.name, "disabled") in ("read", "read_write")
-        ]
+        return [tool for tool in all_tools if permissions.get(tool.name, False)]
 
     async def call_tool(
         self,
@@ -131,9 +127,9 @@ class TravelAssistantMCPServer(MCPServer):
     ) -> Any:
         """Enforce granular permissions before delegating tool execution."""
         permissions = get_cached_tool_permissions()
-        access_level = permissions.get(name, "disabled")
+        is_enabled = permissions.get(name, False)
 
-        if access_level == "disabled":
+        if not is_enabled:
             logger.warning("Rejected call to disabled MCP tool '%s'.", name)
             return CallToolResult(
                 content=[
@@ -144,28 +140,6 @@ class TravelAssistantMCPServer(MCPServer):
                 ],
                 is_error=True,
             )
-
-        tool_def = REGISTERED_TOOLS.get(name)
-        if tool_def:
-            # If tool strictly requires read_write (does not support read-only mode)
-            if "read" not in tool_def.allowed_levels and access_level != "read_write":
-                logger.warning(
-                    "Rejected mutating call to MCP tool '%s' with access level '%s'.",
-                    name,
-                    access_level,
-                )
-                return CallToolResult(
-                    content=[
-                        TextContent(
-                            type="text",
-                            text=(
-                                f"Tool '{name}' requires read/write permission, "
-                                f"but current access level is '{access_level}'."
-                            ),
-                        )
-                    ],
-                    is_error=True,
-                )
 
         return await super().call_tool(name, arguments, context)
 

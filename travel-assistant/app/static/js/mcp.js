@@ -76,15 +76,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function formatGridData(items) {
     return items.map((item) => {
       const stagedUpdate = changesetManager.getUpdated(item.id);
-      const currentLevel = stagedUpdate ? stagedUpdate.access_level : item.access_level;
-      const allowed = item.allowed_levels || (item.is_mutating ? ['disabled', 'read_write'] : ['disabled', 'read']);
-      const isHybrid = allowed.includes('read') && allowed.includes('read_write');
+      const isEnabled =
+        stagedUpdate !== undefined
+          ? Boolean(stagedUpdate.enabled)
+          : Boolean(item.enabled);
+      const isChanged =
+        stagedUpdate !== undefined &&
+        Boolean(stagedUpdate.enabled) !== Boolean(item.enabled);
 
-      const typeBadge = isHybrid
-        ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300">
-             <span class="material-symbols-outlined text-xs leading-none">tune</span> Configurable
-           </span>`
-        : item.is_mutating
+      const typeBadge = item.is_mutating
         ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
              <span class="material-symbols-outlined text-xs leading-none">edit</span> Mutating
            </span>`
@@ -92,31 +92,19 @@ document.addEventListener('DOMContentLoaded', () => {
              <span class="material-symbols-outlined text-xs leading-none">visibility</span> Read-Only
            </span>`;
 
-      let optionsHtml = '';
-      if (allowed.includes('disabled')) {
-        optionsHtml += `<option value="disabled" ${currentLevel === 'disabled' ? 'selected' : ''}>Disabled</option>`;
-      }
-      if (allowed.includes('read')) {
-        const readLabel = item.tool_name === 'db_query' ? 'Read (SELECT only)' : 'Read (Enabled)';
-        optionsHtml += `<option value="read" ${currentLevel === 'read' ? 'selected' : ''}>${readLabel}</option>`;
-      }
-      if (allowed.includes('read_write')) {
-        const rwLabel = item.tool_name === 'db_query' ? 'Read / Write (Full SQL)' : 'Read / Write (Enabled)';
-        optionsHtml += `<option value="read_write" ${currentLevel === 'read_write' ? 'selected' : ''}>${rwLabel}</option>`;
-      }
-
-      const isChanged = stagedUpdate && stagedUpdate.access_level !== item.access_level;
-      const borderStyle = isChanged
-        ? 'border-indigo-500 bg-indigo-50/50 dark:border-indigo-400 dark:bg-indigo-950/30'
-        : 'border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800';
-
-      const selectControl = `
-        <select 
-          class="mcp-access-select px-3 py-1.5 rounded-xl border text-xs font-semibold text-slate-800 dark:text-slate-200 ${borderStyle} focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
-          data-item-id="${item.id}"
-        >
-          ${optionsHtml}
-        </select>
+      const toggleControl = `
+        <label class="relative inline-flex items-center cursor-pointer select-none">
+          <input 
+            type="checkbox" 
+            class="sr-only peer mcp-enabled-toggle" 
+            data-item-id="${item.id}"
+            ${isEnabled ? 'checked' : ''}
+          >
+          <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/30 dark:peer-focus:ring-indigo-600/30 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600 ${isChanged ? 'ring-2 ring-indigo-400' : ''}"></div>
+          <span class="ml-2.5 text-xs font-semibold ${isEnabled ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}">
+            ${isEnabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </label>
       `;
 
       return [
@@ -129,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridjs.html(getDomainBadge(item.domain)),
         gridjs.html(typeBadge),
         gridjs.html(`<span class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">${escapeHtml(item.description)}</span>`),
-        gridjs.html(selectControl),
+        gridjs.html(toggleControl),
       ];
     });
   }
@@ -138,10 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const mcpGrid = new gridjs.Grid({
     columns: [
       { name: 'Tool Identifier', width: '22%' },
-      { name: 'Domain', width: '16%' },
+      { name: 'Domain', width: '15%' },
       { name: 'Type', width: '14%' },
-      { name: 'Description', width: '32%' },
-      { name: 'Access Level', width: '16%' },
+      { name: 'Description', width: '31%' },
+      { name: 'Status', width: '18%' },
     ],
     server: {
       url: dataUrl,
@@ -174,22 +162,22 @@ document.addEventListener('DOMContentLoaded', () => {
     mcpGrid.render(gridWrapper);
   }
 
-  // Listen for access level dropdown changes
+  // Listen for toggle status changes
   if (gridWrapper) {
     gridWrapper.addEventListener('change', (e) => {
-      const select = e.target.closest('.mcp-access-select');
-      if (!select) return;
+      const toggle = e.target.closest('.mcp-enabled-toggle');
+      if (!toggle) return;
 
-      const itemId = parseInt(select.getAttribute('data-item-id'), 10);
-      const newLevel = select.value;
+      const itemId = parseInt(toggle.getAttribute('data-item-id'), 10);
+      const newEnabled = toggle.checked;
       const originalItem = currentPageItems.find((i) => i.id === itemId);
 
-      if (originalItem && originalItem.access_level === newLevel) {
+      if (originalItem && Boolean(originalItem.enabled) === newEnabled) {
         changesetManager.updated.delete(String(itemId));
       } else {
         changesetManager.update(itemId, {
           id: itemId,
-          access_level: newLevel,
+          enabled: newEnabled,
         });
       }
 

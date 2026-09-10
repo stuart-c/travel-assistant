@@ -343,12 +343,11 @@ class UITester:
         mcp_post_ok = False
         if mcp_data:
             target_tool = mcp_data[0]
-            new_level = "read" if not target_tool.get("is_mutating") else "read_write"
             r_mcp_post = self.client.post(
                 "/config/mcp/data",
                 json={
                     "added": [],
-                    "updated": [{"id": target_tool["id"], "access_level": new_level}],
+                    "updated": [{"id": target_tool["id"], "enabled": True}],
                     "deleted": [],
                 },
             )
