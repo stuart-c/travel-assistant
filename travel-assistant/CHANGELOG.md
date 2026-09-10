@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
 
 ### Fixed
+- Fixed Linux OOM crash and high memory consumption on `/journey` and `/api/journey/live` (`app/services/planner/transfers.py`, `app/services/planner/raptor.py`, `app/services/planner/route_finder.py`, `app/services/dispatcher/tracker.py`):
+  - Added SQL-level date range and day-of-week pre-filtering via `get_active_timetables`, replacing memory-exhaustive `Timetable.select()` scans across all 7,818 network timetables.
+  - Implemented 60-second in-memory trip and timetable stop caching (`_TRIPS_CACHE`) in RAPTOR and itinerary caching (`_UPCOMING_ITINERARY_CACHE`) in `tracker.py` to prevent repeated planner recalculations on 10-second live polling.
+  - Resolved Linux Out-Of-Memory killer terminating Gunicorn workers with SIGKILL when rendering the live journey screen.
+- Fixed RAPTOR itinerary infinite calculation loops on post-midnight trips (`app/services/planner/raptor.py`, `app/services/dispatcher/tracker.py`):
+  - Added monotonic midnight rollover detection (`rollover_offset += 1440`) in `_extract_parsed_trips` and itinerary slack duration calculations so that trips arriving after midnight (e.g. `00:05`) preserve strictly increasing travel times rather than causing negative-duration loops.
+  - Updated candidate itinerary filtering and transit leg evaluation in `detect_en_route_journey` to account for cross-midnight arrival times.
+- Fixed Home Assistant Companion App mobile notification click action navigation (`app/services/dispatcher/evaluator.py`, `app/services/dispatcher/tracker.py`, `run.sh`):
+  - Updated notification payloads (`url` and `clickAction`) to resolve the add-on's Ingress panel path from `Setting.get_val("ingress_panel_slug")` or `ADDON_PANEL_PATH` (defaulting to `/1a842e7e_travel_assistant_dev`), preventing the Home Assistant Android app from failing to open `/journey` on Home Assistant Core.
+- Fixed en-route journey progression detection when walking to departure stop (`app/services/dispatcher/tracker.py`):
+  - Switched candidate itinerary search in `detect_en_route_journey` to `timing_mode="window"` covering a 2-hour window up to 15 minutes ahead.
+  - Added walking leg corridor check returning `JourneyStepStatus.EN_ROUTE_TO_STOP` with live platform telemetry when a user has departed origin and is walking towards the initial transit stop.
 - Fixed RAPTOR journey planning failing on direct timetable origin/destination stops (`app/services/planner/raptor.py`, `app/tests/test_journey_planner.py`):
   - Added timetable stop detection in `plan_journey` to inject 0-minute direct access/egress edges when origin or destination endpoints (e.g. `ha:office`) are served directly by active timetable stops, mirroring `route_finder.py`.
   - Resolved failure where journeys terminating directly on transit (such as campus shuttle buses) returned zero scheduled itineraries, eliminating fallback corridor search locking and enabling departure notifications to evaluate and dispatch correctly.

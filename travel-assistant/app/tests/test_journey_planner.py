@@ -1882,3 +1882,66 @@ def test_find_routes_zero_per_stop_cost_intermediate_stops_equality(
         assert r.legs[1].from_id in ("9100STATION_A", "atco:9100STATION_A")
         assert r.legs[1].to_id in ("9100STATION_B", "atco:9100STATION_B")
         assert r.legs[2].leg_type == "walk"
+
+
+def test_raptor_midnight_rollover(app: Flask) -> None:
+    """Test that trips traversing midnight (e.g. 23:50 -> 00:35) plan cleanly without looping."""
+    with app.app_context():
+        Stop.create(
+            atco_code="9100KGX_NIGHT",
+            naptan_code="KGX_NIGHT",
+            name="London King's Cross Night",
+            stop_type="rail",
+        )
+        Stop.create(
+            atco_code="9100CBG_NIGHT",
+            naptan_code="CBG_NIGHT",
+            name="Cambridge Night",
+            stop_type="rail",
+        )
+
+        tt = Timetable.create(
+            name="Late Night Sleeper",
+            transport_type="rail",
+            monday=True,
+            tuesday=True,
+        )
+        tt.set_content(
+            TimetableContent(
+                stops=[
+                    TimetableStop(
+                        id="9100KGX_NIGHT",
+                        name="London King's Cross Night",
+                        type="rail",
+                    ),
+                    TimetableStop(
+                        id="9100CBG_NIGHT",
+                        name="Cambridge Night",
+                        type="rail",
+                    ),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="sleeper_1",
+                        times=[{"dep": "23:50"}, {"arr": "00:35"}],
+                    )
+                ],
+            )
+        )
+        tt.save()
+
+        plans = plan_journey(
+            from_type="rail",
+            from_id="9100KGX_NIGHT",
+            to_type="rail",
+            to_id="9100CBG_NIGHT",
+            timing_mode="depart",
+            time_str="23:45",
+            days_of_week=["mon"],
+        )
+
+        assert len(plans) == 1
+        itin = plans[0]
+        assert itin.departure_time == "23:50"
+        assert itin.arrival_time == "00:35"
+        assert itin.total_duration_minutes == 45

@@ -2,11 +2,13 @@
 
 import datetime
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey, JourneyTimeSetting
+from app.models.setting import Setting
 from app.services.planner.exceptions import JourneyPlanningError
 from app.services.planner.raptor import plan_journey
 from app.services.planner.transfers import (
@@ -393,9 +395,18 @@ def format_departure_notification(
         f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
     )
 
+    panel_slug = (
+        Setting.get_val(
+            "ingress_panel_slug",
+            os.environ.get("ADDON_PANEL_PATH", ""),
+        )
+        or ""
+    ).strip("/")
+    nav_url = f"/{panel_slug}" if panel_slug else "/journey"
+
     data: Dict[str, Any] = {
-        "url": "/journey",
-        "clickAction": "/journey",
+        "url": nav_url,
+        "clickAction": nav_url,
         "tag": f"journey_{candidate.journey_id}",
         "group": "travel_assistant_journeys",
     }

@@ -52,8 +52,15 @@ def setting_model(app: Flask) -> Generator[type, None, None]:
 
 @pytest.fixture(autouse=True)
 def cleanup_worker() -> Generator[None, None, None]:
-    """Ensure background worker daemon thread is stopped after each test."""
+    """Ensure background worker daemon thread is stopped and caches cleared after each test."""
+    from app.services.dispatcher.tracker import clear_tracking_cache
+    from app.services.planner.raptor import clear_raptor_cache
+
+    clear_raptor_cache()
+    clear_tracking_cache()
     yield
     from app.sync.worker import stop_background_worker
 
     stop_background_worker()
+    clear_raptor_cache()
+    clear_tracking_cache()

@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx as nx
 
-from app.models.timetable import Timetable
 from app.models.transit import StopInterchange
 from app.models.walking import Walking
 from app.services.planner.exceptions import (
@@ -22,7 +21,7 @@ from app.services.planner.exceptions import (
 from app.services.planner.models import RouteLeg, RouteTemplate
 from app.services.planner.transfers import (
     get_access_edges,
-    is_timetable_active,
+    get_active_timetables,
     normalise_id,
     parse_time_to_minutes,
     resolve_active_days_and_date,
@@ -97,10 +96,7 @@ def find_routes(
     )
 
     # 1. Filter Active Timetables
-    all_timetables = list(Timetable.select())
-    active_timetables = [
-        tt for tt in all_timetables if is_timetable_active(tt, active_days, date_obj)
-    ]
+    active_timetables = get_active_timetables(active_days, date_obj)
 
     # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)

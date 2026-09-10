@@ -23,7 +23,7 @@ class Setting(BaseModel):
         try:
             item = cls.get(cls.key == key)
             return item.value if item.value is not None else default
-        except cls.DoesNotExist:
+        except Exception:
             return default
 
     @classmethod
