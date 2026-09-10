@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added connecting transit next step details to departure notifications (`app/services/dispatcher/tracker.py`, `app/services/dispatcher/evaluator.py`, `app/tests/test_journey_tracker.py`, `app/tests/test_departure_dispatcher.py`):
+  - Added `format_next_step_for_departure` detailing connecting transit services (mode, line, operator, origin, destination, departure time, and platform) or final walk legs in British English for multi-leg journeys.
+  - Updated `format_progress_notification` for `at_departure_stop`, `pre_departure`, and `en_route_to_stop` to append connecting transit details (such as connecting mainline rail departures when boarding a feeder shuttle bus).
+  - Updated `format_departure_notification` in `evaluator.py` to include connecting transit instructions when evaluating candidate itineraries.
+  - Enhanced live rail platform probe in `update_journey_progress` to look ahead for connecting rail legs and resolve live Darwin departure platform information in advance.
+
 ### Changed
 - Updated Model Context Protocol (MCP) server permission architecture and tool separation (`app/models/mcp.py`, `app/mcp/`, `app/views/config/mcp.py`, `app/static/js/mcp.js`, `app/templates/config_mcp.html`, `app/tests/test_mcp.py`):
   - Transitioned MCP tool permissions from a 3-state access level (`disabled`, `read`, `read_write`) to a clean, binary `disabled` / `enabled` schema (`enabled = BooleanField(default=False)`), enforcing strict opt-in security with no backward-compatibility wrappers.

@@ -14,6 +14,7 @@ from app.services.dispatcher.tracker import (
     JourneyStepStatus,
     _format_transit_service_desc,
     detect_en_route_journey,
+    format_next_step_for_departure,
     format_progress_notification,
     resolve_live_rail_platform,
     update_journey_progress,
@@ -1270,3 +1271,221 @@ def test_update_journey_progress_advances_forward_bypassing_intermediate_leg(
         assert "On board Great Northern train towards Cambridge Rail Station." in msg
         assert "Expected arrival at 07:18." in msg
         assert "Next step: Walk 10m to Cambridge Office." in msg
+
+
+def test_format_next_step_for_departure_scenarios() -> None:
+    """Test format_next_step_for_departure across varied transit and walking combinations."""
+    legs = [
+        ItineraryLeg(
+            leg_index=1,
+            mode="walk",
+            origin=ItineraryEndpoint(id="ha:office", name="Office"),
+            destination=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            dep_time="17:36",
+            arr_time="17:40",
+            duration_minutes=4,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="bus",
+            line="Shuttle Bus (Evening)",
+            operator=None,
+            origin=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            destination=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH", name="Cambridge North Rail Station"
+            ),
+            dep_time="17:40",
+            arr_time="17:50",
+            duration_minutes=10,
+        ),
+        ItineraryLeg(
+            leg_index=3,
+            mode="rail",
+            line="Kings Lynn Rail Station to London Kings Cross Rail Station (Mon-Fri)",
+            operator="Great Northern",
+            origin=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH",
+                name="Cambridge North Rail Station",
+                platform="2",
+            ),
+            destination=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            dep_time="17:54",
+            arr_time="18:39",
+            duration_minutes=45,
+        ),
+        ItineraryLeg(
+            leg_index=4,
+            mode="walk",
+            origin=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            destination=ItineraryEndpoint(id="ha:home", name="Home"),
+            dep_time="18:39",
+            arr_time="18:45",
+            duration_minutes=6,
+        ),
+    ]
+
+    # 1. From the shuttle bus leg (index 1), following transit is Great Northern train with platform
+    next_step = format_next_step_for_departure(
+        legs, current_transit_leg=legs[1], only_transit=False
+    )
+    assert (
+        next_step
+        == " Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54 from Platform 2."
+    )
+
+    # 2. From the rail leg (index 2), next step is final walk when only_transit is False
+    next_walk = format_next_step_for_departure(
+        legs, current_transit_leg=legs[2], only_transit=False
+    )
+    assert next_walk == " Next step: Walk 6m to Home."
+
+    # 3. From the rail leg (index 2), next step is empty when only_transit is True
+    assert (
+        format_next_step_for_departure(
+            legs, current_transit_leg=legs[2], only_transit=True
+        )
+        == ""
+    )
+
+    # 4. Same origin connecting transit
+    same_orig_legs = [
+        ItineraryLeg(
+            leg_index=1,
+            mode="rail",
+            line="Thameslink",
+            origin=ItineraryEndpoint(id="naptan:KGX", name="London King's Cross"),
+            destination=ItineraryEndpoint(id="naptan:CBG", name="Cambridge"),
+            dep_time="08:14",
+            arr_time="09:00",
+            duration_minutes=46,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="rail",
+            line="Great Northern",
+            operator="Great Northern",
+            origin=ItineraryEndpoint(id="naptan:KGX", name="London King's Cross"),
+            destination=ItineraryEndpoint(id="naptan:PBO", name="Peterborough"),
+            dep_time="08:30",
+            arr_time="09:15",
+            duration_minutes=45,
+        ),
+    ]
+    same_orig_step = format_next_step_for_departure(
+        same_orig_legs, current_transit_leg=same_orig_legs[0]
+    )
+    assert (
+        same_orig_step
+        == " Next step: Rail Great Northern to Peterborough departs at 08:30."
+    )
+
+    # 5. Empty legs fallback
+    assert format_next_step_for_departure([]) == ""
+
+
+def test_format_progress_notification_at_departure_stop_connecting_train() -> None:
+    """Test AT_DEPARTURE_STOP notification includes connecting train details after shuttle bus."""
+    legs = [
+        ItineraryLeg(
+            leg_index=1,
+            mode="walk",
+            origin=ItineraryEndpoint(id="ha:office", name="Office"),
+            destination=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            dep_time="17:36",
+            arr_time="17:40",
+            duration_minutes=4,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="bus",
+            line="Shuttle Bus (Evening)",
+            operator=None,
+            origin=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            destination=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH", name="Cambridge North Rail Station"
+            ),
+            dep_time="17:40",
+            arr_time="17:50",
+            duration_minutes=10,
+        ),
+        ItineraryLeg(
+            leg_index=3,
+            mode="rail",
+            line="Kings Lynn Rail Station to London Kings Cross Rail Station (Mon-Fri)",
+            operator="Great Northern",
+            origin=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH", name="Cambridge North Rail Station"
+            ),
+            destination=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            dep_time="17:54",
+            arr_time="18:39",
+            duration_minutes=45,
+        ),
+        ItineraryLeg(
+            leg_index=4,
+            mode="walk",
+            origin=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            destination=ItineraryEndpoint(id="ha:home", name="Home"),
+            dep_time="18:39",
+            arr_time="18:45",
+            duration_minutes=6,
+        ),
+    ]
+    itin = ScheduledItinerary(
+        departure_time="17:36",
+        arrival_time="18:45",
+        total_duration_minutes=69,
+        transfers_count=2,
+        robustness_score="high",
+        legs=legs,
+    )
+    active = ActiveJourney(
+        journey_id=2,
+        journey_name="Evening Commute",
+        from_type="ha",
+        from_id="ha:office",
+        from_name="Office",
+        to_type="ha",
+        to_id="ha:home",
+        to_name="Home",
+        itinerary=itin,
+        legs=legs,
+        current_leg_index=0,  # Detected at departure stop after initial walk
+        current_status=JourneyStepStatus.AT_DEPARTURE_STOP,
+        expected_arrival_time="18:45",
+    )
+
+    # 1. AT_DEPARTURE_STOP
+    _, msg, _ = format_progress_notification(active)
+    assert "At Shuttle Bus." in msg
+    assert "Shuttle Bus to Cambridge North Rail Station departs at 17:40." in msg
+    assert (
+        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        in msg
+    )
+
+    # 2. PRE_DEPARTURE
+    active.current_status = JourneyStepStatus.PRE_DEPARTURE
+    _, msg_pre, _ = format_progress_notification(active)
+    assert "Leave by 17:36 (walk 4m)" in msg_pre
+    assert (
+        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        in msg_pre
+    )
+
+    # 3. EN_ROUTE_TO_STOP
+    active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+    _, msg_en_route, _ = format_progress_notification(active)
+    assert "On your way to Shuttle Bus." in msg_en_route
+    assert (
+        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        in msg_en_route
+    )
