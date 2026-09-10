@@ -20,6 +20,7 @@ from app.services.dispatcher.proximity import (
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
+from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
@@ -47,6 +48,7 @@ __all__ = [
     "is_journey_active_for_datetime",
     "is_person_near_origin",
     "resolve_endpoint_coordinates",
+    "resolve_station_crs",
     "start_departure_monitor",
     "update_journey_progress",
 ]

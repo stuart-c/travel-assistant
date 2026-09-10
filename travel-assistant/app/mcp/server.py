@@ -25,6 +25,7 @@ from app.mcp.registry import (
     _ensure_all_tools_imported,
     sync_mcp_tools_with_db,
 )
+from app.datasources.train_live import TrainLiveClient
 from app.services.dispatcher.monitor import get_departure_monitor
 from app.services.dispatcher.tracker import get_journey_live_tracking_data
 
@@ -110,7 +111,10 @@ class TravelAssistantMCPServer(MCPServer):
         def get_live_journey_telemetry() -> str:
             monitor = get_departure_monitor()
             active_journeys = monitor.active_journeys if monitor else None
-            data = get_journey_live_tracking_data(active_journeys=active_journeys)
+            live_client = TrainLiveClient.from_settings()
+            data = get_journey_live_tracking_data(
+                active_journeys=active_journeys, live_client=live_client
+            )
             return json.dumps(data or {"status": "inactive"}, indent=2)
 
     async def list_tools(self) -> List[Tool]:

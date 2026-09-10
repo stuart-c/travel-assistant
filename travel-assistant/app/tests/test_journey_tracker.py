@@ -16,6 +16,7 @@ from app.services.dispatcher.tracker import (
     detect_en_route_journey,
     format_next_step_for_departure,
     format_progress_notification,
+    get_journey_live_tracking_data,
     resolve_live_rail_platform,
     update_journey_progress,
 )
@@ -168,6 +169,45 @@ def test_resolve_live_rail_platform_not_found_or_exception() -> None:
     plat, stat = resolve_live_rail_platform("KGX", "CBG", "08:08", mock_live)
     assert plat is None
     assert stat is None
+
+
+def test_resolve_live_rail_platform_with_atco_and_tiploc() -> None:
+    """Test resolve_live_rail_platform successfully maps ATCO and TIPLOC codes to CRS."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    mock_live.get_fastest_departures.return_value = [
+        {"std": "08:15", "etd": "08:18", "platform": "1"},
+    ]
+    plat, stat = resolve_live_rail_platform(
+        "atco:9100KNGX", "atco:9100PADTON", "08:15", mock_live
+    )
+    assert plat == "1"
+    assert stat == "08:18"
+    mock_live.get_fastest_departures.assert_called_once_with("KGX", ["PAD"])
+
+
+def test_get_journey_live_tracking_data_with_rail_lookahead(app: Flask) -> None:
+    """Test get_journey_live_tracking_data resolves platform for connecting rail leg during initial walk."""
+    with app.app_context():
+        active = _create_sample_active_journey(journey_id=1, with_rail=True)
+        # Configure rail leg with ATCO codes
+        active.legs[1].origin.id = "atco:9100KNGX"
+        active.legs[1].destination.id = "atco:9100PADTON"
+        active.current_leg_index = 0  # Walking leg before train
+
+        mock_live = MagicMock(spec=TrainLiveClient)
+        mock_live.get_fastest_departures.return_value = [
+            {"std": "08:08", "etd": "08:12", "platform": "9"},
+        ]
+
+        data = get_journey_live_tracking_data(
+            journey_id=1,
+            live_client=mock_live,
+            active_journeys={1: active},
+        )
+        assert data["selected_journey"] is not None
+        assert data["selected_journey"]["is_active"] is True
+        assert data["selected_journey"]["platform"] == "9"
+        assert data["selected_journey"]["live_status"] == "08:12"
 
 
 # --- Format Transit Service Description Tests ---

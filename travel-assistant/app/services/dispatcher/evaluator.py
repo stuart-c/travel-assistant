@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey, JourneyTimeSetting
 from app.models.setting import Setting
-from app.services.dispatcher.tracker import FOOT_MODES, format_next_step_for_departure
+from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.planner.exceptions import JourneyPlanningError
 from app.services.planner.raptor import plan_journey
 from app.services.planner.transfers import (
@@ -259,20 +259,15 @@ def apply_live_departure_adjustments(
     if candidate.transit_mode != "rail":
         return candidate
 
-    # Extract station CRS code if available
-    crs = candidate.origin_stop_id
-    if crs.startswith("naptan:"):
-        crs = crs[len("naptan:") :]
-
-    if len(crs) != 3 or not crs.isalpha():
+    crs = resolve_station_crs(candidate.origin_stop_id)
+    if not crs:
         return candidate
 
-    dest_crs = candidate.dest_stop_id
-    if dest_crs.startswith("naptan:"):
-        dest_crs = dest_crs[len("naptan:") :]
+    dest_crs = resolve_station_crs(candidate.dest_stop_id)
+    filter_list = [dest_crs] if dest_crs else None
 
     try:
-        departures = live_client.get_fastest_departures(crs, [dest_crs])
+        departures = live_client.get_fastest_departures(crs, filter_list)
         # If live departure times are obtained, update candidate departure time
 
         if departures and isinstance(departures, list):
@@ -392,6 +387,11 @@ def format_departure_notification(
 
     next_step_info = ""
     if candidate.itinerary and getattr(candidate.itinerary, "legs", None):
+        from app.services.dispatcher.tracker import (
+            FOOT_MODES,
+            format_next_step_for_departure,
+        )
+
         first_transit = next(
             (lg for lg in candidate.itinerary.legs if lg.mode not in FOOT_MODES),
             None,

@@ -606,6 +606,38 @@ def test_apply_live_departure_adjustments() -> None:
     safe_cand = apply_live_departure_adjustments(base_cand, mock_live)
     assert safe_cand.is_live is True  # preserved from previous or unchanged
 
+    # 6. Rail candidate with ATCO stop identifiers (e.g. atco:9100KNGX -> KGX, atco:9100PADTON -> PAD)
+    atco_cand = DepartureCandidate(
+        journey_id=2,
+        journey_name="Train Commute with ATCO",
+        service_key="test_rail_atco",
+        transit_mode="rail",
+        line_name="Great Northern",
+        operator_name="Great Northern",
+        origin_stop_name="London King's Cross",
+        origin_stop_id="atco:9100KNGX",
+        dest_stop_name="Paddington",
+        dest_stop_id="atco:9100PADTON",
+        final_dest_name="Paddington",
+        transit_dep_minutes=488,
+        transit_dep_time="08:08",
+        walk_minutes=5,
+        leave_minutes=483,
+        leave_time="08:03",
+        arrival_time="08:45",
+        notification_trigger_minutes=468,
+    )
+    mock_live.get_fastest_departures.side_effect = None
+    mock_live.get_fastest_departures.return_value = [
+        {"std": "08:08", "etd": "08:12", "platform": "3"}
+    ]
+    atco_adjusted = apply_live_departure_adjustments(atco_cand, mock_live)
+    assert atco_adjusted.is_live is True
+    assert atco_adjusted.delay_minutes == 4
+    assert atco_adjusted.platform == "3"
+    assert atco_adjusted.transit_dep_time == "08:12"
+    mock_live.get_fastest_departures.assert_called_with("KGX", ["PAD"])
+
 
 def test_monitor_error_handling_and_empty_token(app: Flask) -> None:
     """Test DepartureMonitor when HA token is missing or network call fails."""
