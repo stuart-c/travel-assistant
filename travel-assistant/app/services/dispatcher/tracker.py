@@ -3,10 +3,11 @@
 import datetime
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
@@ -25,6 +26,8 @@ from app.services.planner.transfers import (
 )
 
 logger = logging.getLogger(__name__)
+
+FOOT_MODES: Set[str] = {"walk", "walking", "foot", "interchange", "platform_transfer"}
 
 _UPCOMING_ITINERARY_CACHE: Dict[int, Tuple[float, str, Any]] = {}
 _TRACKING_CACHE_TTL_SECONDS = 60.0
@@ -150,14 +153,66 @@ def resolve_live_rail_platform(
     return None, None
 
 
-def _format_transit_service_desc(mode: str, line: Optional[str]) -> str:
-    """Format transit service description preventing duplicate mode keywords."""
+def _format_transit_service_desc(
+    mode: str,
+    line: Optional[str] = None,
+    operator: Optional[str] = None,
+    destination: Optional[str] = None,
+) -> str:
+    """Format transit service description preventing duplicate mode keywords and handling route titles."""
+    if (mode or "").lower() in FOOT_MODES:
+        return "Transfer"
+
     mode_label = mode.title() if mode else "Transit"
-    line_name = (line or "").strip()
-    if line_name:
-        if mode_label.lower() in line_name.lower():
-            return line_name
-        return f"{mode_label} {line_name}"
+    op_clean = (operator or "").strip()
+    dest_clean = (destination or "").strip()
+    line_clean = (line or "").strip()
+
+    if line_clean:
+        # Strip trailing operational day suffixes like (Mon-Fri), (Mon-Sat), (Sunday)
+        line_clean = re.sub(r"\s*\([A-Za-z0-9\-,\s]+\)$", "", line_clean).strip()
+
+        # Check if line_clean is an endpoint-to-endpoint route descriptor (e.g. "A to B" or "A - B")
+        if " to " in line_clean or " - " in line_clean:
+            sep = " to " if " to " in line_clean else " - "
+            prefix = line_clean.split(sep, 1)[0].strip()
+
+            # Check if there is a route number/code prefix before a colon, e.g. "Bus SB1: Woodcock Road to Bus Station"
+            if ":" in prefix:
+                route_code = prefix.split(":", 1)[0].strip()
+                if op_clean and op_clean.lower() not in route_code.lower():
+                    return f"{op_clean} {route_code}"
+                return route_code
+
+            # For rail legs with origin-to-destination titles
+            if mode == "rail":
+                veh = f"{op_clean} train" if op_clean else "Rail service"
+                if dest_clean:
+                    return f"{veh} towards {dest_clean}"
+                return veh
+
+            # For bus or other modes with origin-to-destination titles
+            veh = f"{op_clean} {mode_label}" if op_clean else f"{mode_label} service"
+            if dest_clean:
+                return f"{veh} towards {dest_clean}"
+            return veh
+
+        # Standard line/route names (e.g. "73", "Bus 73", "Thameslink", "Piccadilly")
+        if mode_label.lower() in line_clean.lower():
+            return line_clean
+        return f"{mode_label} {line_clean}"
+
+    # If line is empty or None
+    if op_clean:
+        veh = "train" if mode == "rail" else mode_label
+        if dest_clean:
+            return f"{op_clean} {veh} towards {dest_clean}"
+        return f"{op_clean} {veh}"
+
+    if dest_clean:
+        veh = "Train" if mode == "rail" else mode_label
+        return f"{veh} towards {dest_clean}"
+
     return mode_label
 
 
@@ -176,15 +231,24 @@ def format_progress_notification(
     message = ""
 
     if status == JourneyStepStatus.PRE_DEPARTURE:
-        first_transit = next((leg for leg in active.legs if leg.mode != "walk"), None)
+        first_transit = next(
+            (leg for leg in active.legs if leg.mode not in FOOT_MODES), None
+        )
         walk_leg = (
-            active.legs[0] if active.legs and active.legs[0].mode == "walk" else None
+            active.legs[0]
+            if active.legs and active.legs[0].mode in FOOT_MODES
+            else None
         )
         walk_mins = walk_leg.duration_minutes if walk_leg else 0
         walk_info = f"walk {walk_mins}m" if walk_mins > 0 else "direct departure"
 
         transit_desc = (
-            _format_transit_service_desc(first_transit.mode, first_transit.line)
+            _format_transit_service_desc(
+                first_transit.mode,
+                first_transit.line,
+                first_transit.operator,
+                destination=first_transit.destination.name,
+            )
             if first_transit
             else "direct departure"
         )
@@ -207,57 +271,107 @@ def format_progress_notification(
         )
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_STOP:
-        next_leg = (
-            active.legs[active.current_leg_index + 1]
-            if active.current_leg_index + 1 < len(active.legs)
-            else current_leg
+        next_transit = next(
+            (
+                leg
+                for leg in active.legs[active.current_leg_index :]
+                if leg.mode not in FOOT_MODES
+            ),
+            current_leg,
         )
-        stop_name = next_leg.origin.name if next_leg else "departure stop"
+        stop_name = next_transit.origin.name if next_transit else "departure stop"
         line_desc = (
-            _format_transit_service_desc(next_leg.mode, next_leg.line)
-            if next_leg
+            _format_transit_service_desc(
+                next_transit.mode,
+                next_transit.line,
+                next_transit.operator,
+                destination=next_transit.destination.name,
+            )
+            if next_transit
             else "Transit"
         )
+        dep_time = next_transit.dep_time if next_transit else ""
         message = (
             f"On your way to {stop_name}. "
-            f"{line_desc} departs at {next_leg.dep_time if next_leg else ''}. "
+            f"{line_desc} departs at {dep_time}. "
             f"Destination: {active.to_name}."
         )
 
     elif status == JourneyStepStatus.AT_DEPARTURE_STOP:
-        if current_leg and current_leg.mode == "rail":
+        active_transit = (
+            current_leg
+            if (current_leg and current_leg.mode not in FOOT_MODES)
+            else next(
+                (
+                    lg
+                    for lg in active.legs[active.current_leg_index :]
+                    if lg.mode not in FOOT_MODES
+                ),
+                None,
+            )
+        )
+        if active_transit and active_transit.mode == "rail":
             plat_info = (
                 f"Platform {active.platform}"
                 if active.platform
                 else "Platform to be announced"
             )
             live_note = f" ({active.live_status})" if active.live_status else ""
-            line_desc = _format_transit_service_desc(current_leg.mode, current_leg.line)
-            message = (
-                f"At {current_leg.origin.name}. "
-                f"{line_desc} to {current_leg.destination.name} departs at "
-                f"{current_leg.dep_time} from {plat_info}{live_note}."
+            line_desc = _format_transit_service_desc(
+                active_transit.mode, active_transit.line, active_transit.operator
             )
-        elif current_leg:
-            line_desc = _format_transit_service_desc(current_leg.mode, current_leg.line)
             message = (
-                f"At {current_leg.origin.name}. "
-                f"{line_desc} to {current_leg.destination.name} departs at {current_leg.dep_time}."
+                f"At {active_transit.origin.name}. "
+                f"{line_desc} to {active_transit.destination.name} departs at "
+                f"{active_transit.dep_time} from {plat_info}{live_note}."
+            )
+        elif active_transit:
+            line_desc = _format_transit_service_desc(
+                active_transit.mode, active_transit.line, active_transit.operator
+            )
+            message = (
+                f"At {active_transit.origin.name}. "
+                f"{line_desc} to {active_transit.destination.name} departs at {active_transit.dep_time}."
             )
         else:
             message = f"At departure stop for {active.to_name}."
 
     elif status == JourneyStepStatus.ON_TRANSIT:
         if current_leg:
-            line_desc = _format_transit_service_desc(current_leg.mode, current_leg.line)
+            line_desc = _format_transit_service_desc(
+                current_leg.mode, current_leg.line, current_leg.operator
+            )
             next_step_info = ""
             if active.current_leg_index + 1 < len(active.legs):
                 next_leg = active.legs[active.current_leg_index + 1]
-                if next_leg.mode == "walk":
-                    next_step_info = f" Next step: Walk {next_leg.duration_minutes}m to {next_leg.destination.name}."
+                if next_leg.mode in FOOT_MODES:
+                    if active.current_leg_index + 1 == len(active.legs) - 1:
+                        next_step_info = f" Next step: Walk {next_leg.duration_minutes}m to {next_leg.destination.name}."
+                    else:
+                        following_transit = next(
+                            (
+                                lg
+                                for lg in active.legs[active.current_leg_index + 2 :]
+                                if lg.mode not in FOOT_MODES
+                            ),
+                            None,
+                        )
+                        if following_transit:
+                            transfer_desc = _format_transit_service_desc(
+                                following_transit.mode,
+                                following_transit.line,
+                                following_transit.operator,
+                                destination=following_transit.destination.name,
+                            )
+                            next_step_info = f" Transfer to {transfer_desc}."
+                        else:
+                            next_step_info = f" Next step: Walk {next_leg.duration_minutes}m to {next_leg.destination.name}."
                 else:
                     transfer_desc = _format_transit_service_desc(
-                        next_leg.mode, next_leg.line
+                        next_leg.mode,
+                        next_leg.line,
+                        next_leg.operator,
+                        destination=next_leg.destination.name,
                     )
                     next_step_info = f" Transfer to {transfer_desc}."
 
@@ -270,16 +384,49 @@ def format_progress_notification(
             message = f"In transit towards {active.to_name}."
 
     elif status == JourneyStepStatus.AT_INTERCHANGE:
-        if current_leg:
-            line_desc = _format_transit_service_desc(current_leg.mode, current_leg.line)
+        if current_leg and current_leg.mode in FOOT_MODES:
+            next_transit = next(
+                (
+                    lg
+                    for lg in active.legs[active.current_leg_index :]
+                    if lg.mode not in FOOT_MODES
+                ),
+                None,
+            )
+            if next_transit:
+                transfer_desc = _format_transit_service_desc(
+                    next_transit.mode,
+                    next_transit.line,
+                    next_transit.operator,
+                    destination=next_transit.destination.name,
+                )
+                plat_info = (
+                    f" from Platform {active.platform}" if active.platform else ""
+                )
+                live_note = f" ({active.live_status})" if active.live_status else ""
+                message = (
+                    f"Transfer at {current_leg.origin.name}: "
+                    f"Walk to {current_leg.destination.name} to board {transfer_desc} "
+                    f"departing at {next_transit.dep_time}{plat_info}{live_note}."
+                )
+            else:
+                message = f"Transfer at {current_leg.origin.name}: Walk to {current_leg.destination.name}."
+        elif current_leg:
+            line_desc = _format_transit_service_desc(
+                current_leg.mode,
+                current_leg.line,
+                current_leg.operator,
+                destination=current_leg.destination.name,
+            )
             plat_info = (
                 f"Platform {active.platform}"
                 if active.platform
                 else "Platform to be announced"
             )
+            live_note = f" ({active.live_status})" if active.live_status else ""
             message = (
                 f"Transfer at {current_leg.origin.name}: "
-                f"Board {line_desc} departing at {current_leg.dep_time} from {plat_info}."
+                f"Board {line_desc} departing at {current_leg.dep_time} from {plat_info}{live_note}."
             )
         else:
             message = "Interchange stop: transfer to connecting service."
@@ -319,11 +466,11 @@ def format_progress_notification(
 
 
 def _determine_transit_arrival_status(active: ActiveJourney) -> JourneyStepStatus:
-    """Determine whether the next stage after reaching a stop is final walking or interchange."""
+    """Determine whether the next stage after reaching a stop is final walking, arrived, or interchange."""
     if active.current_leg_index >= len(active.legs):
         return JourneyStepStatus.EN_ROUTE_TO_DESTINATION
     next_leg = active.legs[active.current_leg_index]
-    if active.current_leg_index == len(active.legs) - 1 and next_leg.mode == "walk":
+    if active.current_leg_index == len(active.legs) - 1 and next_leg.mode in FOOT_MODES:
         return JourneyStepStatus.EN_ROUTE_TO_DESTINATION
     return JourneyStepStatus.AT_INTERCHANGE
 
@@ -354,10 +501,12 @@ def update_journey_progress(
 
     # Check if Stuart missed departure time while still in PRE_DEPARTURE
     if active.current_status == JourneyStepStatus.PRE_DEPARTURE:
-        first_transit = next((leg for leg in active.legs if leg.mode != "walk"), None)
+        first_transit = next(
+            (leg for leg in active.legs if leg.mode not in FOOT_MODES), None
+        )
         walk_mins = (
             active.legs[0].duration_minutes
-            if (active.legs and active.legs[0].mode == "walk")
+            if (active.legs and active.legs[0].mode in FOOT_MODES)
             else 0
         )
         dep_time = (
@@ -415,99 +564,262 @@ def update_journey_progress(
     old_status = active.current_status
     old_leg_idx = active.current_leg_index
 
-    # Identify current leg
+    # Identify current leg and check for progression
     if active.current_leg_index >= len(active.legs):
         active.current_status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
     else:
-        leg = active.legs[active.current_leg_index]
-        orig_lat, orig_lon, _ = resolve_endpoint_coordinates(leg.mode, leg.origin.id)
-        dest_lat, dest_lon, _ = resolve_endpoint_coordinates(
-            leg.mode, leg.destination.id
+        # Check if Stuart has already progressed to a subsequent leg
+        advanced_to_future = False
+        is_still_near_origin = (
+            active.current_status == JourneyStepStatus.PRE_DEPARTURE
+            and is_person_near_origin(person_state, active.from_type, active.from_id)
         )
 
-        dist_to_orig = (
-            haversine_distance(person_lat, person_lon, orig_lat, orig_lon)
-            if (person_lat is not None and orig_lat is not None)
-            else None
-        )
-        dist_to_dest = (
-            haversine_distance(person_lat, person_lon, dest_lat, dest_lon)
-            if (person_lat is not None and dest_lat is not None)
-            else None
-        )
+        if (
+            not is_still_near_origin
+            and person_lat is not None
+            and person_lon is not None
+            and active.current_leg_index < len(active.legs) - 1
+        ):
+            for f_idx in range(len(active.legs) - 1, active.current_leg_index, -1):
+                f_leg = active.legs[f_idx]
+                f_orig_lat, f_orig_lon, _ = resolve_endpoint_coordinates(
+                    f_leg.mode, f_leg.origin.id
+                )
+                f_dest_lat, f_dest_lon, _ = resolve_endpoint_coordinates(
+                    f_leg.mode, f_leg.destination.id
+                )
 
-        dep_min = parse_time_to_minutes(leg.dep_time)
+                f_dist_orig = (
+                    haversine_distance(person_lat, person_lon, f_orig_lat, f_orig_lon)
+                    if (f_orig_lat is not None and f_orig_lon is not None)
+                    else None
+                )
+                f_dist_dest = (
+                    haversine_distance(person_lat, person_lon, f_dest_lat, f_dest_lon)
+                    if (f_dest_lat is not None and f_dest_lon is not None)
+                    else None
+                )
 
-        if leg.mode == "walk":
-            if active.current_leg_index == 0:
-                # First walking leg (origin -> departure stop)
-                if dist_to_orig is not None and dist_to_orig <= max_proximity_metres:
-                    active.current_status = JourneyStepStatus.PRE_DEPARTURE
-                elif dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
-                    # Stuart reached the departure stop! Advance to first transit leg
-                    active.current_leg_index += 1
-                    active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
-                else:
-                    leg_dist = (
-                        haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
-                        if (orig_lat is not None and dest_lat is not None)
-                        else 1000.0
-                    )
-                    max_allowed = max(
-                        leg_dist * 1.5, leg_dist + max_proximity_metres, 500.0
-                    )
-                    if dist_to_dest is not None and dist_to_dest <= max_allowed:
-                        active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+                # 1. At the destination of future leg
+                if f_dist_dest is not None and f_dist_dest <= max_proximity_metres:
+                    active.current_leg_index = f_idx + 1
+                    if active.current_leg_index >= len(active.legs):
+                        active.current_status = JourneyStepStatus.ARRIVED
                     else:
-                        active.current_status = JourneyStepStatus.EXPIRED
-                        return False
-            else:
-                # Egress or intermediate walking transfer
-                if dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
-                    active.current_leg_index += 1
-                    active.current_status = _determine_transit_arrival_status(active)
-                else:
-                    active.current_status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                        active.current_status = _determine_transit_arrival_status(
+                            active
+                        )
+                    advanced_to_future = True
+                    break
 
-        else:
-            # Transit leg (rail, bus, metro, tram)
-            # 1. Proximity to transit origin stop
-            if dist_to_orig is not None and dist_to_orig <= max_proximity_metres:
-                if active.current_leg_index == 0 or (
-                    active.current_leg_index == 1 and active.legs[0].mode == "walk"
+                # 2. At the origin of future leg
+                if f_dist_orig is not None and f_dist_orig <= max_proximity_metres:
+                    active.current_leg_index = f_idx
+                    if f_idx == 0 or (f_idx == 1 and active.legs[0].mode in FOOT_MODES):
+                        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+                    elif f_idx == len(active.legs) - 1 and f_leg.mode in FOOT_MODES:
+                        active.current_status = (
+                            JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                        )
+                    else:
+                        active.current_status = JourneyStepStatus.AT_INTERCHANGE
+                    advanced_to_future = True
+                    break
+
+                # 3. En route on board a future transit leg corridor
+                if (
+                    f_leg.mode not in FOOT_MODES
+                    and f_orig_lat is not None
+                    and f_dest_lat is not None
+                    and f_dist_orig is not None
+                    and f_dist_dest is not None
                 ):
-                    active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
-                else:
-                    active.current_status = JourneyStepStatus.AT_INTERCHANGE
+                    span = haversine_distance(
+                        f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon
+                    )
+                    f_dep_m = parse_time_to_minutes(f_leg.dep_time)
+                    cur_eff = (
+                        current_minutes + 1440
+                        if (
+                            f_dep_m is not None
+                            and current_minutes < 120
+                            and f_dep_m > 1200
+                        )
+                        else current_minutes
+                    )
+                    # Must be at or past departure time (or within 2 min before scheduled departure)
+                    is_time_valid = f_dep_m is None or cur_eff >= (f_dep_m - 2)
+                    is_between = (
+                        f_dist_dest < (span + max_proximity_metres)
+                        and f_dist_orig > max_proximity_metres
+                        and (f_dist_orig + f_dist_dest)
+                        <= max(span * 1.5, span + 1000.0)
+                    )
+                    if is_time_valid and is_between:
+                        active.current_leg_index = f_idx
+                        active.current_status = JourneyStepStatus.ON_TRANSIT
+                        advanced_to_future = True
+                        break
 
-            # 2. Transit in progress: departure time reached and moving towards destination
-            elif dep_min is not None and current_minutes >= dep_min:
-                if dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
-                    # Reached transit destination stop
-                    active.current_leg_index += 1
-                    active.current_status = _determine_transit_arrival_status(active)
-                else:
-                    active.current_status = JourneyStepStatus.ON_TRANSIT
-            else:
-                # Prior to departure time
-                if active.current_leg_index == 0 or (
-                    active.current_leg_index == 1 and active.legs[0].mode == "walk"
+                # 4. En route on final walking leg corridor
+                if (
+                    f_idx == len(active.legs) - 1
+                    and f_leg.mode in FOOT_MODES
+                    and f_orig_lat is not None
+                    and f_dest_lat is not None
+                    and f_dist_orig is not None
+                    and f_dist_dest is not None
                 ):
-                    active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
-                else:
-                    active.current_status = JourneyStepStatus.AT_INTERCHANGE
+                    span = haversine_distance(
+                        f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon
+                    )
+                    if (
+                        f_dist_dest < (span + max_proximity_metres)
+                        and f_dist_orig > max_proximity_metres
+                        and (f_dist_orig + f_dist_dest)
+                        <= max(span * 1.5, span + 1000.0)
+                    ):
+                        active.current_leg_index = f_idx
+                        active.current_status = (
+                            JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                        )
+                        advanced_to_future = True
+                        break
 
-    # Check for live platform update if rail leg
+        if not advanced_to_future and active.current_leg_index < len(active.legs):
+            leg = active.legs[active.current_leg_index]
+            orig_lat, orig_lon, _ = resolve_endpoint_coordinates(
+                leg.mode, leg.origin.id
+            )
+            dest_lat, dest_lon, _ = resolve_endpoint_coordinates(
+                leg.mode, leg.destination.id
+            )
+
+            dist_to_orig = (
+                haversine_distance(person_lat, person_lon, orig_lat, orig_lon)
+                if (person_lat is not None and orig_lat is not None)
+                else None
+            )
+            dist_to_dest = (
+                haversine_distance(person_lat, person_lon, dest_lat, dest_lon)
+                if (person_lat is not None and dest_lat is not None)
+                else None
+            )
+
+            dep_min = parse_time_to_minutes(leg.dep_time)
+
+            if leg.mode in FOOT_MODES:
+                if active.current_leg_index == 0:
+                    # First walking leg (origin -> departure stop)
+                    if (
+                        dist_to_orig is not None
+                        and dist_to_orig <= max_proximity_metres
+                    ):
+                        active.current_status = JourneyStepStatus.PRE_DEPARTURE
+                    elif (
+                        dist_to_dest is not None
+                        and dist_to_dest <= max_proximity_metres
+                    ):
+                        # Stuart reached the departure stop! Advance to first transit leg
+                        active.current_leg_index += 1
+                        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+                    else:
+                        leg_dist = (
+                            haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
+                            if (orig_lat is not None and dest_lat is not None)
+                            else 1000.0
+                        )
+                        max_allowed = max(
+                            leg_dist * 1.5, leg_dist + max_proximity_metres, 500.0
+                        )
+                        if dist_to_dest is not None and dist_to_dest <= max_allowed:
+                            active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+                        else:
+                            active.current_status = JourneyStepStatus.EXPIRED
+                            return False
+                else:
+                    # Egress or intermediate walking transfer
+                    if active.current_leg_index == len(active.legs) - 1:
+                        # Final walking egress
+                        if (
+                            dist_to_dest is not None
+                            and dist_to_dest <= max_proximity_metres
+                        ):
+                            active.current_leg_index += 1
+                            active.current_status = JourneyStepStatus.ARRIVED
+                        else:
+                            active.current_status = (
+                                JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                            )
+                    else:
+                        # Intermediate transfer
+                        if (
+                            dist_to_dest is not None
+                            and dist_to_dest <= max_proximity_metres
+                        ):
+                            active.current_leg_index += 1
+                            active.current_status = _determine_transit_arrival_status(
+                                active
+                            )
+                        else:
+                            active.current_status = JourneyStepStatus.AT_INTERCHANGE
+
+            else:
+                # Transit leg (rail, bus, metro, tram)
+                # 1. Proximity to transit origin stop
+                if dist_to_orig is not None and dist_to_orig <= max_proximity_metres:
+                    if active.current_leg_index == 0 or (
+                        active.current_leg_index == 1
+                        and active.legs[0].mode in FOOT_MODES
+                    ):
+                        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+                    else:
+                        active.current_status = JourneyStepStatus.AT_INTERCHANGE
+
+                # 2. Transit in progress: departure time reached and moving towards destination
+                elif dep_min is not None and current_minutes >= dep_min:
+                    if (
+                        dist_to_dest is not None
+                        and dist_to_dest <= max_proximity_metres
+                    ):
+                        # Reached transit destination stop
+                        active.current_leg_index += 1
+                        active.current_status = _determine_transit_arrival_status(
+                            active
+                        )
+                    else:
+                        active.current_status = JourneyStepStatus.ON_TRANSIT
+                else:
+                    # Prior to departure time
+                    if active.current_leg_index == 0 or (
+                        active.current_leg_index == 1
+                        and active.legs[0].mode in FOOT_MODES
+                    ):
+                        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+                    else:
+                        active.current_status = JourneyStepStatus.AT_INTERCHANGE
+
+    # Check for live platform update if rail leg or transferring to rail leg
     current_leg = (
         active.legs[active.current_leg_index]
         if active.current_leg_index < len(active.legs)
         else None
     )
-    if current_leg and current_leg.mode == "rail" and live_client:
+    target_rail_leg = None
+    if current_leg and current_leg.mode == "rail":
+        target_rail_leg = current_leg
+    elif current_leg and current_leg.mode in FOOT_MODES:
+        target_rail_leg = next(
+            (lg for lg in active.legs[active.current_leg_index :] if lg.mode == "rail"),
+            None,
+        )
+
+    if target_rail_leg and live_client:
         plat, live_stat = resolve_live_rail_platform(
-            origin_id=current_leg.origin.id,
-            dest_id=current_leg.destination.id,
-            scheduled_time=current_leg.dep_time,
+            origin_id=target_rail_leg.origin.id,
+            dest_id=target_rail_leg.destination.id,
+            scheduled_time=target_rail_leg.dep_time,
             live_client=live_client,
         )
         if plat and plat != active.platform:
@@ -675,7 +987,7 @@ def detect_en_route_journey(
 
             # 1. At the departure stop or interchange for this leg
             if dist_orig is not None and dist_orig <= max_proximity_metres:
-                if leg_idx == 0 or (leg_idx == 1 and itin.legs[0].mode == "walk"):
+                if leg_idx == 0 or (leg_idx == 1 and itin.legs[0].mode in FOOT_MODES):
                     status = JourneyStepStatus.AT_DEPARTURE_STOP
                 else:
                     status = JourneyStepStatus.AT_INTERCHANGE
@@ -712,13 +1024,13 @@ def detect_en_route_journey(
             # 2. At the destination of this leg
             if dist_dest is not None and dist_dest <= max_proximity_metres:
                 next_idx = leg_idx + 1
-                if leg_idx == 0 and leg.mode == "walk":
+                if leg_idx == 0 and leg.mode in FOOT_MODES:
                     status = JourneyStepStatus.AT_DEPARTURE_STOP
                 elif next_idx >= len(itin.legs):
-                    status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                    status = JourneyStepStatus.ARRIVED
                 elif (
                     next_idx == len(itin.legs) - 1
-                    and itin.legs[next_idx].mode == "walk"
+                    and itin.legs[next_idx].mode in FOOT_MODES
                 ):
                     status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
                 else:
@@ -768,7 +1080,7 @@ def detect_en_route_journey(
                 leg_dep_m is not None
                 and leg_arr_m is not None
                 and leg_dep_m <= leg_cur_m <= leg_arr_m
-                and leg.mode != "walk"
+                and leg.mode not in FOOT_MODES
                 and orig_lat is not None
                 and dest_lat is not None
             ):
@@ -811,7 +1123,7 @@ def detect_en_route_journey(
             # 4. Walking to departure stop (first leg is walk, left origin corridor towards transit stop)
             if (
                 leg_idx == 0
-                and leg.mode == "walk"
+                and leg.mode in FOOT_MODES
                 and orig_lat is not None
                 and dest_lat is not None
             ):
@@ -1218,7 +1530,7 @@ def get_journey_live_tracking_data(
         if current_leg_index < len(serialized_legs):
             cur_l = serialized_legs[current_leg_index]
             if (
-                cur_l["mode"] == "walk"
+                cur_l["mode"] in FOOT_MODES
                 and current_status == JourneyStepStatus.PRE_DEPARTURE
             ):
                 t_lat = cur_l["origin"]["latitude"]
@@ -1349,7 +1661,7 @@ def get_journey_live_tracking_data(
         elif mode == "bus":
             line_colour = "rose"
             line_style = "solid"
-        elif mode == "walk":
+        elif mode in FOOT_MODES:
             line_colour = "amber"
             line_style = "dashed"
         elif mode in ("metro", "subway", "tube"):

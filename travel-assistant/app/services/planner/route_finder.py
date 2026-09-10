@@ -315,31 +315,35 @@ def find_routes(
                 )
 
     # Add same-station rail platform transfers for nodes with same ATCO/CRS code
-    rail_nodes = [n for n, d in G.nodes(data=True) if d.get("node_type") == "rail"]
-    for u in rail_nodes:
-        for v in rail_nodes:
-            if u != v:
-                u_id = G.nodes[u].get("id", "")
-                v_id = G.nodes[v].get("id", "")
-                if normalise_id(u_id) == normalise_id(v_id):
-                    trans_info = resolve_transfer_duration("rail", u_id, "rail", v_id)
-                    if trans_info:
-                        dur, kind, dist_m = trans_info
-                        G.add_edge(
-                            u,
-                            v,
-                            key=f"plat_{u}_{v}",
-                            leg_type=kind,
-                            transport_mode="walk",
-                            duration=dur,
-                            distance_m=dist_m,
-                            timetable_id=None,
-                            line_name=None,
-                            operator_name=None,
-                            stops_count=1,
-                            from_name=resolve_endpoint_name("rail", u_id),
-                            to_name=resolve_endpoint_name("rail", v_id),
-                        )
+    rail_nodes_by_norm: Dict[str, List[Tuple[Any, str]]] = {}
+    for n, d in G.nodes(data=True):
+        if d.get("node_type") == "rail":
+            node_id = d.get("id", "")
+            norm = normalise_id(node_id)
+            if norm:
+                rail_nodes_by_norm.setdefault(norm, []).append((n, node_id))
+
+    for norm, group in rail_nodes_by_norm.items():
+        if len(group) > 1:
+            for (u, u_id), (v, v_id) in itertools.permutations(group, 2):
+                trans_info = resolve_transfer_duration("rail", u_id, "rail", v_id)
+                if trans_info:
+                    dur, kind, dist_m = trans_info
+                    G.add_edge(
+                        u,
+                        v,
+                        key=f"plat_{u}_{v}",
+                        leg_type=kind,
+                        transport_mode="walk",
+                        duration=dur,
+                        distance_m=dist_m,
+                        timetable_id=None,
+                        line_name=None,
+                        operator_name=None,
+                        stops_count=1,
+                        from_name=resolve_endpoint_name("rail", u_id),
+                        to_name=resolve_endpoint_name("rail", v_id),
+                    )
 
     # 4. Extract Non-cyclic Paths using NetworkX
     if not nx.has_path(G, origin_node, dest_node):
@@ -394,42 +398,47 @@ def find_routes(
     origin_targets = {make_node_key(w[2], w[3]) for w in origin_walks if len(w) >= 4}
     dest_sources = {make_node_key(w[0], w[1]) for w in dest_walks if len(w) >= 2}
 
-    for o_target in origin_targets:
-        if o_target == origin_node or not simple_g.has_node(o_target):
-            continue
-        # Search directly from access stop to dest_node
-        if nx.has_path(simple_g, o_target, dest_node):
-            try:
-                sub_paths = list(
-                    itertools.islice(
-                        nx.shortest_simple_paths(
-                            simple_g, o_target, dest_node, weight="weight"
-                        ),
-                        25,
-                    )
-                )
-                for sp in sub_paths:
-                    raw_node_paths.append([origin_node] + sp)
-            except Exception:
-                pass
-        # Search from access stop to destination access stops
-        for d_source in dest_sources:
-            if d_source in (dest_node, o_target) or not simple_g.has_node(d_source):
+    if len(raw_node_paths) < max_routes:
+        for o_target in origin_targets:
+            if len(raw_node_paths) >= max_routes * 5:
+                break
+            if o_target == origin_node or not simple_g.has_node(o_target):
                 continue
-            if nx.has_path(simple_g, o_target, d_source):
+            # Search directly from access stop to dest_node
+            if nx.has_path(simple_g, o_target, dest_node):
                 try:
                     sub_paths = list(
                         itertools.islice(
                             nx.shortest_simple_paths(
-                                simple_g, o_target, d_source, weight="weight"
+                                simple_g, o_target, dest_node, weight="weight"
                             ),
-                            15,
+                            25,
                         )
                     )
                     for sp in sub_paths:
-                        raw_node_paths.append([origin_node] + sp + [dest_node])
+                        raw_node_paths.append([origin_node] + sp)
                 except Exception:
                     pass
+            # Search from access stop to destination access stops
+            for d_source in dest_sources:
+                if len(raw_node_paths) >= max_routes * 5:
+                    break
+                if d_source in (dest_node, o_target) or not simple_g.has_node(d_source):
+                    continue
+                if nx.has_path(simple_g, o_target, d_source):
+                    try:
+                        sub_paths = list(
+                            itertools.islice(
+                                nx.shortest_simple_paths(
+                                    simple_g, o_target, d_source, weight="weight"
+                                ),
+                                15,
+                            )
+                        )
+                        for sp in sub_paths:
+                            raw_node_paths.append([origin_node] + sp + [dest_node])
+                    except Exception:
+                        pass
 
     # Deduplicate node paths
     seen_node_paths: Set[Tuple[str, ...]] = set()

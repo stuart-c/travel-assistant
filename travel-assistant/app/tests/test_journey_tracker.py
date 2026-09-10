@@ -179,6 +179,52 @@ def test_format_transit_service_desc() -> None:
     assert _format_transit_service_desc("rail", "Thameslink") == "Rail Thameslink"
     assert _format_transit_service_desc("rail", "") == "Rail"
     assert _format_transit_service_desc("", "") == "Transit"
+    # Foot modes
+    assert _format_transit_service_desc("interchange") == "Transfer"
+    assert _format_transit_service_desc("walk") == "Transfer"
+    # Complex rail timetable names with day suffixes and endpoint descriptions
+    assert (
+        _format_transit_service_desc(
+            "rail",
+            "London Kings Cross Rail Station to Cambridge Rail Station (Mon-Fri)",
+            operator="Great Northern",
+            destination="Cambridge Rail Station",
+        )
+        == "Great Northern train towards Cambridge Rail Station"
+    )
+    # Without destination
+    assert (
+        _format_transit_service_desc(
+            "rail",
+            "London Kings Cross Rail Station to Cambridge Rail Station (Mon-Fri)",
+            operator="Great Northern",
+        )
+        == "Great Northern train"
+    )
+    # Bus route prefix with colon
+    assert (
+        _format_transit_service_desc(
+            "bus",
+            "Bus SB1: Woodcock Road to Bus Station (Mon-Sat)",
+        )
+        == "Bus SB1"
+    )
+    assert (
+        _format_transit_service_desc(
+            "bus",
+            "Bus SB1: Woodcock Road to Bus Station (Mon-Sat)",
+            operator="Arriva",
+        )
+        == "Arriva Bus SB1"
+    )
+    assert (
+        _format_transit_service_desc(
+            "bus",
+            "SB1: Woodcock Road to Bus Station",
+            operator="Arriva",
+        )
+        == "Arriva SB1"
+    )
 
 
 # --- Notification Formatting Tests ---
@@ -1017,3 +1063,210 @@ def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
         title, msg, data = format_progress_notification(active)
         assert data["url"] == "/1a842e7e_travel_assistant_dev"
         assert data["clickAction"] == "/1a842e7e_travel_assistant_dev"
+
+
+def test_format_progress_notification_interchange_foot_modes() -> None:
+    """Test that interchange/platform_transfer legs produce clear transfer messages instead of on-board messages."""
+    legs = [
+        ItineraryLeg(
+            leg_index=1,
+            mode="walk",
+            origin=ItineraryEndpoint(id="ha:home", name="Home"),
+            destination=ItineraryEndpoint(
+                id="naptan:SVG", name="Stevenage Rail Station"
+            ),
+            dep_time="06:35",
+            arr_time="06:42",
+            duration_minutes=7,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="interchange",
+            origin=ItineraryEndpoint(id="naptan:SVG", name="Stevenage Rail Station"),
+            destination=ItineraryEndpoint(
+                id="naptan:SVG", name="Stevenage Rail Station"
+            ),
+            dep_time="06:42",
+            arr_time="06:47",
+            duration_minutes=5,
+        ),
+        ItineraryLeg(
+            leg_index=3,
+            mode="rail",
+            line="London Kings Cross Rail Station to Cambridge Rail Station (Mon-Fri)",
+            operator="Great Northern",
+            origin=ItineraryEndpoint(id="naptan:SVG", name="Stevenage Rail Station"),
+            destination=ItineraryEndpoint(
+                id="naptan:CBG", name="Cambridge Rail Station"
+            ),
+            dep_time="06:48",
+            arr_time="07:18",
+            duration_minutes=30,
+        ),
+    ]
+    itin = ScheduledItinerary(
+        departure_time="06:35",
+        arrival_time="07:18",
+        total_duration_minutes=43,
+        transfers_count=1,
+        robustness_score="High",
+        legs=legs,
+    )
+    active = ActiveJourney(
+        journey_id=1,
+        journey_name="Morning Commute",
+        from_type="location",
+        from_id="ha:home",
+        from_name="Home",
+        to_type="station",
+        to_id="naptan:CBG",
+        to_name="Cambridge Rail Station",
+        itinerary=itin,
+        legs=legs,
+        expected_arrival_time="07:18",
+        current_leg_index=1,
+        current_status=JourneyStepStatus.AT_INTERCHANGE,
+    )
+
+    _, msg, _ = format_progress_notification(active)
+    assert "Transfer at Stevenage Rail Station" in msg
+    assert "Great Northern train towards Cambridge Rail Station" in msg
+    assert "06:48" in msg
+    assert "On board Interchange" not in msg
+
+
+def test_update_journey_progress_advances_forward_bypassing_intermediate_leg(
+    app: Flask,
+) -> None:
+    """Test forward scanning advances active journey when intermediate transfer stop was bypassed."""
+    with app.app_context():
+        Stop.create(
+            atco_code="naptan:SVG",
+            naptan_code="SVG",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+            latitude=51.9017,
+            longitude=-0.2066,
+        )
+        Stop.create(
+            atco_code="naptan:CBG",
+            naptan_code="CBG",
+            name="Cambridge Rail Station",
+            stop_type="rail",
+            latitude=52.1943,
+            longitude=0.1372,
+        )
+        Location.create(
+            id="ha:home",
+            name="Home",
+            latitude=51.9000,
+            longitude=-0.2000,
+            ha=True,
+        )
+        Location.create(
+            id="ha:cambridge_office",
+            name="Cambridge Office",
+            latitude=52.2000,
+            longitude=0.1400,
+            ha=True,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=1,
+                mode="walk",
+                origin=ItineraryEndpoint(id="ha:home", name="Home"),
+                destination=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                dep_time="06:35",
+                arr_time="06:42",
+                duration_minutes=7,
+            ),
+            ItineraryLeg(
+                leg_index=2,
+                mode="interchange",
+                origin=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                dep_time="06:42",
+                arr_time="06:47",
+                duration_minutes=5,
+            ),
+            ItineraryLeg(
+                leg_index=3,
+                mode="rail",
+                line="London Kings Cross Rail Station to Cambridge Rail Station (Mon-Fri)",
+                operator="Great Northern",
+                origin=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="naptan:CBG", name="Cambridge Rail Station"
+                ),
+                dep_time="06:48",
+                arr_time="07:18",
+                duration_minutes=30,
+            ),
+            ItineraryLeg(
+                leg_index=4,
+                mode="walk",
+                origin=ItineraryEndpoint(
+                    id="naptan:CBG", name="Cambridge Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="ha:cambridge_office", name="Cambridge Office"
+                ),
+                dep_time="07:18",
+                arr_time="07:28",
+                duration_minutes=10,
+            ),
+        ]
+        itin = ScheduledItinerary(
+            departure_time="06:35",
+            arrival_time="07:28",
+            total_duration_minutes=53,
+            transfers_count=1,
+            robustness_score="High",
+            legs=legs,
+        )
+        active = ActiveJourney(
+            journey_id=1,
+            journey_name="Morning Commute",
+            from_type="location",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="location",
+            to_id="ha:cambridge_office",
+            to_name="Cambridge Office",
+            itinerary=itin,
+            legs=legs,
+            expected_arrival_time="07:28",
+            current_leg_index=1,  # Stuck on interchange leg
+            current_status=JourneyStepStatus.AT_INTERCHANGE,
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Stuart is past Hitchin on the train towards Cambridge at 06:55 (51.9600, -0.2500)
+        # Stevenage is (51.9017, -0.2066), Cambridge is (52.1943, 0.1372)
+        # Hitchin is ~7.5km from Stevenage, well along the corridor
+        state_hitchin = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.9600, "longitude": -0.2500},
+        }
+        now_hitchin = datetime.datetime(2026, 9, 10, 6, 55)
+
+        updated = update_journey_progress(active, state_hitchin, now_hitchin, mock_ha)
+        assert updated is True
+        # Advanced past interchange to rail leg (index 2)
+        assert active.current_leg_index == 2
+        assert active.current_status == JourneyStepStatus.ON_TRANSIT
+        mock_ha.send_mobile_notification.assert_called_once()
+        msg = mock_ha.send_mobile_notification.call_args[1]["message"]
+        assert "On board Great Northern train towards Cambridge Rail Station." in msg
+        assert "Expected arrival at 07:18." in msg
+        assert "Next step: Walk 10m to Cambridge Office." in msg
