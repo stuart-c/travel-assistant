@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey, JourneyTimeSetting
 from app.models.setting import Setting
+from app.services.dispatcher.tracker import FOOT_MODES, format_next_step_for_departure
 from app.services.planner.exceptions import JourneyPlanningError
 from app.services.planner.raptor import plan_journey
 from app.services.planner.transfers import (
@@ -389,9 +390,20 @@ def format_departure_notification(
     if candidate.is_live and candidate.delay_minutes > 0:
         live_note = f" (delayed by {candidate.delay_minutes}m)"
 
+    next_step_info = ""
+    if candidate.itinerary and getattr(candidate.itinerary, "legs", None):
+        first_transit = next(
+            (lg for lg in candidate.itinerary.legs if lg.mode not in FOOT_MODES),
+            None,
+        )
+        if first_transit:
+            next_step_info = format_next_step_for_departure(
+                candidate.itinerary.legs, first_transit, only_transit=True
+            )
+
     message = (
         f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note}{live_note} "
-        f"from {candidate.origin_stop_name} departing at {candidate.transit_dep_time}. "
+        f"from {candidate.origin_stop_name} departing at {candidate.transit_dep_time}.{next_step_info} "
         f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
     )
 

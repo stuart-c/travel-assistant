@@ -30,6 +30,11 @@ from app.services.dispatcher.proximity import (
     is_person_near_origin,
     resolve_endpoint_coordinates,
 )
+from app.services.planner.models import (
+    ItineraryEndpoint,
+    ItineraryLeg,
+    ScheduledItinerary,
+)
 
 
 def _seed_commute_data() -> Journey:
@@ -701,6 +706,100 @@ def test_format_departure_notification_variations() -> None:
     assert title == "Travel Alert: Train Commute"
     assert "Leave by 08:14 (direct departure) for Rail (delayed by 6m)" in message
     assert "departing at 08:14" in message
+
+
+def test_format_departure_notification_multi_leg_connecting_train() -> None:
+    """Test format_departure_notification includes connecting train details when candidate has multi-leg itinerary."""
+    legs = [
+        ItineraryLeg(
+            leg_index=1,
+            mode="walk",
+            origin=ItineraryEndpoint(id="ha:office", name="Office"),
+            destination=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            dep_time="17:36",
+            arr_time="17:40",
+            duration_minutes=4,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="bus",
+            line="Shuttle Bus (Evening)",
+            operator=None,
+            origin=ItineraryEndpoint(id="ha:shuttle_bus", name="Shuttle Bus"),
+            destination=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH", name="Cambridge North Rail Station"
+            ),
+            dep_time="17:40",
+            arr_time="17:50",
+            duration_minutes=10,
+        ),
+        ItineraryLeg(
+            leg_index=3,
+            mode="rail",
+            line="Kings Lynn Rail Station to London Kings Cross Rail Station (Mon-Fri)",
+            operator="Great Northern",
+            origin=ItineraryEndpoint(
+                id="naptan:9100CAMBNTH", name="Cambridge North Rail Station"
+            ),
+            destination=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            dep_time="17:54",
+            arr_time="18:39",
+            duration_minutes=45,
+        ),
+        ItineraryLeg(
+            leg_index=4,
+            mode="walk",
+            origin=ItineraryEndpoint(
+                id="naptan:9100STEVNGE", name="Stevenage Rail Station"
+            ),
+            destination=ItineraryEndpoint(id="ha:home", name="Home"),
+            dep_time="18:39",
+            arr_time="18:45",
+            duration_minutes=6,
+        ),
+    ]
+    itin = ScheduledItinerary(
+        departure_time="17:36",
+        arrival_time="18:45",
+        total_duration_minutes=69,
+        transfers_count=2,
+        robustness_score="high",
+        legs=legs,
+    )
+    cand = DepartureCandidate(
+        journey_id=2,
+        journey_name="Evening Commute",
+        service_key="test_key_shuttle",
+        transit_mode="bus",
+        line_name="Shuttle Bus (Evening)",
+        operator_name=None,
+        origin_stop_name="Shuttle Bus",
+        origin_stop_id="ha:shuttle_bus",
+        dest_stop_name="Cambridge North Rail Station",
+        dest_stop_id="naptan:9100CAMBNTH",
+        final_dest_name="Home",
+        transit_dep_minutes=1060,
+        transit_dep_time="17:40",
+        walk_minutes=4,
+        leave_minutes=1056,
+        leave_time="17:36",
+        arrival_time="18:45",
+        notification_trigger_minutes=1041,
+        itinerary=itin,
+    )
+    title, message, data = format_departure_notification(cand)
+    assert title == "Travel Alert: Evening Commute"
+    assert (
+        "Leave by 17:36 (walk 4m) for Shuttle Bus (Evening) from Shuttle Bus departing at 17:40."
+        in message
+    )
+    assert (
+        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        in message
+    )
+    assert "Estimated arrival at Home by 18:45." in message
 
 
 def test_evaluator_journey_time_setting_types(app: Flask) -> None:

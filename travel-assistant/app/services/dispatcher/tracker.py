@@ -216,6 +216,96 @@ def _format_transit_service_desc(
     return mode_label
 
 
+def format_next_step_for_departure(
+    legs: List[ItineraryLeg],
+    current_transit_leg: Optional[ItineraryLeg] = None,
+    only_transit: bool = False,
+) -> str:
+    """Format next step instruction or connecting transit details for departure notifications.
+
+    When the current transit leg is followed by a subsequent transit service (e.g. a shuttle
+    bus connecting into mainline rail), details the next service's mode, line, operator,
+    origin, destination, and departure time in British English. If followed by a final walk
+    to destination, details the walking distance and destination when only_transit is False.
+    """
+    if not legs:
+        return ""
+
+    start_idx = 0
+    if current_transit_leg:
+        found_idx = None
+        for i, lg in enumerate(legs):
+            if lg is current_transit_leg or (
+                lg.mode == current_transit_leg.mode
+                and lg.origin.id == current_transit_leg.origin.id
+                and lg.destination.id == current_transit_leg.destination.id
+                and lg.dep_time == current_transit_leg.dep_time
+            ):
+                found_idx = i
+                break
+        if found_idx is not None:
+            start_idx = found_idx
+
+    remaining_legs = legs[start_idx + 1 :]
+    if not remaining_legs:
+        return ""
+
+    following_transit = next(
+        (lg for lg in remaining_legs if lg.mode not in FOOT_MODES),
+        None,
+    )
+
+    if following_transit:
+        transfer_desc = _format_transit_service_desc(
+            following_transit.mode,
+            following_transit.line,
+            following_transit.operator,
+        )
+        orig_name = (
+            following_transit.origin.name
+            if following_transit.origin and following_transit.origin.name
+            else ""
+        )
+        dest_name = (
+            following_transit.destination.name
+            if following_transit.destination and following_transit.destination.name
+            else ""
+        )
+        dep_time = following_transit.dep_time or ""
+        plat_str = ""
+        if following_transit.origin and following_transit.origin.platform:
+            plat_str = f" from Platform {following_transit.origin.platform}"
+
+        dep_part = f" departs at {dep_time}{plat_str}" if dep_time else plat_str
+
+        curr_orig = (
+            current_transit_leg.origin.name
+            if current_transit_leg and current_transit_leg.origin
+            else ""
+        )
+        if orig_name and orig_name != curr_orig:
+            if dest_name:
+                return f" Next step: {transfer_desc} from {orig_name} to {dest_name}{dep_part}."
+            return f" Next step: {transfer_desc} from {orig_name}{dep_part}."
+        elif dest_name:
+            return f" Next step: {transfer_desc} to {dest_name}{dep_part}."
+        elif orig_name:
+            return f" Next step: {transfer_desc} from {orig_name}{dep_part}."
+        return f" Next step: {transfer_desc}{dep_part}."
+
+    if not only_transit:
+        final_walk = next(
+            (lg for lg in remaining_legs if lg.mode in FOOT_MODES),
+            None,
+        )
+        if final_walk and final_walk.destination and final_walk.destination.name:
+            mins = final_walk.duration_minutes
+            walk_str = f"Walk {mins}m" if mins > 0 else "Walk"
+            return f" Next step: {walk_str} to {final_walk.destination.name}."
+
+    return ""
+
+
 def format_progress_notification(
     active: ActiveJourney,
 ) -> Tuple[str, str, Dict[str, Any]]:
@@ -264,9 +354,15 @@ def format_progress_notification(
         plat_note = f" (Platform {active.platform})" if active.platform else ""
         live_note = f" ({active.live_status})" if active.live_status else ""
 
+        next_step_info = ""
+        if first_transit:
+            next_step_info = format_next_step_for_departure(
+                active.legs, first_transit, only_transit=True
+            )
+
         message = (
             f"Leave by {leave_time_str} ({walk_info}) for {transit_desc}{plat_note}{live_note} "
-            f"from {origin_name} departing at {dep_time}. "
+            f"from {origin_name} departing at {dep_time}.{next_step_info} "
             f"Estimated arrival at {active.to_name} by {active.expected_arrival_time}."
         )
 
@@ -291,9 +387,14 @@ def format_progress_notification(
             else "Transit"
         )
         dep_time = next_transit.dep_time if next_transit else ""
+        next_step_info = (
+            format_next_step_for_departure(active.legs, next_transit, only_transit=True)
+            if next_transit
+            else ""
+        )
         message = (
             f"On your way to {stop_name}. "
-            f"{line_desc} departs at {dep_time}. "
+            f"{line_desc} departs at {dep_time}.{next_step_info} "
             f"Destination: {active.to_name}."
         )
 
@@ -310,6 +411,13 @@ def format_progress_notification(
                 None,
             )
         )
+        next_step_info = (
+            format_next_step_for_departure(
+                active.legs, active_transit, only_transit=False
+            )
+            if active_transit
+            else ""
+        )
         if active_transit and active_transit.mode == "rail":
             plat_info = (
                 f"Platform {active.platform}"
@@ -323,7 +431,7 @@ def format_progress_notification(
             message = (
                 f"At {active_transit.origin.name}. "
                 f"{line_desc} to {active_transit.destination.name} departs at "
-                f"{active_transit.dep_time} from {plat_info}{live_note}."
+                f"{active_transit.dep_time} from {plat_info}{live_note}.{next_step_info}"
             )
         elif active_transit:
             line_desc = _format_transit_service_desc(
@@ -331,7 +439,7 @@ def format_progress_notification(
             )
             message = (
                 f"At {active_transit.origin.name}. "
-                f"{line_desc} to {active_transit.destination.name} departs at {active_transit.dep_time}."
+                f"{line_desc} to {active_transit.destination.name} departs at {active_transit.dep_time}.{next_step_info}"
             )
         else:
             message = f"At departure stop for {active.to_name}."
@@ -809,7 +917,7 @@ def update_journey_progress(
     target_rail_leg = None
     if current_leg and current_leg.mode == "rail":
         target_rail_leg = current_leg
-    elif current_leg and current_leg.mode in FOOT_MODES:
+    else:
         target_rail_leg = next(
             (lg for lg in active.legs[active.current_leg_index :] if lg.mode == "rail"),
             None,
@@ -822,10 +930,19 @@ def update_journey_progress(
             scheduled_time=target_rail_leg.dep_time,
             live_client=live_client,
         )
-        if plat and plat != active.platform:
-            active.platform = plat
+        if plat:
+            target_rail_leg.origin.platform = plat
+            if (
+                current_leg
+                and (current_leg.mode == "rail" or current_leg.mode in FOOT_MODES)
+                and plat != active.platform
+            ):
+                active.platform = plat
         if live_stat:
-            active.live_status = live_stat
+            if current_leg and (
+                current_leg.mode == "rail" or current_leg.mode in FOOT_MODES
+            ):
+                active.live_status = live_stat
 
     title, new_msg, data = format_progress_notification(active)
 
@@ -1792,6 +1909,7 @@ def get_journey_live_tracking_data(
 __all__ = [
     "ActiveJourney",
     "JourneyStepStatus",
+    "format_next_step_for_departure",
     "format_progress_notification",
     "resolve_live_rail_platform",
     "update_journey_progress",
