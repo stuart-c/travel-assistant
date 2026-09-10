@@ -23,7 +23,6 @@ from app.services.planner.models import (
     ItineraryLeg,
     ScheduledItinerary,
 )
-from app.services.planner.route_finder import find_routes
 from app.services.planner.transfers import (
     format_minutes_to_time,
     get_access_edges,
@@ -150,6 +149,67 @@ def _extract_parsed_trips(timetables: List[Timetable]) -> List[_ParsedTrip]:
             )
 
     return parsed_trips
+
+
+def _check_corridor_connectivity(
+    origin_walks: List[Tuple[str, str, str, str, int, str]],
+    dest_walks: List[Tuple[str, str, str, str, int, str]],
+    trips: List[_ParsedTrip],
+) -> bool:
+    """Fast topological reachability check from origin access stops to destination access stops.
+
+    Performs a BFS across transit stop sequence transitions, interchanges, and walking links
+    to determine if a topological corridor exists without running expensive Yen shortest path routing.
+    """
+    origin_stops = {normalise_id(w[3]) for w in origin_walks if len(w) >= 4}
+    dest_stops = {normalise_id(w[1]) for w in dest_walks if len(w) >= 2}
+
+    if not origin_stops or not dest_stops:
+        return False
+
+    # Check for direct overlap (e.g. starting directly at destination stop)
+    if origin_stops & dest_stops:
+        return True
+
+    # Build adjacency list across all active trips
+    adj: Dict[str, Set[str]] = {}
+    for tr in trips:
+        for i in range(len(tr.stops) - 1):
+            u = normalise_id(tr.stops[i])
+            v = normalise_id(tr.stops[i + 1])
+            if u != v:
+                adj.setdefault(u, set()).add(v)
+
+    # Interchanges
+    for si in StopInterchange.select():
+        u = normalise_id(si.from_stop_atco)
+        v = normalise_id(si.to_stop_atco)
+        if u != v:
+            adj.setdefault(u, set()).add(v)
+
+    # Walking links (e.g. transfer between stations)
+    for w in Walking.select():
+        u = normalise_id(w.start_id)
+        v = normalise_id(w.finish_id)
+        if u != v:
+            adj.setdefault(u, set()).add(v)
+            if w.bidirectional:
+                adj.setdefault(v, set()).add(u)
+
+    # BFS from all origin stops
+    queue = list(origin_stops)
+    visited = set(origin_stops)
+
+    while queue:
+        curr = queue.pop(0)
+        for nxt in adj.get(curr, ()):
+            if nxt in dest_stops:
+                return True
+            if nxt not in visited:
+                visited.add(nxt)
+                queue.append(nxt)
+
+    return False
 
 
 def plan_journey(
@@ -358,8 +418,7 @@ def plan_journey(
                 candidate_itineraries.append(itinerary)
 
     if not candidate_itineraries:
-        try:
-            find_routes(f_type, f_id, t_type, t_id, days_of_week, target_date)
+        if _check_corridor_connectivity(origin_walks, dest_walks, trips):
             raise NoTripsInWindowError(
                 f"Corridor exists, but no trips operate in the time window '{time_str}'.",
                 {
@@ -368,8 +427,10 @@ def plan_journey(
                     "active_days": active_days,
                 },
             )
-        except (NoAccessStopsError, NoCorridorPathError):
-            raise
+        raise NoCorridorPathError(
+            f"No viable transit corridor connects origin '{f_id}' to destination '{t_id}'.",
+            {"from_id": f_id, "to_id": t_id, "active_days": active_days},
+        )
 
     unique_itineraries: List[ScheduledItinerary] = []
     seen_itineraries: Set[str] = set()

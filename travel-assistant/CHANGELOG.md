@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
 
 ### Fixed
+- Fixed journey progress forward leg tracking and transfer notification formatting (`app/services/dispatcher/tracker.py`, `app/tests/test_journey_tracker.py`):
+  - Added forward leg scanning in `update_journey_progress` evaluating future transit corridors and destination proximity, automatically advancing `current_leg_index` when boarding transit before an intermediate GPS point is captured (e.g. bypassing an interchange stop at Stevenage).
+  - Unified foot and transfer modes (`walk`, `walking`, `foot`, `interchange`, `platform_transfer`) under `FOOT_MODES`, preventing transfer legs from erroneously triggering in-vehicle transit states ("On board Interchange").
+  - Refined transit service descriptions in notifications to strip raw timetable route titles and operational day suffixes (e.g. `(Mon-Fri)`), generating clean operator and destination descriptions ("Great Northern train towards Cambridge Rail Station").
+- Fixed background dispatcher lockup and RAPTOR fallback performance (`app/services/planner/raptor.py`, `app/services/planner/route_finder.py`):
+  - Replaced expensive fallback `find_routes` call in `plan_journey` with a fast BFS corridor connectivity check (`_check_corridor_connectivity`), eliminating 3-minute Gunicorn and dispatcher freezes when evaluating off-peak or windowed queries.
+  - Optimised same-station rail platform transfer generation in `find_routes` by grouping nodes by normalised ID ($O(K)$ instead of $O(N^2)$) and avoided redundant Yen shortest path searches when candidate corridors have already been identified.
+
 - Fixed Linux OOM crash and high memory consumption on `/journey` and `/api/journey/live` (`app/services/planner/transfers.py`, `app/services/planner/raptor.py`, `app/services/planner/route_finder.py`, `app/services/dispatcher/tracker.py`):
   - Added SQL-level date range and day-of-week pre-filtering via `get_active_timetables`, replacing memory-exhaustive `Timetable.select()` scans across all 7,818 network timetables.
   - Implemented 60-second in-memory trip and timetable stop caching (`_TRIPS_CACHE`) in RAPTOR and itinerary caching (`_UPCOMING_ITINERARY_CACHE`) in `tracker.py` to prevent repeated planner recalculations on 10-second live polling.
