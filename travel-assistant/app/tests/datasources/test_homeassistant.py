@@ -346,3 +346,24 @@ def test_ha_send_mobile_notification(mock_call: MagicMock) -> None:
             "data": {"url": "/"},
         },
     )
+
+
+@patch.object(HomeAssistantClient, "call_service")
+def test_ha_clear_mobile_notification(mock_call: MagicMock) -> None:
+    """Test clear_mobile_notification packages clear_notification payload with tag."""
+    mock_call.return_value = True
+    client = HomeAssistantClient(token="valid-token")
+
+    res = client.clear_mobile_notification(
+        tag="journey_1",
+        service_name="mobile_app_stuart_mobile",
+    )
+    assert res is True
+    mock_call.assert_called_once_with(
+        "notify",
+        "mobile_app_stuart_mobile",
+        {
+            "message": "clear_notification",
+            "data": {"tag": "journey_1"},
+        },
+    )

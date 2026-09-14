@@ -9,6 +9,7 @@ from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey
 from app.services.dispatcher.evaluator import (
     evaluate_journey_notification,
+    find_next_departure_candidate,
     format_departure_notification,
 )
 from app.services.dispatcher.monitor import get_departure_monitor
@@ -86,6 +87,13 @@ def dispatcher_evaluate(journey_id: int) -> Dict[str, Any]:
         sent_keys=sent_keys,
         live_client=live_client,
     )
+    if not candidate:
+        candidate = find_next_departure_candidate(
+            journey=journey,
+            dt=now,
+            exclude_service_keys=sent_keys,
+            live_client=live_client,
+        )
 
     if not candidate:
         return {
@@ -103,12 +111,10 @@ def dispatcher_evaluate(journey_id: int) -> Dict[str, Any]:
         "evaluated_at": now.isoformat(),
         "candidate": {
             "service_key": candidate.service_key,
-            "leave_time": (
-                candidate.leave_time.isoformat() if candidate.leave_time else None
-            ),
-            "departure_time": candidate.departure_time,
+            "leave_time": candidate.leave_time,
+            "departure_time": candidate.transit_dep_time,
             "arrival_time": candidate.arrival_time,
-            "transport_type": candidate.transport_type,
+            "transport_type": candidate.transit_mode,
             "line_name": candidate.line_name,
             "platform": candidate.platform,
             "delay_minutes": candidate.delay_minutes,
@@ -139,6 +145,13 @@ def dispatcher_test_notification(journey_id: int) -> Dict[str, Any]:
         sent_keys=set(),
         live_client=live_client,
     )
+    if not candidate:
+        candidate = find_next_departure_candidate(
+            journey=journey,
+            dt=now,
+            exclude_service_keys=set(),
+            live_client=live_client,
+        )
 
     if not candidate:
         title = f"Test Alert: {journey.name}"

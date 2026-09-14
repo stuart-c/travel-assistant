@@ -13,7 +13,11 @@ from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey
 from app.models.setting import Setting
-from app.services.dispatcher.evaluator import is_journey_active_for_datetime
+from app.services.dispatcher.evaluator import (
+    find_next_departure_candidate,
+    format_departure_notification,
+    is_journey_active_for_datetime,
+)
 from app.services.dispatcher.proximity import (
     haversine_distance,
     is_person_near_origin,
@@ -557,6 +561,8 @@ def update_journey_progress(
     ha_client: HomeAssistantClient,
     live_client: Optional[TrainLiveClient] = None,
     max_proximity_metres: float = 200.0,
+    sent_keys: Optional[Set[str]] = None,
+    target_notify_service: str = "mobile_app_stuart_mobile",
 ) -> bool:
     """Evaluate Stuart's location against journey stages and dispatch notification updates.
 
@@ -591,9 +597,96 @@ def update_journey_progress(
         if dep_m is not None:
             leave_m = dep_m - walk_mins
             if current_minutes > leave_m + 2:
-                # Stuart did not leave on time; expire active journey to allow next candidate evaluation
-                active.current_status = JourneyStepStatus.EXPIRED
-                return False
+                # Check if Stuart is still at origin
+                still_at_origin = is_person_near_origin(
+                    person_state=person_state,
+                    from_type=active.from_type,
+                    from_id=active.from_id,
+                    max_distance_metres=max_proximity_metres,
+                )
+                if still_at_origin:
+                    # Stuart remained at origin past leave time; search for next viable candidate
+                    try:
+                        journey = Journey.get_by_id(active.journey_id)
+                    except Exception:
+                        journey = None
+
+                    exclude_keys = set(sent_keys) if sent_keys else set()
+                    if first_transit and first_transit.dep_time:
+                        curr_key = (
+                            f"j{active.journey_id}_{first_transit.mode}_{first_transit.line or 'direct'}_"
+                            f"{first_transit.dep_time}_{current_dt.date().isoformat()}"
+                        )
+                        exclude_keys.add(curr_key)
+
+                    next_candidate = (
+                        find_next_departure_candidate(
+                            journey=journey,
+                            dt=current_dt,
+                            exclude_service_keys=exclude_keys,
+                            live_client=live_client,
+                        )
+                        if journey
+                        else None
+                    )
+
+                    if next_candidate:
+                        active.itinerary = next_candidate.itinerary
+                        active.legs = list(next_candidate.itinerary.legs)
+                        active.expected_arrival_time = next_candidate.arrival_time
+                        active.current_leg_index = 0
+                        active.platform = next_candidate.platform
+                        active.live_status = None
+
+                        title, new_msg, data = format_departure_notification(
+                            next_candidate
+                        )
+                        try:
+                            ha_client.send_mobile_notification(
+                                title=title,
+                                message=new_msg,
+                                service_name=target_notify_service,
+                                data=data,
+                            )
+                            active.last_notification_message = new_msg
+                            if sent_keys is not None:
+                                sent_keys.add(next_candidate.service_key)
+                            logger.info(
+                                "Stuart remained at origin past leave time for journey %d (%s). "
+                                "Rolled over to next departure at %s: %s",
+                                active.journey_id,
+                                active.journey_name,
+                                next_candidate.transit_dep_time,
+                                new_msg,
+                            )
+                            return True
+                        except Exception as exc:
+                            logger.error(
+                                "Failed to dispatch rollover departure notification for journey %d: %s",
+                                active.journey_id,
+                                exc,
+                            )
+                            return False
+                    else:
+                        # No further viable departure options within the journey time window
+                        active.current_status = JourneyStepStatus.EXPIRED
+                        try:
+                            ha_client.clear_mobile_notification(
+                                tag=f"journey_{active.journey_id}",
+                                service_name=target_notify_service,
+                            )
+                            logger.info(
+                                "Commute window closed for journey %d (%s); no further viable departures. Cleared notification.",
+                                active.journey_id,
+                                active.journey_name,
+                            )
+                        except Exception as exc:
+                            logger.debug(
+                                "Failed to clear mobile notification on expiry for journey %d: %s",
+                                active.journey_id,
+                                exc,
+                            )
+                        return False
 
     # Check if Stuart has arrived at the final destination (only once journey has started)
     if active.current_status != JourneyStepStatus.PRE_DEPARTURE:
