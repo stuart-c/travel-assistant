@@ -1,24 +1,35 @@
 """Comprehensive unit tests for Stuart's journey tracking and live progress updates."""
 
 import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from flask import Flask
 
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
+from app.models.journey import Journey
 from app.models.location import Location
 from app.models.setting import Setting
+from app.models.timetable import (
+    Timetable,
+    TimetableContent,
+    TimetableStop,
+    TimetableTrip,
+)
 from app.models.transit import Stop
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
     LiveRailStatus,
     _format_transit_service_desc,
+    _realign_active_journey_timings,
+    clear_active_journey_session,
     detect_en_route_journey,
     format_next_step_for_departure,
     format_progress_notification,
     get_journey_live_tracking_data,
+    load_active_journey_sessions,
     resolve_live_rail_platform,
+    save_active_journey_session,
     update_journey_progress,
 )
 from app.services.planner.models import (
@@ -1749,3 +1760,293 @@ def test_format_progress_notification_at_departure_stop_connecting_train() -> No
         "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
         in msg_en_route
     )
+
+
+def test_format_progress_notification_bus_interchange_no_platform() -> None:
+    """Test AT_INTERCHANGE for bus does not include 'Platform' or 'Platform to be announced'."""
+    active = _create_sample_active_journey(with_rail=False)
+    active.current_status = JourneyStepStatus.AT_INTERCHANGE
+    active.current_leg_index = 1
+    active.platform = None
+    _, msg, _ = format_progress_notification(active)
+    assert "Platform" not in msg
+    assert "Transfer at King's Cross (Stop E): Board Bus 73 departing at 08:08." in msg
+
+    # Even if active.platform was mistakenly populated with a rail platform number, bus ignores it
+    active.platform = "3"
+    _, msg_ignored, _ = format_progress_notification(active)
+    assert "Platform" not in msg_ignored
+
+    # But if active.platform has a stand / stop indicator, it is formatted gracefully
+    active.platform = "Stop G"
+    _, msg_stand, _ = format_progress_notification(active)
+    assert "from Stop G" in msg_stand
+
+
+def test_format_progress_notification_evening_home_arrival_greeting() -> None:
+    """Test ARRIVED notification uses actual arrival time and evening home greeting."""
+    active = _create_sample_active_journey(with_rail=True)
+    active.to_name = "Home"
+    active.to_id = "ha:home"
+    active.journey_name = "Commute Home"
+    active.current_status = JourneyStepStatus.ARRIVED
+    active.expected_arrival_time = "18:07"
+
+    # Evening arrival at 18:46
+    evening_dt = datetime.datetime(2026, 9, 14, 18, 46)
+    _, msg_evening, _ = format_progress_notification(active, current_dt=evening_dt)
+    assert "Arrived at Home (18:46)." in msg_evening
+    assert "Welcome home! Have a pleasant evening." in msg_evening
+
+    # Morning office arrival at 08:28
+    active_office = _create_sample_active_journey(with_rail=True)
+    active_office.to_name = "Tech Campus"
+    active_office.current_status = JourneyStepStatus.ARRIVED
+    active_office.expected_arrival_time = "08:28"
+    morning_dt = datetime.datetime(2026, 9, 14, 8, 28)
+    _, msg_morning, _ = format_progress_notification(
+        active_office, current_dt=morning_dt
+    )
+    assert "Arrived at Tech Campus (08:28)." in msg_morning
+    assert "Have a great day!" in msg_morning
+
+
+def test_resolve_live_rail_platform_past_scheduled_fallback() -> None:
+    """Test resolve_live_rail_platform falls back to next upcoming departure if scheduled time is past."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    mock_live.get_fastest_departures.return_value = [
+        {
+            "std": "17:14",
+            "etd": "On time",
+            "platform": "1",
+            "delayReason": None,
+            "cancelReason": None,
+            "isCancelled": False,
+        },
+        {
+            "std": "17:21",
+            "etd": "17:25",
+            "platform": "4",
+            "delayReason": "a track fault",
+            "cancelReason": None,
+            "isCancelled": False,
+        },
+    ]
+
+    # Stuart was looking for a stale 16:51 departure
+    status = resolve_live_rail_platform(
+        origin_id="naptan:CBG",
+        dest_id="naptan:SVG",
+        scheduled_time="16:51",
+        live_client=mock_live,
+    )
+    assert status.platform == "1"
+    assert status.std == "17:14"
+    assert status.etd == "On time"
+
+
+def test_active_journey_session_persistence_roundtrip(app: Flask) -> None:
+    """Test saving, loading, and clearing active journey sessions via Setting storage."""
+    with app.app_context():
+        active = _create_sample_active_journey(journey_id=99, with_rail=True)
+        active.current_status = JourneyStepStatus.ON_TRANSIT
+        active.current_leg_index = 1
+        active.platform = "4"
+        active.live_status = "On time"
+
+        save_active_journey_session(active)
+
+        sessions = load_active_journey_sessions()
+        assert 99 in sessions
+        loaded = sessions[99]
+        assert loaded.journey_id == 99
+        assert loaded.journey_name == "Daily Office Commute"
+        assert loaded.current_status == JourneyStepStatus.ON_TRANSIT
+        assert loaded.current_leg_index == 1
+        assert loaded.platform == "4"
+        assert loaded.live_status == "On time"
+        assert len(loaded.legs) == len(active.legs)
+
+        clear_active_journey_session(99)
+        sessions_after = load_active_journey_sessions()
+        assert 99 not in sessions_after
+
+
+def test_realign_active_journey_timings_bus_and_downstream_egress(app: Flask) -> None:
+    """Test realigning past timetable bus departure to next trip and updating egress walk ETA."""
+    with app.app_context():
+        # Seed bus timetable with trips at 17:43 and 18:20
+        Timetable.create(
+            name="73",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            saturday=True,
+            sunday=True,
+            content=TimetableContent(
+                stops=[
+                    TimetableStop(id="490000077E", name="King's Cross (Stop E)"),
+                    TimetableStop(id="490000077C", name="Euston Station (Stop C)"),
+                ],
+                trips=[
+                    TimetableTrip(id="t1", times=["17:43", "18:03"]),
+                    TimetableTrip(id="t2", times=["18:20", "18:40"]),
+                ],
+            ),
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="bus",
+                origin=ItineraryEndpoint(id="490000077E", name="King's Cross (Stop E)"),
+                destination=ItineraryEndpoint(
+                    id="490000077C", name="Euston Station (Stop C)"
+                ),
+                dep_time="17:43",
+                arr_time="18:03",
+                duration_minutes=20,
+                line="73",
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="walk",
+                origin=ItineraryEndpoint(
+                    id="490000077C", name="Euston Station (Stop C)"
+                ),
+                destination=ItineraryEndpoint(id="ha:home", name="Home"),
+                dep_time="18:03",
+                arr_time="18:07",
+                duration_minutes=4,
+            ),
+        ]
+        itin = ScheduledItinerary(
+            departure_time="17:43",
+            arrival_time="18:07",
+            total_duration_minutes=24,
+            transfers_count=0,
+            robustness_score="high",
+            legs=legs,
+        )
+        active = ActiveJourney(
+            journey_id=2,
+            journey_name="Commute Home",
+            from_type="bus",
+            from_id="490000077E",
+            from_name="King's Cross (Stop E)",
+            to_type="ha",
+            to_id="ha:home",
+            to_name="Home",
+            itinerary=itin,
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.AT_INTERCHANGE,
+            expected_arrival_time="18:07",
+        )
+
+        # Commuter arrives at interchange at 18:00 (past 17:43 bus departure)
+        dt_1800 = datetime.datetime(2026, 9, 14, 18, 0)
+        _realign_active_journey_timings(active, dt_1800)
+
+        assert active.legs[0].dep_time == "18:20"
+        assert active.legs[0].arr_time == "18:40"
+        # Downstream egress walking leg propagated
+        assert active.legs[1].dep_time == "18:40"
+        assert active.legs[1].arr_time == "18:44"
+        assert active.expected_arrival_time == "18:44"
+
+        # Check formatted notification
+        _, msg, _ = format_progress_notification(active, current_dt=dt_1800)
+        assert "departing at 18:20" in msg
+        assert "Platform" not in msg
+
+
+def test_detect_en_route_journey_rejects_expired_connecting_transit_leg(
+    app: Flask,
+) -> None:
+    """Test detect_en_route_journey rejects candidate itineraries whose connecting train has already passed."""
+    with app.app_context():
+        # Setup stops using generic London rail locations
+        Stop.create(
+            atco_code="9100KINGSX",
+            naptan_code="9100KINGSX",
+            name="London King's Cross",
+            locality="London",
+            stop_type="rail",
+            latitude=51.531,
+            longitude=-0.123,
+        )
+        Stop.create(
+            atco_code="9100FPK",
+            naptan_code="9100FPK",
+            name="Finsbury Park",
+            locality="London",
+            stop_type="rail",
+            latitude=51.564,
+            longitude=-0.106,
+        )
+        # Commuter is at London King's Cross at 17:16 (past 16:51 connecting train)
+        person_state = {
+            "entity_id": "person.commuter",
+            "state": "not_home",
+            "attributes": {"latitude": 51.531, "longitude": -0.123},
+        }
+        dt_1716 = datetime.datetime(2026, 9, 14, 17, 16)
+
+        mock_live = MagicMock(spec=TrainLiveClient)
+        mock_live.get_fastest_departures.return_value = []
+
+        journey = Journey.create(
+            name="Commute Home",
+            from_type="ha",
+            from_id="ha:office",
+            from_name="London Office",
+            to_type="ha",
+            to_id="ha:home",
+            to_name="Home",
+            primary_mode="rail",
+        )
+
+        # Plan journey returning expired connecting leg at 16:51
+        expired_itin = ScheduledItinerary(
+            departure_time="16:40",
+            arrival_time="18:07",
+            total_duration_minutes=87,
+            transfers_count=1,
+            robustness_score="medium",
+            legs=[
+                ItineraryLeg(
+                    leg_index=0,
+                    mode="bus",
+                    origin=ItineraryEndpoint(id="ha:office", name="London Office"),
+                    destination=ItineraryEndpoint(
+                        id="9100KINGSX", name="London King's Cross"
+                    ),
+                    dep_time="16:40",
+                    arr_time="16:50",
+                    duration_minutes=10,
+                ),
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="rail",
+                    origin=ItineraryEndpoint(
+                        id="9100KINGSX", name="London King's Cross"
+                    ),
+                    destination=ItineraryEndpoint(id="9100FPK", name="Finsbury Park"),
+                    dep_time="16:51",
+                    arr_time="17:35",
+                    duration_minutes=44,
+                ),
+            ],
+        )
+
+        with patch(
+            "app.services.planner.raptor.plan_journey", return_value=[expired_itin]
+        ):
+            recovered = detect_en_route_journey(
+                journey, person_state, dt_1716, live_client=mock_live
+            )
+            assert recovered is None

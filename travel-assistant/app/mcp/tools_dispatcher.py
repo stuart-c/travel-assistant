@@ -41,7 +41,11 @@ def dispatcher_get_status() -> Dict[str, Any]:
             active_summary.append(
                 {
                     "journey_id": j_id,
-                    "journey_name": active.journey.name if active.journey else None,
+                    "journey_name": (
+                        active.journey_name
+                        if hasattr(active, "journey_name")
+                        else getattr(getattr(active, "journey", None), "name", None)
+                    ),
                     "status": (
                         active.current_status.value
                         if active.current_status
@@ -191,13 +195,14 @@ def dispatcher_reset_session(journey_id: Optional[int] = None) -> Dict[str, Any]
         return {"error": "Departure monitor is not running."}
 
     if journey_id is not None:
-        removed = monitor.active_journeys.pop(journey_id, None)
+        was_active = journey_id in monitor.active_journeys
+        monitor.reset_journey_session(journey_id)
         return {
             "success": True,
             "reset_journey_id": journey_id,
-            "was_active": removed is not None,
+            "was_active": was_active,
         }
 
     cleared_count = len(monitor.active_journeys)
-    monitor.active_journeys.clear()
+    monitor.reset_journey_session(None)
     return {"success": True, "cleared_count": cleared_count}

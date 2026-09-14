@@ -158,6 +158,7 @@ activemq-data/
 .git_repo/
 .git_local/
 .gh_token
+auth.txt
 
 # Local test data & artifacts
 test_data/
