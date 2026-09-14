@@ -62,6 +62,19 @@ class JourneyStepStatus(str, Enum):
 
 
 @dataclass
+class LiveRailStatus:
+    """Real-time platform, departure timing, and service disruption status."""
+
+    platform: Optional[str] = None
+    std: Optional[str] = None
+    etd: Optional[str] = None
+    delay_minutes: int = 0
+    delay_reason: Optional[str] = None
+    is_cancelled: bool = False
+    cancel_reason: Optional[str] = None
+
+
+@dataclass
 class ActiveJourney:
     """State of an in-progress journey being tracked for Stuart."""
 
@@ -82,6 +95,8 @@ class ActiveJourney:
     last_notification_message: Optional[str] = None
     platform: Optional[str] = None
     live_status: Optional[str] = None
+    delay_minutes: int = 0
+    delay_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.legs and self.itinerary and self.itinerary.legs:
@@ -90,19 +105,35 @@ class ActiveJourney:
             self.expected_arrival_time = self.itinerary.arrival_time
 
 
+def _clean_delay_reason(reason: Optional[str]) -> Optional[str]:
+    """Clean and standardise National Rail Darwin delay/cancellation reason phrases."""
+    if not reason:
+        return None
+    cleaned = reason.strip()
+    cleaned = re.sub(r"<[^>]+>", "", cleaned).strip()
+    cleaned = re.sub(
+        r"^(?:this\s+(?:service|train)\s+has\s+been\s+(?:delayed|cancelled)\s+(?:by|due\s+to|because\s+of)\s+|(?:delayed|cancelled)\s+(?:by|due\s+to|because\s+of)\s+)",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    cleaned = cleaned.rstrip(". ")
+    return cleaned if cleaned else None
+
+
 def resolve_live_rail_platform(
     origin_id: str,
     dest_id: str,
     scheduled_time: str,
     live_client: Optional[TrainLiveClient] = None,
-) -> Tuple[Optional[str], Optional[str]]:
+) -> LiveRailStatus:
     """Probe Darwin Live Departure Boards for real-time platform and service status."""
     if not live_client:
-        return None, None
+        return LiveRailStatus()
 
     crs = resolve_station_crs(origin_id)
     if not crs:
-        return None, None
+        return LiveRailStatus()
 
     dest_crs = resolve_station_crs(dest_id)
     filter_list = [dest_crs] if dest_crs else None
@@ -110,18 +141,56 @@ def resolve_live_rail_platform(
     try:
         departures = live_client.get_fastest_departures(crs, filter_list)
         if departures and isinstance(departures, list):
-            for dep in departures:
-                std = dep.get("std")
-                if std == scheduled_time or not scheduled_time:
-                    platform = dep.get("platform")
-                    etd = dep.get("etd")
-                    plat_str = str(platform).strip() if platform else None
-                    status_str = str(etd).strip() if etd else None
-                    return plat_str, status_str
+            target_dep = None
+            if scheduled_time:
+                sched_min = parse_time_to_minutes(scheduled_time)
+                # 1. Exact match on scheduled departure time (std)
+                for dep in departures:
+                    if dep.get("std") == scheduled_time:
+                        target_dep = dep
+                        break
+                # 2. Tolerant match within +/- 3 minutes for minor timetable variations
+                if not target_dep and sched_min is not None:
+                    for dep in departures:
+                        std = dep.get("std")
+                        std_m = parse_time_to_minutes(std) if std else None
+                        if std_m is not None and abs(std_m - sched_min) <= 3:
+                            target_dep = dep
+                            break
+            elif departures:
+                target_dep = departures[0]
+
+            if target_dep:
+                platform = target_dep.get("platform")
+                etd = target_dep.get("etd")
+                std = target_dep.get("std")
+                raw_delay_reason = target_dep.get("delayReason")
+                raw_cancel_reason = target_dep.get("cancelReason")
+                is_cancelled = bool(target_dep.get("isCancelled"))
+
+                delay_mins = 0
+                if std and etd and etd not in ("On time", "Delayed", "Cancelled"):
+                    std_m = parse_time_to_minutes(std)
+                    etd_m = parse_time_to_minutes(etd)
+                    if std_m is not None and etd_m is not None:
+                        delay_mins = max(0, etd_m - std_m)
+
+                cleaned_delay_reason = _clean_delay_reason(raw_delay_reason)
+                cleaned_cancel_reason = _clean_delay_reason(raw_cancel_reason)
+
+                return LiveRailStatus(
+                    platform=str(platform).strip() if platform else None,
+                    std=str(std).strip() if std else None,
+                    etd=str(etd).strip() if etd else None,
+                    delay_minutes=delay_mins,
+                    delay_reason=cleaned_delay_reason,
+                    is_cancelled=is_cancelled,
+                    cancel_reason=cleaned_cancel_reason,
+                )
     except Exception as exc:
         logger.debug("Live platform probe skipped for %s: %s", crs, exc)
 
-    return None, None
+    return LiveRailStatus()
 
 
 def _format_transit_service_desc(
@@ -277,6 +346,28 @@ def format_next_step_for_departure(
     return ""
 
 
+def _format_departure_timing_with_delay(
+    dep_time: str,
+    live_status: Optional[str] = None,
+    delay_reason: Optional[str] = None,
+) -> str:
+    """Format scheduled departure time alongside live expected timing and delay reasons."""
+    if not live_status or live_status == "On time":
+        status_suffix = " (on time)" if live_status == "On time" else ""
+        return f"{dep_time}{status_suffix}"
+
+    reason_clause = f" due to {delay_reason}" if delay_reason else ""
+
+    if live_status == "Delayed":
+        return f"{dep_time} (delayed{reason_clause})"
+
+    # When live_status is an expected departure time string (e.g. "08:38")
+    if ":" in live_status:
+        return f"{dep_time} (delayed to {live_status}{reason_clause})"
+
+    return f"{dep_time} ({live_status}{reason_clause})"
+
+
 def format_progress_notification(
     active: ActiveJourney,
 ) -> Tuple[str, str, Dict[str, Any]]:
@@ -323,7 +414,11 @@ def format_progress_notification(
         leave_time_str = format_minutes_to_time(leave_min)
 
         plat_note = f" (Platform {active.platform})" if active.platform else ""
-        live_note = f" ({active.live_status})" if active.live_status else ""
+        dep_desc = _format_departure_timing_with_delay(
+            dep_time=dep_time,
+            live_status=active.live_status,
+            delay_reason=active.delay_reason,
+        )
 
         next_step_info = ""
         if first_transit:
@@ -332,8 +427,8 @@ def format_progress_notification(
             )
 
         message = (
-            f"Leave by {leave_time_str} ({walk_info}) for {transit_desc}{plat_note}{live_note} "
-            f"from {origin_name} departing at {dep_time}.{next_step_info} "
+            f"Leave by {leave_time_str} ({walk_info}) for {transit_desc}{plat_note} "
+            f"from {origin_name} departing at {dep_desc}.{next_step_info} "
             f"Estimated arrival at {active.to_name} by {active.expected_arrival_time}."
         )
 
@@ -363,9 +458,15 @@ def format_progress_notification(
             if next_transit
             else ""
         )
+        dep_desc = _format_departure_timing_with_delay(
+            dep_time=dep_time,
+            live_status=active.live_status,
+            delay_reason=active.delay_reason,
+        )
+        plat_note = f" (Platform {active.platform})" if active.platform else ""
         message = (
             f"On your way to {stop_name}. "
-            f"{line_desc} departs at {dep_time}.{next_step_info} "
+            f"{line_desc}{plat_note} departs at {dep_desc}.{next_step_info} "
             f"Destination: {active.to_name}."
         )
 
@@ -395,22 +496,31 @@ def format_progress_notification(
                 if active.platform
                 else "Platform to be announced"
             )
-            live_note = f" ({active.live_status})" if active.live_status else ""
+            dep_desc = _format_departure_timing_with_delay(
+                dep_time=active_transit.dep_time,
+                live_status=active.live_status,
+                delay_reason=active.delay_reason,
+            )
             line_desc = _format_transit_service_desc(
                 active_transit.mode, active_transit.line, active_transit.operator
             )
             message = (
                 f"At {active_transit.origin.name}. "
                 f"{line_desc} to {active_transit.destination.name} departs at "
-                f"{active_transit.dep_time} from {plat_info}{live_note}.{next_step_info}"
+                f"{dep_desc} from {plat_info}.{next_step_info}"
             )
         elif active_transit:
             line_desc = _format_transit_service_desc(
                 active_transit.mode, active_transit.line, active_transit.operator
             )
+            dep_desc = _format_departure_timing_with_delay(
+                dep_time=active_transit.dep_time,
+                live_status=active.live_status,
+                delay_reason=active.delay_reason,
+            )
             message = (
                 f"At {active_transit.origin.name}. "
-                f"{line_desc} to {active_transit.destination.name} departs at {active_transit.dep_time}.{next_step_info}"
+                f"{line_desc} to {active_transit.destination.name} departs at {dep_desc}.{next_step_info}"
             )
         else:
             message = f"At departure stop for {active.to_name}."
@@ -482,11 +592,15 @@ def format_progress_notification(
                 plat_info = (
                     f" from Platform {active.platform}" if active.platform else ""
                 )
-                live_note = f" ({active.live_status})" if active.live_status else ""
+                dep_desc = _format_departure_timing_with_delay(
+                    dep_time=next_transit.dep_time,
+                    live_status=active.live_status,
+                    delay_reason=active.delay_reason,
+                )
                 message = (
                     f"Transfer at {current_leg.origin.name}: "
                     f"Walk to {current_leg.destination.name} to board {transfer_desc} "
-                    f"departing at {next_transit.dep_time}{plat_info}{live_note}."
+                    f"departing at {dep_desc}{plat_info}."
                 )
             else:
                 message = f"Transfer at {current_leg.origin.name}: Walk to {current_leg.destination.name}."
@@ -502,10 +616,14 @@ def format_progress_notification(
                 if active.platform
                 else "Platform to be announced"
             )
-            live_note = f" ({active.live_status})" if active.live_status else ""
+            dep_desc = _format_departure_timing_with_delay(
+                dep_time=current_leg.dep_time,
+                live_status=active.live_status,
+                delay_reason=active.delay_reason,
+            )
             message = (
                 f"Transfer at {current_leg.origin.name}: "
-                f"Board {line_desc} departing at {current_leg.dep_time} from {plat_info}{live_note}."
+                f"Board {line_desc} departing at {dep_desc} from {plat_info}."
             )
         else:
             message = "Interchange stop: transfer to connecting service."
@@ -984,25 +1102,27 @@ def update_journey_progress(
         )
 
     if target_rail_leg and live_client:
-        plat, live_stat = resolve_live_rail_platform(
+        live_res = resolve_live_rail_platform(
             origin_id=target_rail_leg.origin.id,
             dest_id=target_rail_leg.destination.id,
             scheduled_time=target_rail_leg.dep_time,
             live_client=live_client,
         )
-        if plat:
-            target_rail_leg.origin.platform = plat
+        if live_res.platform:
+            target_rail_leg.origin.platform = live_res.platform
             if (
                 current_leg
                 and (current_leg.mode == "rail" or current_leg.mode in FOOT_MODES)
-                and plat != active.platform
+                and live_res.platform != active.platform
             ):
-                active.platform = plat
-        if live_stat:
+                active.platform = live_res.platform
+        if live_res.etd:
             if current_leg and (
                 current_leg.mode == "rail" or current_leg.mode in FOOT_MODES
             ):
-                active.live_status = live_stat
+                active.live_status = live_res.etd
+                active.delay_minutes = live_res.delay_minutes
+                active.delay_reason = live_res.delay_reason
 
     title, new_msg, data = format_progress_notification(active)
 
@@ -1112,6 +1232,8 @@ def detect_en_route_journey(
     if not itineraries:
         return None
 
+    matching_candidates: List[Tuple[float, ActiveJourney]] = []
+
     for itin in itineraries:
         if not itin.legs:
             continue
@@ -1162,44 +1284,78 @@ def detect_en_route_journey(
             ):
                 leg_arr_m += 1440
 
+            leg_cur_m = (
+                current_minutes + 1440
+                if (
+                    leg_dep_m is not None and current_minutes < 120 and leg_dep_m > 1200
+                )
+                else current_minutes
+            )
+
             # 1. At the departure stop or interchange for this leg
             if dist_orig is not None and dist_orig <= max_proximity_metres:
-                if leg_idx == 0 or (leg_idx == 1 and itin.legs[0].mode in FOOT_MODES):
-                    status = JourneyStepStatus.AT_DEPARTURE_STOP
-                else:
-                    status = JourneyStepStatus.AT_INTERCHANGE
+                # If current time is past leg arrival time, this leg has already concluded
+                if leg_arr_m is not None and leg_cur_m > leg_arr_m:
+                    continue
 
-                plat = None
-                live_stat = None
+                live_res = LiveRailStatus()
                 if leg.mode == "rail" and live_client:
-                    plat, live_stat = resolve_live_rail_platform(
+                    live_res = resolve_live_rail_platform(
                         origin_id=leg.origin.id,
                         dest_id=leg.destination.id,
                         scheduled_time=leg.dep_time,
                         live_client=live_client,
                     )
 
-                return ActiveJourney(
-                    journey_id=journey.id,
-                    journey_name=journey.name,
-                    from_type=journey.from_type,
-                    from_id=journey.from_id,
-                    from_name=journey.from_name,
-                    to_type=journey.to_type,
-                    to_id=journey.to_id,
-                    to_name=journey.to_name,
-                    itinerary=itin,
-                    legs=list(itin.legs),
-                    current_leg_index=leg_idx,
-                    current_status=status,
-                    started_at=current_dt,
-                    expected_arrival_time=itin.arrival_time,
-                    platform=plat,
-                    live_status=live_stat,
+                # Expiration check: if scheduled departure was more than 15 mins ago,
+                # only accept if live status confirms an expected departure that hasn't passed
+                if leg_dep_m is not None and leg_cur_m > leg_dep_m + 15:
+                    if live_res.etd and ":" in live_res.etd:
+                        etd_m = parse_time_to_minutes(live_res.etd)
+                        if etd_m is not None and leg_cur_m > etd_m + 10:
+                            continue
+                    elif live_res.etd not in ("Delayed",):
+                        continue
+
+                if leg_idx == 0 or (leg_idx == 1 and itin.legs[0].mode in FOOT_MODES):
+                    status = JourneyStepStatus.AT_DEPARTURE_STOP
+                else:
+                    status = JourneyStepStatus.AT_INTERCHANGE
+
+                ref_m = leg_dep_m if leg_dep_m is not None else leg_cur_m
+                time_delta = abs(leg_cur_m - ref_m)
+
+                matching_candidates.append(
+                    (
+                        time_delta,
+                        ActiveJourney(
+                            journey_id=journey.id,
+                            journey_name=journey.name,
+                            from_type=journey.from_type,
+                            from_id=journey.from_id,
+                            from_name=journey.from_name,
+                            to_type=journey.to_type,
+                            to_id=journey.to_id,
+                            to_name=journey.to_name,
+                            itinerary=itin,
+                            legs=list(itin.legs),
+                            current_leg_index=leg_idx,
+                            current_status=status,
+                            started_at=current_dt,
+                            expected_arrival_time=itin.arrival_time,
+                            platform=live_res.platform,
+                            live_status=live_res.etd,
+                            delay_minutes=live_res.delay_minutes,
+                            delay_reason=live_res.delay_reason,
+                        ),
+                    )
                 )
 
             # 2. At the destination of this leg
             if dist_dest is not None and dist_dest <= max_proximity_metres:
+                if leg_arr_m is not None and leg_cur_m > leg_arr_m + 30:
+                    continue
+
                 next_idx = leg_idx + 1
                 if leg_idx == 0 and leg.mode in FOOT_MODES:
                     status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -1213,46 +1369,52 @@ def detect_en_route_journey(
                 else:
                     status = JourneyStepStatus.AT_INTERCHANGE
 
-                plat = None
-                live_stat = None
                 next_leg = itin.legs[next_idx] if next_idx < len(itin.legs) else None
+                live_res = LiveRailStatus()
                 if next_leg and next_leg.mode == "rail" and live_client:
-                    plat, live_stat = resolve_live_rail_platform(
+                    live_res = resolve_live_rail_platform(
                         origin_id=next_leg.origin.id,
                         dest_id=next_leg.destination.id,
                         scheduled_time=next_leg.dep_time,
                         live_client=live_client,
                     )
 
-                return ActiveJourney(
-                    journey_id=journey.id,
-                    journey_name=journey.name,
-                    from_type=journey.from_type,
-                    from_id=journey.from_id,
-                    from_name=journey.from_name,
-                    to_type=journey.to_type,
-                    to_id=journey.to_id,
-                    to_name=journey.to_name,
-                    itinerary=itin,
-                    legs=list(itin.legs),
-                    current_leg_index=(
-                        next_idx if next_idx < len(itin.legs) else leg_idx
-                    ),
-                    current_status=status,
-                    started_at=current_dt,
-                    expected_arrival_time=itin.arrival_time,
-                    platform=plat,
-                    live_status=live_stat,
+                ref_m = leg_arr_m if leg_arr_m is not None else leg_cur_m
+                if next_leg:
+                    nl_dep = parse_time_to_minutes(next_leg.dep_time)
+                    if nl_dep is not None:
+                        ref_m = nl_dep
+                time_delta = abs(leg_cur_m - ref_m)
+
+                matching_candidates.append(
+                    (
+                        time_delta,
+                        ActiveJourney(
+                            journey_id=journey.id,
+                            journey_name=journey.name,
+                            from_type=journey.from_type,
+                            from_id=journey.from_id,
+                            from_name=journey.from_name,
+                            to_type=journey.to_type,
+                            to_id=journey.to_id,
+                            to_name=journey.to_name,
+                            itinerary=itin,
+                            legs=list(itin.legs),
+                            current_leg_index=(
+                                next_idx if next_idx < len(itin.legs) else leg_idx
+                            ),
+                            current_status=status,
+                            started_at=current_dt,
+                            expected_arrival_time=itin.arrival_time,
+                            platform=live_res.platform,
+                            live_status=live_res.etd,
+                            delay_minutes=live_res.delay_minutes,
+                            delay_reason=live_res.delay_reason,
+                        ),
+                    )
                 )
 
             # 3. En route on board transit during transit leg duration
-            leg_cur_m = (
-                current_minutes + 1440
-                if (
-                    leg_dep_m is not None and current_minutes < 120 and leg_dep_m > 1200
-                )
-                else current_minutes
-            )
             if (
                 leg_dep_m is not None
                 and leg_arr_m is not None
@@ -1260,6 +1422,8 @@ def detect_en_route_journey(
                 and leg.mode not in FOOT_MODES
                 and orig_lat is not None
                 and dest_lat is not None
+                and (dist_orig is None or dist_orig > max_proximity_metres)
+                and (dist_dest is None or dist_dest > max_proximity_metres)
             ):
                 leg_span = haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
                 if (
@@ -1268,33 +1432,42 @@ def detect_en_route_journey(
                     and (dist_orig + dist_dest)
                     <= max(leg_span * 1.5, leg_span + 1000.0)
                 ):
-                    plat = None
-                    live_stat = None
+                    live_res = LiveRailStatus()
                     if leg.mode == "rail" and live_client:
-                        plat, live_stat = resolve_live_rail_platform(
+                        live_res = resolve_live_rail_platform(
                             origin_id=leg.origin.id,
                             dest_id=leg.destination.id,
                             scheduled_time=leg.dep_time,
                             live_client=live_client,
                         )
 
-                    return ActiveJourney(
-                        journey_id=journey.id,
-                        journey_name=journey.name,
-                        from_type=journey.from_type,
-                        from_id=journey.from_id,
-                        from_name=journey.from_name,
-                        to_type=journey.to_type,
-                        to_id=journey.to_id,
-                        to_name=journey.to_name,
-                        itinerary=itin,
-                        legs=list(itin.legs),
-                        current_leg_index=leg_idx,
-                        current_status=JourneyStepStatus.ON_TRANSIT,
-                        started_at=current_dt,
-                        expected_arrival_time=itin.arrival_time,
-                        platform=plat,
-                        live_status=live_stat,
+                    ref_m = (leg_dep_m + leg_arr_m) / 2.0
+                    time_delta = abs(leg_cur_m - ref_m)
+
+                    matching_candidates.append(
+                        (
+                            time_delta,
+                            ActiveJourney(
+                                journey_id=journey.id,
+                                journey_name=journey.name,
+                                from_type=journey.from_type,
+                                from_id=journey.from_id,
+                                from_name=journey.from_name,
+                                to_type=journey.to_type,
+                                to_id=journey.to_id,
+                                to_name=journey.to_name,
+                                itinerary=itin,
+                                legs=list(itin.legs),
+                                current_leg_index=leg_idx,
+                                current_status=JourneyStepStatus.ON_TRANSIT,
+                                started_at=current_dt,
+                                expected_arrival_time=itin.arrival_time,
+                                platform=live_res.platform,
+                                live_status=live_res.etd,
+                                delay_minutes=live_res.delay_minutes,
+                                delay_reason=live_res.delay_reason,
+                            ),
+                        )
                     )
 
             # 4. Walking to departure stop (first leg is walk, left origin corridor towards transit stop)
@@ -1321,34 +1494,47 @@ def detect_en_route_journey(
                         and (dist_orig + dist_dest)
                         <= max(leg_span * 1.5, leg_span + 1000.0)
                     ):
-                        plat = None
-                        live_stat = None
+                        live_res = LiveRailStatus()
                         if next_leg and next_leg.mode == "rail" and live_client:
-                            plat, live_stat = resolve_live_rail_platform(
+                            live_res = resolve_live_rail_platform(
                                 origin_id=next_leg.origin.id,
                                 dest_id=next_leg.destination.id,
                                 scheduled_time=next_leg.dep_time,
                                 live_client=live_client,
                             )
 
-                        return ActiveJourney(
-                            journey_id=journey.id,
-                            journey_name=journey.name,
-                            from_type=journey.from_type,
-                            from_id=journey.from_id,
-                            from_name=journey.from_name,
-                            to_type=journey.to_type,
-                            to_id=journey.to_id,
-                            to_name=journey.to_name,
-                            itinerary=itin,
-                            legs=list(itin.legs),
-                            current_leg_index=0,
-                            current_status=JourneyStepStatus.EN_ROUTE_TO_STOP,
-                            started_at=current_dt,
-                            expected_arrival_time=itin.arrival_time,
-                            platform=plat,
-                            live_status=live_stat,
+                        ref_m = walk_dep
+                        time_delta = abs(leg_cur_m - ref_m)
+
+                        matching_candidates.append(
+                            (
+                                time_delta,
+                                ActiveJourney(
+                                    journey_id=journey.id,
+                                    journey_name=journey.name,
+                                    from_type=journey.from_type,
+                                    from_id=journey.from_id,
+                                    from_name=journey.from_name,
+                                    to_type=journey.to_type,
+                                    to_id=journey.to_id,
+                                    to_name=journey.to_name,
+                                    itinerary=itin,
+                                    legs=list(itin.legs),
+                                    current_leg_index=0,
+                                    current_status=JourneyStepStatus.EN_ROUTE_TO_STOP,
+                                    started_at=current_dt,
+                                    expected_arrival_time=itin.arrival_time,
+                                    platform=live_res.platform,
+                                    live_status=live_res.etd,
+                                    delay_minutes=live_res.delay_minutes,
+                                    delay_reason=live_res.delay_reason,
+                                ),
+                            )
                         )
+
+    if matching_candidates:
+        matching_candidates.sort(key=lambda c: c[0])
+        return matching_candidates[0][1]
 
     return None
 
@@ -1665,16 +1851,16 @@ def get_journey_live_tracking_data(
             )
 
     if target_rail_leg and live_client:
-        plat, l_stat = resolve_live_rail_platform(
-            target_rail_leg.origin.id,
-            target_rail_leg.destination.id,
-            target_rail_leg.dep_time,
-            live_client,
+        live_res = resolve_live_rail_platform(
+            origin_id=target_rail_leg.origin.id,
+            dest_id=target_rail_leg.destination.id,
+            scheduled_time=target_rail_leg.dep_time,
+            live_client=live_client,
         )
-        if plat:
-            platform = plat
-        if l_stat:
-            live_status = l_stat
+        if live_res.platform:
+            platform = live_res.platform
+        if live_res.etd:
+            live_status = live_res.etd
 
     # 6. Resolve coordinates
     origin_lat, origin_lon, _ = resolve_endpoint_coordinates(from_type, from_id)
@@ -2062,6 +2248,7 @@ def get_journey_live_tracking_data(
 __all__ = [
     "ActiveJourney",
     "JourneyStepStatus",
+    "LiveRailStatus",
     "format_next_step_for_departure",
     "format_progress_notification",
     "resolve_live_rail_platform",

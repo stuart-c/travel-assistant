@@ -741,6 +741,42 @@ def test_format_departure_notification_variations() -> None:
     assert "departing at 08:14" in message
 
 
+def test_format_departure_notification_with_original_time_and_delay_reason() -> None:
+    """Test notification formatting when train is delayed with original time and delay reason."""
+    cand = DepartureCandidate(
+        journey_id=3,
+        journey_name="London to Cambridge",
+        service_key="test_key_3",
+        transit_mode="rail",
+        line_name="Thameslink",
+        operator_name="Govia Thameslink Railway",
+        origin_stop_name="Stevenage",
+        origin_stop_id="naptan:SVG",
+        dest_stop_name="Cambridge South",
+        dest_stop_id="naptan:CBS",
+        final_dest_name="Cambridge South",
+        transit_dep_minutes=518,
+        transit_dep_time="08:38",
+        original_dep_time="08:29",
+        delay_minutes=9,
+        delay_reason="a fault with the signalling system",
+        platform="4",
+        walk_minutes=0,
+        leave_minutes=518,
+        leave_time="08:38",
+        arrival_time="09:05",
+        notification_trigger_minutes=503,
+        is_live=True,
+    )
+    title, message, data = format_departure_notification(cand)
+    assert title == "Travel Alert: London to Cambridge"
+    assert "Platform 4" in message
+    assert (
+        "departing at 08:29 (delayed to 08:38 due to a fault with the signalling system)"
+        in message
+    )
+
+
 def test_format_departure_notification_multi_leg_connecting_train() -> None:
     """Test format_departure_notification includes connecting train details when candidate has multi-leg itinerary."""
     legs = [

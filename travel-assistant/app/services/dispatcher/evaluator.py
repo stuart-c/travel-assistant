@@ -46,6 +46,8 @@ class DepartureCandidate:
     is_live: bool = False
     delay_minutes: int = 0
     platform: Optional[str] = None
+    original_dep_time: Optional[str] = None
+    delay_reason: Optional[str] = None
     itinerary: Optional[Any] = None
 
 
@@ -277,11 +279,19 @@ def apply_live_departure_adjustments(
             platform = first_dep.get("platform")
             if platform:
                 candidate.platform = str(platform).strip()
+
+            raw_delay_reason = first_dep.get("delayReason")
+            if raw_delay_reason:
+                from app.services.dispatcher.tracker import _clean_delay_reason
+
+                candidate.delay_reason = _clean_delay_reason(str(raw_delay_reason))
+
             if std == candidate.transit_dep_time and etd and etd != "On time":
                 live_min = parse_time_to_minutes(etd)
                 if live_min is not None:
                     delay = live_min - candidate.transit_dep_minutes
                     candidate.delay_minutes = delay
+                    candidate.original_dep_time = std
                     candidate.transit_dep_minutes = live_min
                     candidate.transit_dep_time = etd
                     candidate.leave_minutes = live_min - candidate.walk_minutes
@@ -435,7 +445,20 @@ def format_departure_notification(
     plat_note = f" (Platform {candidate.platform})" if candidate.platform else ""
     live_note = ""
     if candidate.is_live and candidate.delay_minutes > 0:
-        live_note = f" (delayed by {candidate.delay_minutes}m)"
+        reason_clause = (
+            f" due to {candidate.delay_reason}" if candidate.delay_reason else ""
+        )
+        if candidate.original_dep_time:
+            dep_desc = f"{candidate.original_dep_time} (delayed to {candidate.transit_dep_time}{reason_clause})"
+        else:
+            live_note = (
+                f" (delayed by {candidate.delay_minutes}m{reason_clause})"
+                if candidate.delay_reason
+                else f" (delayed by {candidate.delay_minutes}m)"
+            )
+            dep_desc = candidate.transit_dep_time
+    else:
+        dep_desc = candidate.transit_dep_time
 
     next_step_info = ""
     if candidate.itinerary and getattr(candidate.itinerary, "legs", None):
@@ -455,7 +478,7 @@ def format_departure_notification(
 
     message = (
         f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note}{live_note} "
-        f"from {candidate.origin_stop_name} departing at {candidate.transit_dep_time}.{next_step_info} "
+        f"from {candidate.origin_stop_name} departing at {dep_desc}.{next_step_info} "
         f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
     )
 

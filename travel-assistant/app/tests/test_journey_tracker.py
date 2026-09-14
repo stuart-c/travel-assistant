@@ -12,6 +12,7 @@ from app.models.transit import Stop
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
+    LiveRailStatus,
     _format_transit_service_desc,
     detect_en_route_journey,
     format_next_step_for_departure,
@@ -105,26 +106,30 @@ def _create_sample_active_journey(
 
 
 def test_resolve_live_rail_platform_no_client() -> None:
-    """Test resolve_live_rail_platform returns None, None when live_client is None."""
-    plat, stat = resolve_live_rail_platform("naptan:KGX", "naptan:CBG", "08:08", None)
-    assert plat is None
-    assert stat is None
+    """Test resolve_live_rail_platform returns default LiveRailStatus when live_client is None."""
+    res = resolve_live_rail_platform("naptan:KGX", "naptan:CBG", "08:08", None)
+    assert isinstance(res, LiveRailStatus)
+    assert res.platform is None
+    assert res.etd is None
+    assert res.delay_minutes == 0
+    assert res.delay_reason is None
 
 
 def test_resolve_live_rail_platform_invalid_crs() -> None:
     """Test resolve_live_rail_platform with invalid or non-rail CRS codes."""
     mock_live = MagicMock(spec=TrainLiveClient)
     # Long ATCO code
-    plat, stat = resolve_live_rail_platform(
+    res = resolve_live_rail_platform(
         "atco:490000077E", "atco:490000077C", "08:08", mock_live
     )
-    assert plat is None
-    assert stat is None
+    assert res.platform is None
+    assert res.etd is None
     mock_live.get_fastest_departures.assert_not_called()
 
     # Numeric code
-    plat, stat = resolve_live_rail_platform("1234", "CBG", "08:08", mock_live)
-    assert plat is None
+    res = resolve_live_rail_platform("1234", "CBG", "08:08", mock_live)
+    assert res.platform is None
+    assert res.etd is None
     mock_live.get_fastest_departures.assert_not_called()
 
 
@@ -133,14 +138,18 @@ def test_resolve_live_rail_platform_matching_departure() -> None:
     mock_live = MagicMock(spec=TrainLiveClient)
     mock_live.get_fastest_departures.return_value = [
         {"std": "08:05", "etd": "On time", "platform": "1"},
-        {"std": "08:08", "etd": "Delayed", "platform": "4B"},
+        {
+            "std": "08:08",
+            "etd": "Delayed",
+            "platform": "4B",
+            "delayReason": "This service has been delayed by a fault with the signalling system",
+        },
     ]
 
-    plat, stat = resolve_live_rail_platform(
-        "naptan:KGX", "naptan:CBG", "08:08", mock_live
-    )
-    assert plat == "4B"
-    assert stat == "Delayed"
+    res = resolve_live_rail_platform("naptan:KGX", "naptan:CBG", "08:08", mock_live)
+    assert res.platform == "4B"
+    assert res.etd == "Delayed"
+    assert res.delay_reason == "a fault with the signalling system"
     mock_live.get_fastest_departures.assert_called_once_with("KGX", ["CBG"])
 
 
@@ -150,25 +159,25 @@ def test_resolve_live_rail_platform_first_departure_when_time_empty() -> None:
     mock_live.get_fastest_departures.return_value = [
         {"std": "08:05", "etd": "On time", "platform": "2"},
     ]
-    plat, stat = resolve_live_rail_platform("KGX", "CBG", "", mock_live)
-    assert plat == "2"
-    assert stat == "On time"
+    res = resolve_live_rail_platform("KGX", "CBG", "", mock_live)
+    assert res.platform == "2"
+    assert res.etd == "On time"
 
 
 def test_resolve_live_rail_platform_not_found_or_exception() -> None:
     """Test resolve_live_rail_platform handles empty list and exceptions gracefully."""
     mock_live = MagicMock(spec=TrainLiveClient)
     mock_live.get_fastest_departures.return_value = []
-    plat, stat = resolve_live_rail_platform("KGX", "CBG", "08:08", mock_live)
-    assert plat is None
-    assert stat is None
+    res = resolve_live_rail_platform("KGX", "CBG", "08:08", mock_live)
+    assert res.platform is None
+    assert res.etd is None
 
     mock_live.get_fastest_departures.side_effect = RuntimeError(
         "Darwin connection reset"
     )
-    plat, stat = resolve_live_rail_platform("KGX", "CBG", "08:08", mock_live)
-    assert plat is None
-    assert stat is None
+    res = resolve_live_rail_platform("KGX", "CBG", "08:08", mock_live)
+    assert res.platform is None
+    assert res.etd is None
 
 
 def test_resolve_live_rail_platform_with_atco_and_tiploc() -> None:
@@ -177,11 +186,12 @@ def test_resolve_live_rail_platform_with_atco_and_tiploc() -> None:
     mock_live.get_fastest_departures.return_value = [
         {"std": "08:15", "etd": "08:18", "platform": "1"},
     ]
-    plat, stat = resolve_live_rail_platform(
+    res = resolve_live_rail_platform(
         "atco:9100KNGX", "atco:9100PADTON", "08:15", mock_live
     )
-    assert plat == "1"
-    assert stat == "08:18"
+    assert res.platform == "1"
+    assert res.etd == "08:18"
+    assert res.delay_minutes == 3
     mock_live.get_fastest_departures.assert_called_once_with("KGX", ["PAD"])
 
 
@@ -291,14 +301,15 @@ def test_format_progress_notification_stages() -> None:
     active.platform = "4"
     active.live_status = "On time"
     _, msg_plat, _ = format_progress_notification(active)
-    assert "(Platform 4) (On time)" in msg_plat
+    assert "(Platform 4)" in msg_plat
+    assert "departing at 08:08 (on time)" in msg_plat
 
     # 2. EN_ROUTE_TO_STOP
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
     active.current_leg_index = 0
     _, msg_en_route, _ = format_progress_notification(active)
     assert "On your way to London King's Cross." in msg_en_route
-    assert "Rail Thameslink departs at 08:08." in msg_en_route
+    assert "Rail Thameslink (Platform 4) departs at 08:08 (on time)." in msg_en_route
 
     # 3. AT_DEPARTURE_STOP (Rail)
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -307,7 +318,8 @@ def test_format_progress_notification_stages() -> None:
     active.live_status = "On time"
     _, msg_at_stop, _ = format_progress_notification(active)
     assert "At London King's Cross." in msg_at_stop
-    assert "Platform 4 (On time)" in msg_at_stop
+    assert "from Platform 4" in msg_at_stop
+    assert "departs at 08:08 (on time)" in msg_at_stop
 
     # 3b. AT_DEPARTURE_STOP (Rail, platform unannounced)
     active.platform = None
@@ -586,7 +598,8 @@ def test_update_journey_progress_live_platform_update(app: Flask) -> None:
         assert res is True
         assert active.platform == "9"
         call_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "Platform 9 (On time)" in call_msg
+        assert "from Platform 9" in call_msg
+        assert "departs at 08:08 (on time)" in call_msg
 
 
 def test_update_journey_progress_stuart_wanders_far_away(app: Flask) -> None:
@@ -1093,6 +1106,213 @@ def test_detect_en_route_journey_success_scenarios(app: Flask) -> None:
             assert recovered_walk is not None
             assert recovered_walk.current_leg_index == 0
             assert recovered_walk.current_status == JourneyStepStatus.EN_ROUTE_TO_STOP
+
+
+def test_detect_en_route_journey_selects_current_over_stale_itinerary(
+    app: Flask,
+) -> None:
+    """Test en-route recovery selects current itinerary instead of stale past itinerary when at an interchange station."""
+    from unittest.mock import MagicMock, patch
+    from app.models.journey import Journey
+
+    with app.app_context():
+        Stop.create(
+            atco_code="naptan:SVG",
+            naptan_code="SVG",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+            latitude=51.9017,
+            longitude=-0.2066,
+        )
+        Stop.create(
+            atco_code="naptan:CBS",
+            naptan_code="CBS",
+            name="Cambridge South Rail Station",
+            stop_type="rail",
+            latitude=52.1760,
+            longitude=0.1280,
+        )
+        Location.create(
+            id="ha:home_loc_2",
+            name="Home",
+            latitude=51.9200,
+            longitude=-0.2100,
+            ha=True,
+        )
+        Location.create(
+            id="ha:office_cbg",
+            name="Cambridge Office",
+            latitude=52.1800,
+            longitude=0.1300,
+            ha=True,
+        )
+        journey = Journey.create(
+            name="Commute to Cambridge",
+            from_type="ha",
+            from_id="ha:home_loc_2",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:office_cbg",
+            to_name="Cambridge Office",
+        )
+
+        stale_itin = ScheduledItinerary(
+            departure_time="06:35",
+            arrival_time="08:00",
+            total_duration_minutes=85,
+            transfers_count=1,
+            robustness_score="High",
+            legs=[
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="walk",
+                    origin=ItineraryEndpoint(id="ha:home_loc_2", name="Home"),
+                    destination=ItineraryEndpoint(
+                        id="naptan:SVG", name="Stevenage Rail Station"
+                    ),
+                    dep_time="06:35",
+                    arr_time="07:05",
+                    duration_minutes=30,
+                ),
+                ItineraryLeg(
+                    leg_index=2,
+                    mode="rail",
+                    line="Thameslink",
+                    operator="Thameslink",
+                    origin=ItineraryEndpoint(
+                        id="naptan:SVG", name="Stevenage Rail Station"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="naptan:CBS", name="Cambridge South Rail Station"
+                    ),
+                    dep_time="07:29",
+                    arr_time="07:58",
+                    duration_minutes=29,
+                ),
+            ],
+        )
+
+        current_itin = ScheduledItinerary(
+            departure_time="07:35",
+            arrival_time="09:00",
+            total_duration_minutes=85,
+            transfers_count=1,
+            robustness_score="High",
+            legs=[
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="walk",
+                    origin=ItineraryEndpoint(id="ha:home_loc_2", name="Home"),
+                    destination=ItineraryEndpoint(
+                        id="naptan:SVG", name="Stevenage Rail Station"
+                    ),
+                    dep_time="07:35",
+                    arr_time="08:05",
+                    duration_minutes=30,
+                ),
+                ItineraryLeg(
+                    leg_index=2,
+                    mode="rail",
+                    line="Thameslink",
+                    operator="Thameslink",
+                    origin=ItineraryEndpoint(
+                        id="naptan:SVG", name="Stevenage Rail Station"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="naptan:CBS", name="Cambridge South Rail Station"
+                    ),
+                    dep_time="08:29",
+                    arr_time="08:58",
+                    duration_minutes=29,
+                ),
+            ],
+        )
+
+        mock_live = MagicMock(spec=TrainLiveClient)
+        mock_live.get_fastest_departures.return_value = [
+            {
+                "std": "08:29",
+                "etd": "08:38",
+                "platform": "4",
+                "delayReason": "This train has been delayed by a fault with the signalling system",
+            }
+        ]
+
+        now = datetime.datetime(2026, 9, 14, 8, 31)
+        state_at_stevenage = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.9017, "longitude": -0.2066},
+        }
+
+        with patch(
+            "app.services.planner.raptor.plan_journey",
+            return_value=[stale_itin, current_itin],
+        ):
+            recovered = detect_en_route_journey(
+                journey, state_at_stevenage, now, live_client=mock_live
+            )
+            assert recovered is not None
+            assert recovered.current_leg_index == 1
+            assert recovered.platform == "4"
+            assert recovered.live_status == "08:38"
+            assert recovered.delay_minutes == 9
+            assert recovered.delay_reason == "a fault with the signalling system"
+            assert recovered.legs[1].dep_time == "08:29"
+
+            # Check formatted notification message
+            title, msg, data = format_progress_notification(recovered)
+            assert "08:29" in msg
+            assert "delayed to 08:38 due to a fault with the signalling system" in msg
+            assert "Platform 4" in msg
+
+
+def test_detect_en_route_journey_rejects_expired_past_legs(app: Flask) -> None:
+    """Test that detect_en_route_journey rejects stale candidate legs whose arrival/departure passed."""
+    from unittest.mock import patch
+    from app.models.journey import Journey
+
+    with app.app_context():
+        journey = Journey.create(
+            name="Commute",
+            from_type="ha",
+            from_id="ha:home_3",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:dest_3",
+            to_name="Dest",
+        )
+        stale_itin = ScheduledItinerary(
+            departure_time="06:30",
+            arrival_time="07:15",
+            total_duration_minutes=45,
+            transfers_count=0,
+            robustness_score="High",
+            legs=[
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="rail",
+                    origin=ItineraryEndpoint(
+                        id="naptan:KGX", name="London King's Cross"
+                    ),
+                    destination=ItineraryEndpoint(id="naptan:CBG", name="Cambridge"),
+                    dep_time="06:30",
+                    arr_time="07:15",
+                    duration_minutes=45,
+                )
+            ],
+        )
+        now = datetime.datetime(2026, 9, 14, 8, 30)
+        state_at_kgx = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5302, "longitude": -0.1225},
+        }
+        with patch(
+            "app.services.planner.raptor.plan_journey", return_value=[stale_itin]
+        ):
+            recovered = detect_en_route_journey(journey, state_at_kgx, now)
+            assert recovered is None
 
 
 def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
