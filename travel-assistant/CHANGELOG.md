@@ -102,6 +102,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed `SYNCABLE_TABLES` constant from `app.db`.
 
 ### Fixed
+- **Dispatcher Tracking, Platform Precision & Dynamic Timing Realignment** (`app/services/dispatcher/`):
+  - Fixed bus interchange notifications showing "Platform to be announced" by strictly checking for rail mode or explicit bus stand/stop indicators before formatting platform clauses.
+  - Added step 3 fallback in `resolve_live_rail_platform` to match the earliest upcoming calling departure when the scheduled time has passed or was adjusted due to earlier leg delays.
+  - Implemented dynamic active journey schedule realignment (`_realign_active_journey_timings`, `_find_next_timetable_trip`, `_propagate_leg_timings`) when late arrival at an interchange causes missed connections, propagating revised departure/arrival times downstream and updating the expected journey arrival time.
+  - Fixed egress walk ETA calculation and arrival notifications (`format_progress_notification`) to compute remaining walk duration dynamically from current time, record actual arrival timestamps, and format context-aware arrival greetings ("Welcome home! Have a pleasant evening." for evening arrivals at home).
+  - Prevented en-route active journey recovery (`detect_en_route_journey`) from selecting candidate itineraries whose connecting transit departure has already elapsed.
+  - Added active journey session persistence across daemon or Gunicorn restarts using the `Setting` key-value model (`save_active_journey_session`, `load_active_journey_sessions`, `clear_active_journey_session`).
+  - Broadened departure notification evaluation window in `evaluate_journey_notification` up to `leave_minutes + tolerance` to prevent dropped alerts if background ticks miss the initial trigger minute.
+  - Corrected MCP tool `dispatcher_get_status` journey name resolution and added persistent session reset support in `dispatcher_reset_session`.
 - **Departure Dispatcher & En-Route Recovery**:
   - Fixed en-route journey recovery selecting stale past itineraries by evaluating all candidate legs across the search window, filtering expired departures, and selecting the candidate closest to the current time (`detect_en_route_journey`).
   - Replaced legacy tuple return from `resolve_live_rail_platform` with structured `LiveRailStatus` (platform, expected departure time, delay minutes, disruption reason) to surface original scheduled times, delayed timings, and delay reasons in notifications in British English.

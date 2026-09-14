@@ -18,8 +18,11 @@ from app.services.dispatcher.proximity import is_person_near_origin
 from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
+    clear_active_journey_session,
     detect_en_route_journey,
     format_progress_notification,
+    load_active_journey_sessions,
+    save_active_journey_session,
     update_journey_progress,
 )
 
@@ -49,6 +52,11 @@ class DepartureMonitor:
         self._thread: Optional[threading.Thread] = None
         self.sent_keys: Set[str] = set()
         self.active_journeys: Dict[int, ActiveJourney] = {}
+        try:
+            with self.app.app_context():
+                self.active_journeys = load_active_journey_sessions()
+        except Exception as exc:
+            logger.warning("Failed to load active journey sessions: %s", exc)
         self._last_clean_date: Optional[datetime.date] = None
 
     def start(self) -> None:
@@ -135,6 +143,7 @@ class DepartureMonitor:
             )
             if updated:
                 dispatched_count += 1
+                save_active_journey_session(active)
             if active.current_status in (
                 JourneyStepStatus.ARRIVED,
                 JourneyStepStatus.EXPIRED,
@@ -143,6 +152,7 @@ class DepartureMonitor:
 
         for j_id in completed_or_expired:
             self.active_journeys.pop(j_id, None)
+            clear_active_journey_session(j_id)
 
         # 2. Evaluate departures for journeys not currently in progress
         journeys = list(Journey.select())
@@ -172,6 +182,7 @@ class DepartureMonitor:
                 )
                 if recovered:
                     self.active_journeys[journey.id] = recovered
+                    save_active_journey_session(recovered)
                     title, message, data = format_progress_notification(recovered)
                     try:
                         sent = client.send_mobile_notification(
@@ -246,6 +257,7 @@ class DepartureMonitor:
                             expected_arrival_time=candidate.arrival_time,
                         )
                         self.active_journeys[journey.id] = active
+                        save_active_journey_session(active)
 
                     logger.info(
                         "Dispatched departure alert for journey %d (%s) to %s: %s",
@@ -263,6 +275,17 @@ class DepartureMonitor:
                 )
 
         return dispatched_count
+
+    def reset_journey_session(self, journey_id: Optional[int] = None) -> bool:
+        """Reset active tracking session for a specific journey or all journeys."""
+        if journey_id is not None:
+            self.active_journeys.pop(journey_id, None)
+            clear_active_journey_session(journey_id)
+            return True
+        for j_id in list(self.active_journeys.keys()):
+            clear_active_journey_session(j_id)
+        self.active_journeys.clear()
+        return True
 
     def _run_loop(self) -> None:
         """Daemon worker loop executing check_and_dispatch every check_interval_seconds."""

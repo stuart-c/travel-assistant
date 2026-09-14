@@ -375,6 +375,12 @@ def test_evaluate_journey_notification_trigger_window(app: Flask) -> None:
         )
         assert cand_duplicate is None
 
+        # 07:50 is 5m after trigger (10m before leave time) - should still trigger if missed 07:45 tick
+        now_50 = datetime.datetime(2026, 9, 7, 7, 50)
+        cand_mid = evaluate_journey_notification(journey, now_50, sent_keys=set())
+        assert cand_mid is not None
+        assert cand_mid.leave_time == "08:00"
+
 
 def test_subsequent_departure_if_stuart_does_not_leave(app: Flask) -> None:
     """Test progression to next transit departure if Stuart remains at origin past leave time."""

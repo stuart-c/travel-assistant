@@ -359,10 +359,13 @@ def evaluate_journey_notification(
         if adjusted.service_key in sent_keys:
             continue
 
-        # Check if current time matches the 15-minute notification trigger window
-        # (e.g. trigger_minutes - tolerance <= current_minutes <= trigger_minutes + tolerance)
-        diff = abs(current_minutes - adjusted.notification_trigger_minutes)
-        if diff <= tolerance_minutes:
+        # Check if current time falls within the notification window:
+        # From (notification_trigger_minutes - tolerance_minutes) up to (leave_minutes + tolerance_minutes)
+        if (
+            adjusted.notification_trigger_minutes - tolerance_minutes
+            <= current_minutes
+            <= adjusted.leave_minutes + tolerance_minutes
+        ):
             return adjusted
 
     return None
