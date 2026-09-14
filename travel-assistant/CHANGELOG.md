@@ -8,369 +8,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Added connecting transit next step details to departure notifications (`app/services/dispatcher/tracker.py`, `app/services/dispatcher/evaluator.py`, `app/tests/test_journey_tracker.py`, `app/tests/test_departure_dispatcher.py`):
-  - Added `format_next_step_for_departure` detailing connecting transit services (mode, line, operator, origin, destination, departure time, and platform) or final walk legs in British English for multi-leg journeys.
-  - Updated `format_progress_notification` for `at_departure_stop`, `pre_departure`, and `en_route_to_stop` to append connecting transit details (such as connecting mainline rail departures when boarding a feeder shuttle bus).
-  - Updated `format_departure_notification` in `evaluator.py` to include connecting transit instructions when evaluating candidate itineraries.
-  - Enhanced live rail platform probe in `update_journey_progress` to look ahead for connecting rail legs and resolve live Darwin departure platform information in advance.
+- **Journey Departure Detection, Notification Dispatcher & Rollover** (`app/services/dispatcher/`, `DepartureMonitor`):
+  - Automatically detects user (`person.stuart`) near journey origin within scheduled operating windows (`time_settings`) and calculates optimal departure leave-by time ($T_{\text{leave}} = T_{\text{transit\_dep}} - T_{\text{walk\_mins}}$) using the in-memory RAPTOR solver (`plan_journey`) and live departure probe adjustments (National Rail Darwin Live).
+  - Dispatches rich departure notifications to mobile device (`notify.mobile_app_stuart_mobile` with no fallback) 15 minutes prior to leave time ($T_{\text{leave}} - 15\text{ mins}$), including leave-by time, walking duration, transit mode/line, origin boarding stop, scheduled vehicle departure time, estimated destination arrival, and dashboard tap action metadata.
+  - Automatically detects when Stuart remains at origin past the leave-by time and rolls over the notification with the next viable departure candidate that arrives before the window cutoff (`find_next_departure_candidate`).
+  - Automatically clears the mobile push notification via Home Assistant's `clear_notification` action (`HomeAssistantClient.clear_mobile_notification`) when all viable departure options have elapsed or cannot meet the arrival cutoff.
+  - Appends connecting transit next-step instructions (mode, line, operator, origin, departure time, and platform) or final walk legs in British English for multi-leg journeys across departure notifications and candidate itinerary evaluations (`format_next_step_for_departure`).
+- **Live Journey Tracking Screen, Abstract Vertical Route Diagram & Real-Time Telemetry API** (`/journey`, `/api/journey/live`, `static/js/journey_tracker.js`):
+  - User-facing live tracking screen displaying real-time journey progression outside the configuration panel.
+  - Abstract vertical route corridor diagram as the primary display, styled after British transport interfaces (TfL Go, Citymapper), featuring mode-coloured transit spines, TfL concentric double-ring interchange discs with platform badges (`Plat 4`), changeover callout cards (`Change here: Board [Line] from Platform [X]`), dynamic user position anchors ("Stuart is here"), and pulsing cyan telemetry beacons along the transit spine.
+  - Segmented view toggle (`[ Route Diagram (Default) | Geographic Map ]`) enabling immediate switching between the schematic route corridor and an interactive Leaflet geographic GPS map.
+  - Real-time telemetry cards detailing live rail platforms (Darwin LDBWS), service delay status, next-step instructions, and remaining distance/time in British English.
+  - Client-side auto-polling (10-second interval) with seamless DOM reconciliation and dynamic Leaflet viewport resizing.
+- **Journey Progress Tracking & En-Route Active Session Recovery** (`app/services/dispatcher/tracker.py`, `DepartureMonitor`):
+  - Continuously monitors location during active journeys and updates existing mobile notifications in-place using persistent tags (`tag: journey_{id}`) across granular step transitions (`PRE_DEPARTURE`, `EN_ROUTE_TO_STOP`, `AT_DEPARTURE_STOP`, `ON_TRANSIT`, `AT_INTERCHANGE`, `EN_ROUTE_TO_DESTINATION`, `ARRIVED`).
+  - Active session recovery (`detect_en_route_journey`) identifying when Stuart has departed origin without an initial alert or departed early, correlating GPS position against route corridors, registering active journey sessions dynamically, and resuming live tracking.
+  - Real-time railway platform detection via National Rail Darwin Live (`TrainLiveClient`), probing departures to announce platform numbers and live delay statuses as soon as published.
+- **Model Context Protocol (MCP) Server & Configuration UI** (`app/mcp/`, `app/views/config/mcp.py`, `/config/mcp`):
+  - Asynchronous Model Context Protocol (MCP) server running on port `8098` supporting Streamable HTTP POST and GET SSE transports (`/mcp`, `/sse`, `/`) with local area network host support and pre-shared Bearer token authentication (`mcp_api_token`).
+  - Granular binary opt-in security architecture (`enabled = BooleanField(default=False)`) for tools across journeys (`journey_*`), timetables (`timetable_*`), walking (`walking_*`), transfers (`transfer_*`), transit stop searches and departures (`stops_*`), dispatcher controls (`dispatcher_*`), and background synchronisation (`sync_*`).
+  - Dedicated single-purpose database tools: `db_query` (strictly read-only `SELECT`) and `db_execute` (atomic mutating operations).
+  - Dedicated `/config/mcp` configuration page with accessible toggle switches and differential changeset persistence (`ConfigSave`).
+- **Multi-Modal Journey Planner & Route Engine** (`app/services/planner/`):
+  - Mode 1 topological route corridor discovery with NetworkX multi-directed graph traversal, access stop preservation, pure per-change cost model ($w = 0.01$, transfer penalty $w = \text{duration} + 12.0$), and 4-rule pruning (Last Possible Interchange, Subsumed Detours, Pareto Dominance, Senseless Detours).
+  - Modal sequence validation rules: no consecutive walking legs, maximum of 2 consecutive legs for direct transit of the same mode, and up to 4 consecutive legs of the same mode for intra-modal transfers.
+  - Mode 2 scheduled itinerary planning with an in-memory RAPTOR solver supporting `depart`, `arrive`, and `window` timing constraints, transfer slack scoring, and 3-tier transfer hierarchy resolution.
+  - Interactive Directed Acyclic Graph (DAG) viewer (`vis-network`) in the Journey modal dialogue rendering calculated route corridors with intermediate calling points, mode-coloured edges, hover tooltips, and fit-to-view controls.
+  - Hourly background synchronisation job (`journey_routes`) and automatic re-calculation triggers on journey/timetable modification.
+  - Technical architecture specifications: Route Planning Engine (`01_route_planning_engine.md`), Phased Implementation Roadmap (`02_route_planning_implementation_plan.md`), and Multi-Modal Journey Routing and Planning Process (`03_journey_routing_and_planning_process.md`).
+- **Timetable Data Synchronisation (BODS & Darwin S3)**:
+  - Daily background synchronisation of bus timetables from the UK Bus Open Data Service (BODS) REST API and TransXChange timetable datasets (`sync_bus_timetables`).
+  - Daily background synchronisation of rail timetables from National Rail Darwin AWS S3 XML snapshots (`PPTimetable` v8), classifying services by Scheduled Start Date (`ssd`) into Weekday (`Mon-Fri`), Saturday (`Sat`), and Sunday (`Sun`) trip matrices.
+  - Auto-added protection (`auto_added = BooleanField(default=False)`) distinguishing synced timetables from custom user timetables with visual UI badges and deletion protection.
+- **Geospatial Walking Discovery & Stop Interchanges**:
+  - Automated walking route discovery (`walking_sync.py`) identifying transit stops within 500m of Home Assistant zones and custom locations using Google Maps Directions API, generating bi-directional or directional walking links.
+  - Weekly background synchronisation of transit stop interchanges (`stop_interchanges`) within 250m using SQLite R*Tree geospatial indexing on British National Grid `easting` and `northing` coordinates.
+  - Added `easting` and `northing` fields to `Stop` model and NaPTAN sync feed.
+- **Configuration Suite, Grid Editor & Changeset Architecture**:
+  - Full-width interactive Timetable Grid Editor on `/config/timetables` with stop-by-trip matrix, split Arrival/Departure cells, duplicate & retime interval tools, and dwell/progression sequence validation.
+  - Universal client-side differential changeset management (`TransitUI.createChangesetTracker`, `ConfigSave`) and atomic backend persistence (`apply_model_changeset`) submitting only modified, added, or deleted entities.
+  - Consolidated location search endpoint (`GET /config/search/places`) with interactive Place Type Filter Chips (`[All] [Train] [Bus] [Metro] [Tram] [Ferry] [Air] [HA] [Custom]`) and namespaced identifiers (`naptan:`, `atco:`, `ha:`, `custom:`).
+  - Dedicated configuration management views: Journeys (`/config/journeys`), Locations (`/config/locations` with Leaflet map modal), Timetables (`/config/timetables`), Transfers (`/config/transfers`), Walking (`/config/walking`), Credentials (`/config/credentials`), Background Sync (`/config/sync`), and Database (`/config/db` with on-demand SQLite file download).
+  - Home Assistant location synchronisation (`ha_locations`) importing all Home Assistant zones daily.
+  - Darwin Live OpenAPI client (`bravado`) with Swagger 2.0 schema caching and custom base URL overrides.
+- **Developer & Operational Tooling**:
+  - Static asset access log filtering (`StaticAccessLogFilter`, `GunicornLogger`) suppressing high-frequency JS and CSS access logs from console output at `INFO` level.
+  - Application-wide structured logging across data pipelines, background workers, and lifecycle operations.
+  - Parallel test runner support (`pytest-xdist>=3.5.0`) and test argument forwarding in `scripts/run_tests.sh`.
 
 ### Changed
-- Updated Model Context Protocol (MCP) server permission architecture and tool separation (`app/models/mcp.py`, `app/mcp/`, `app/views/config/mcp.py`, `app/static/js/mcp.js`, `app/templates/config_mcp.html`, `app/tests/test_mcp.py`):
-  - Transitioned MCP tool permissions from a 3-state access level (`disabled`, `read`, `read_write`) to a clean, binary `disabled` / `enabled` schema (`enabled = BooleanField(default=False)`), enforcing strict opt-in security with no backward-compatibility wrappers.
-  - Split multi-purpose database tools into dedicated single-purpose tools: `db_query` (strictly read-only, permitting `SELECT` queries only) and `db_execute` (mutating, strictly permitting atomic `INSERT`, `UPDATE`, and `DELETE` commands).
-  - Configured `dispatcher_evaluate` as non-mutating (`is_mutating=False`) as it evaluates upcoming departures and returns candidate telemetry without modifying state or dispatching alerts.
-  - Replaced the access level dropdown in `/config/mcp` with an accessible, modern toggle switch control for each tool row with differential changeset tracking (`ConfigSave`).
-  - Added clean SQLite table migration in `run_migrations` resetting legacy `mcp_tools` records to `enabled=False` for strict opt-in security under the new schema.
+- **Location Privacy & London Public Data Standard**: Sanitised all documentation, test suites, architecture walkthroughs, datasource mock fixtures, and sample database seeds to use generic London public transport locations and landmarks (e.g. London King's Cross, London Euston, Old Street, TfL bus routes) per Rule 7.
+- **Rail Station ATCO/TIPLOC to CRS Resolver & Darwin Live Activation**:
+  - Standardised rail station CRS resolution via `station_resolver.py` and embedded `tiploc_crs_map.json`, resolving NaPTAN rail ATCO codes (`9100...`) and Darwin TIPLOC codes to canonical 3-letter CRS station codes across platform resolution and departure evaluations.
+  - Initialised and enabled `train_live_client` in `DepartureMonitor` and `JourneyTracker` so live platform queries execute in background monitoring and live tracking.
+- **Modal Sequence Validation for Intra-Modal Transfers**: Relaxed the Mode 1 corridor validation rule to allow up to 4 consecutive legs of the same transport mode for intra-modal transfers (connecting rail services or bus routes), whilst retaining the 2-leg limit for direct non-interchange journeys.
+- **Model Context Protocol (MCP) Permissions & Database Tooling**:
+  - Transitioned MCP tool permissions from a 3-state access level (`disabled`, `read`, `read_write`) to a clean binary `disabled` / `enabled` schema (`enabled = BooleanField(default=False)`), enforcing strict opt-in security with no backward-compatibility wrappers.
+  - Split multi-purpose database tools into dedicated single-purpose tools: `db_query` (strictly read-only `SELECT`) and `db_execute` (mutating `INSERT`, `UPDATE`, `DELETE`).
+  - Configured `dispatcher_evaluate` as non-mutating (`is_mutating=False`).
+  - Replaced the access level dropdown in `/config/mcp` with an accessible toggle switch control with differential changeset tracking.
+- **Background Sync Worker Architecture**:
+  - Refactored `TransitBackgroundWorker` into `SyncWorker`, a continuously running flag-driven loop serialising sync operations, deduplicating requests via `sync_metadata` flags, and waking on `request_sync(table_name)` triggers.
+  - Reordered `SYNC_REGISTRY` execution (`ha_locations` → `walking` → `bus_timetables`) so newly discovered walking routes immediately feed bus timetable downloads in the same pass.
+  - Migrated `/config/db/sync/<table>` and `/api/sync/<table>` to asynchronous fire-and-forget endpoints.
+- **Frontend & Styling Standardisation**:
+  - Migrated frontend styling from custom vanilla CSS to Tailwind CSS v4 via CDN, standardising page containers (`max-w-5xl`), status badges, button sizing tiers, and dark-mode adaptation.
+  - Extracted client-side JavaScript and CSS into modular static files (`dirty-manager.js`, `credentials.js`, `timetables.js`, `db.js`, `tables.css`, `transit-ui.js`, `config-save.js`).
+  - Standardised table action buttons across Grid.js configuration tables into compact 28x28px icon-only buttons with tooltips.
+- **Codebase Architecture & Testing**:
+  - Replaced legacy `flake8` linter with `ruff` across development scripts, test requirements, CI workflows, and documentation.
+  - Decomposed monolithic configuration views and validators into modular domain packages (`app/views/config/`, `app/validators/`).
+  - Standardised datasource settings resolution with `BaseDataSource.get_setting_getter(settings)` and sync orchestration with `run_sync_task` in `app/sync/common.py`.
+  - Optimised unit test database fixtures using fast shared in-memory SQLite URI databases (`file:mem_test_{uuid}?mode=memory&cache=shared`) and mocked external Darwin SOAP and sync routines, reducing test suite execution time from ~2 minutes to ~12 seconds.
+  - Synchronised project documentation across README, `travel-assistant/DOCS.md`, architecture specifications, and browser testing runbooks to reflect current UI and British English standards.
+
+### Removed
+- **Obsolete Datasets & Models**:
+  - Removed obsolete `rail_references` table, model (`RailReference`), client (`RailReferencesClient`), and background sync task (`sync_rail_references`).
+  - Removed obsolete inter-location transfers feature, `LocationTransfer` model, and `location_transfers` table in favour of the dedicated Walking feature (`/config/walking`).
+  - Removed separate `bus_stops` and `stations` synchronisation routines and database tables in favour of the consolidated `stops` pipeline.
+  - Removed hardcoded sample timetable and location search datasets (`SAMPLE_TIMETABLE_DATA`, `SAMPLE_LOCATION_SEARCH_DATA`) and synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`).
+- **Dead Code & Legacy APIs**:
+  - Removed unused `BusRoute.get_by_route_number()` and `BusRoute.get_all()` methods.
+  - Removed unused `NaptanClient.fetch_rail_stations()` method.
+  - Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favour of pure OpenAPI/Swagger client integration.
+  - Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`).
+  - Removed redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, `/config/journeys/search`) in favour of `/config/search/places`.
+- **Backwards-Compatibility Aliases & Fallbacks**:
+  - Removed obsolete backwards-compatibility aliases in `DATASOURCE_REGISTRY` (`bods`, `s3`, `darwin`, `openai`, `ha`, `googlemaps`, `maps`).
+  - Removed redundant service aliases from credential validation dispatcher (`validate_service_credentials`).
+  - Removed obsolete constant re-exports in `app/validators/__init__.py` and view helpers in `app/views/config/__init__.py`.
+  - Removed legacy stop type search aliases (`train`, `station`, `stations`, `bus_stop`, `bus_stops`) in `Stop.search` and legacy `crs_code` fallback in `Stop.bulk_upsert`.
+  - Removed `SYNCABLE_TABLES` constant from `app.db`.
 
 ### Fixed
-- Fixed en-route journey recovery matching stale itineraries and missing live delay details (`app/services/dispatcher/tracker.py`, `app/services/dispatcher/evaluator.py`, `app/tests/test_journey_tracker.py`, `app/tests/test_departure_dispatcher.py`):
-  - Resolved en-route journey recovery selecting stale past itineraries (e.g. an earlier 07:29 train rather than an approaching 08:29 train at Stevenage) by evaluating all candidate legs across the search window, filtering out expired departures, and selecting the candidate closest to the current time.
-  - Replaced legacy tuple return from `resolve_live_rail_platform` with structured `LiveRailStatus` (platform, expected departure time, delay minutes, and cleaned delay reason), removing legacy wrappers and ensuring live disruption details are retained.
-  - Enhanced departure and progress notifications in British English to surface original scheduled departure times, expected delayed timings, delay reasons, and platform announcements (e.g. "departing at 08:29 (delayed to 08:38 due to a fault with the signalling system) from Platform 4").
-- Fixed live journey tracking navigation and RAPTOR timetable cache OOM freezing (`app/services/planner/raptor.py`, `app/services/dispatcher/tracker.py`, `app/views/config/timetables.py`, `app/views/config/journeys.py`, `app/tests/test_journey_view.py`):
-  - Resolved Out-Of-Memory (OOM) killer events and worker timeouts freezing the dashboard and live tracking pages by extending RAPTOR's in-memory parsed trip cache (`_TRIPS_CACHE_TTL_SECONDS = 86400.0`), combining stop extraction and trip conversion into a single pass, and deduplicating timetable stop index dictionaries.
-  - Implemented journey operating window pre-filtering in `get_journey_live_tracking_data` before invoking RAPTOR, and cached planner outputs (including empty results) in `_UPCOMING_ITINERARY_CACHE` with a 300-second TTL to eliminate repetitive planner re-computations during 10-second client polling.
-  - Added seamless topological route corridor fallback in live tracking (`j_obj.get_calculated_routes()`), ensuring schematic route diagrams and waypoint corridors render immediately even when viewing journeys outside scheduled operating hours.
-  - Integrated cache invalidation hooks (`_clear_planner_caches`) triggered automatically whenever timetables or journeys are created, updated, or removed in the configuration panel.
-- Fixed journey progress forward leg tracking and transfer notification formatting (`app/services/dispatcher/tracker.py`, `app/tests/test_journey_tracker.py`):
-  - Added forward leg scanning in `update_journey_progress` evaluating future transit corridors and destination proximity, automatically advancing `current_leg_index` when boarding transit before an intermediate GPS point is captured (e.g. bypassing an interchange stop at Stevenage).
-  - Unified foot and transfer modes (`walk`, `walking`, `foot`, `interchange`, `platform_transfer`) under `FOOT_MODES`, preventing transfer legs from erroneously triggering in-vehicle transit states ("On board Interchange").
-  - Refined transit service descriptions in notifications to strip raw timetable route titles and operational day suffixes (e.g. `(Mon-Fri)`), generating clean operator and destination descriptions ("Great Northern train towards Cambridge Rail Station").
-- Fixed background dispatcher lockup and RAPTOR fallback performance (`app/services/planner/raptor.py`, `app/services/planner/route_finder.py`):
-  - Replaced expensive fallback `find_routes` call in `plan_journey` with a fast BFS corridor connectivity check (`_check_corridor_connectivity`), eliminating 3-minute Gunicorn and dispatcher freezes when evaluating off-peak or windowed queries.
-  - Optimised same-station rail platform transfer generation in `find_routes` by grouping nodes by normalised ID ($O(K)$ instead of $O(N^2)$) and avoided redundant Yen shortest path searches when candidate corridors have already been identified.
-
-- Fixed Linux OOM crash and high memory consumption on `/journey` and `/api/journey/live` (`app/services/planner/transfers.py`, `app/services/planner/raptor.py`, `app/services/planner/route_finder.py`, `app/services/dispatcher/tracker.py`):
-  - Added SQL-level date range and day-of-week pre-filtering via `get_active_timetables`, replacing memory-exhaustive `Timetable.select()` scans across all 7,818 network timetables.
-  - Implemented 60-second in-memory trip and timetable stop caching (`_TRIPS_CACHE`) in RAPTOR and itinerary caching (`_UPCOMING_ITINERARY_CACHE`) in `tracker.py` to prevent repeated planner recalculations on 10-second live polling.
-  - Resolved Linux Out-Of-Memory killer terminating Gunicorn workers with SIGKILL when rendering the live journey screen.
-- Fixed RAPTOR itinerary infinite calculation loops on post-midnight trips (`app/services/planner/raptor.py`, `app/services/dispatcher/tracker.py`):
-  - Added monotonic midnight rollover detection (`rollover_offset += 1440`) in `_extract_parsed_trips` and itinerary slack duration calculations so that trips arriving after midnight (e.g. `00:05`) preserve strictly increasing travel times rather than causing negative-duration loops.
-  - Updated candidate itinerary filtering and transit leg evaluation in `detect_en_route_journey` to account for cross-midnight arrival times.
-- Fixed Home Assistant Companion App mobile notification click action navigation (`app/services/dispatcher/evaluator.py`, `app/services/dispatcher/tracker.py`, `run.sh`):
-  - Updated notification payloads (`url` and `clickAction`) to resolve the add-on's Ingress panel path from `Setting.get_val("ingress_panel_slug")` or `ADDON_PANEL_PATH` (defaulting to `/1a842e7e_travel_assistant_dev`), preventing the Home Assistant Android app from failing to open `/journey` on Home Assistant Core.
-- Fixed en-route journey progression detection when walking to departure stop (`app/services/dispatcher/tracker.py`):
-  - Switched candidate itinerary search in `detect_en_route_journey` to `timing_mode="window"` covering a 2-hour window up to 15 minutes ahead.
+- **Departure Dispatcher & En-Route Recovery**:
+  - Fixed en-route journey recovery selecting stale past itineraries by evaluating all candidate legs across the search window, filtering expired departures, and selecting the candidate closest to the current time (`detect_en_route_journey`).
+  - Replaced legacy tuple return from `resolve_live_rail_platform` with structured `LiveRailStatus` (platform, expected departure time, delay minutes, disruption reason) to surface original scheduled times, delayed timings, and delay reasons in notifications in British English.
+  - Added dynamic journey duration calculation and expanded advance evaluation window (`est_duration + 45` minutes before `start_time`) for `arrive` mode journeys, ensuring departure notifications evaluate and dispatch in ample time for early morning services.
+  - Added forward leg scanning in `update_journey_progress` to advance legs automatically when boarding transit before intermediate GPS capture, unified foot and transfer modes under `FOOT_MODES` to prevent "On board Interchange" misclassifications, and stripped timetable title suffixes from notification messages.
   - Added walking leg corridor check returning `JourneyStepStatus.EN_ROUTE_TO_STOP` with live platform telemetry when a user has departed origin and is walking towards the initial transit stop.
-- Fixed RAPTOR journey planning failing on direct timetable origin/destination stops (`app/services/planner/raptor.py`, `app/tests/test_journey_planner.py`):
-  - Added timetable stop detection in `plan_journey` to inject 0-minute direct access/egress edges when origin or destination endpoints (e.g. `ha:office`) are served directly by active timetable stops, mirroring `route_finder.py`.
-  - Resolved failure where journeys terminating directly on transit (such as campus shuttle buses) returned zero scheduled itineraries, eliminating fallback corridor search locking and enabling departure notifications to evaluate and dispatch correctly.
-- Fixed Model Context Protocol (MCP) server transport mismatch by adopting Streamable HTTP (`app/mcp/server.py`, `app/tests/test_mcp.py`):
-  - Migrated `create_mcp_app` from legacy `MCPServer.sse_app` to `MCPServer.streamable_http_app`, providing native support for modern Streamable HTTP POST initialisation and JSON-RPC method execution alongside GET SSE streams and DELETE session teardown.
-  - Added route aliases on the Starlette application so `/sse`, `/mcp`, and `/` are accepted interchangeably by connected AI agents and autonomous assistants.
-  - Resolved `HTTP 405 Method Not Allowed` errors when agents connect via remote HTTP URLs.
-- Fixed Model Context Protocol (MCP) server DNS rebinding rejection on local area networks (`app/mcp/server.py`, `app/mcp/__main__.py`, `app/tests/test_mcp.py`):
-  - Configured `MCPServer.sse_app` to disable strict DNS rebinding protection by default so that local network clients and Home Assistant reverse proxy requests with LAN Host headers (e.g. `192.168.x.x:8098`, `homeassistant.local:8098`) are accepted rather than rejected with `HTTP 421 Misdirected Request`.
-  - Added `--allowed-hosts` CLI flag and `MCP_ALLOWED_HOSTS` environment variable to enable selective host restriction when desired.
-- Fixed Model Context Protocol (MCP) configuration web UI rendering and module shadowing (`app/static/js/mcp.js`, `app/main.py`, `app/views/config/mcp.py`):
-  - Fixed client-side Grid.js runtime exception caused by improper array method invocation on `StagedChangesetManager.getUpdated()`.
-  - Corrected configuration dirty tracking and discard handling to synchronise cleanly with `window.ConfigDirtyManager`.
-  - Resolved `mcp` module namespace collision where running `main.py` directly caused `app/mcp` to shadow the external `mcp` library from site-packages.
-  - Deferred cache invalidation import in `app/views/config/mcp.py` to eliminate circular import during application bootstrap.
-
-### Added
-- Added Optional Model Context Protocol (MCP) Server and Web UI Configuration (`app/mcp/`, `app/views/config/mcp.py`, and `/config/mcp`):
-  - Built an asynchronous Model Context Protocol (MCP) server running over Server-Sent Events (SSE) on port `8098` via `MCPServer`, allowing external AI assistants (e.g. Antigravity) to query and debug live transit data.
-  - Implemented granular per-tool access control backed by a new SQLite database table (`mcp_tools` via Peewee model `MCPTool`) supporting `disabled`, `read`, and `read_write` permission states.
-  - Added a strict opt-in security model where newly discovered tools default to `disabled` and are dynamically omitted from the agent's tool discovery catalogue.
-  - Built a dedicated configuration page at `/config/mcp` with an interactive Grid.js table and differential changeset persistence (`config-save.js`) for managing tool permissions, with UI constraints enforcing read-only permissions for query tools and read/write permissions for action tools.
-  - Added full tool suite across journey management (`journey_*`), timetable scheduling (`timetable_*`), walking and transfers (`walking_*`, `transfer_*`), transit stop searches and live departures (`stops_*`), live journey dispatcher controls and test alerts (`dispatcher_*`), background synchronisation triggers (`sync_*`), and database inspection/querying (`db_get_table_info`, `db_query`).
-  - Added database domain tools (`db_get_table_info` and `db_query`) allowing agents to inspect SQLite table definitions, column types, and row counts, and execute SQL queries constrained by active tool permissions (read access permits `SELECT` only; read/write access permits `SELECT`, `INSERT`, `UPDATE`, and `DELETE`).
-  - Added optional pre-shared Bearer token authentication via `mcp_api_token` add-on configuration.
-  - Added standalone runner entrypoint (`python3 -m app.mcp`) for local development and process supervision in `run.sh`.
-- Added Abstract Vertical Route Corridor Diagram to Live Journey Tracking (`/journey`, `journey_tracker.js`, and `tracker.py`):
-  - Replaced the map with an abstract vertical route corridor diagram as the default primary display on `/journey`, styled after British transport apps (TfL Go, Citymapper, and National Rail).
-  - Implemented mode-specific vertical transit spines connecting station stops with distinct British colours and line styles: dashed amber for walking, solid deep indigo for mainline rail, solid rose for bus, solid sky for metro/tube, and solid emerald for tram.
-  - Implemented intermediate transfer nodes formatted as TfL standard double-ring concentric interchange discs with platform announcement badges (e.g. `Plat 4`).
-  - Added dedicated interchange changeover callout cards (`Change here: Board [Line] from Platform [X]`) detailing transfer lines, departure platforms, and connection buffer times.
-  - Dynamically anchored Stuart's real-time position to the abstract schematic: station node indicators (`Stuart is here`) when waiting or transferring, and floating cyan telemetry beacons with pulsing ping along the transit spine when en route, displaying remaining distance and next-stop information.
-  - Added a segmented view toggle (`[ Route Diagram (Default) | Geographic Map ]`) enabling immediate switching between the schematic route corridor and Leaflet geographic GPS map.
-  - Integrated 10-second client-side auto-polling with seamless DOM reconciliation and dynamic Leaflet viewport resizing.
-- Added Dedicated Live Journey Tracking Screen and Real-Time Telemetry API (`/journey` and `/api/journey/live`):
-  - Created a dedicated user-facing screen (accessible directly from top navigation outside `/config/...` settings) visualizing journey routes and Stuart's real-time position within them.
-  - Implemented interactive Leaflet map rendering route waypoints, transit corridor polylines, departure/interchange stops, and Stuart's live GPS position with an animated beacon marker.
-  - Built visual journey progress stepper and timeline displaying completed stages, the active leg with a "Stuart is here" indicator, and upcoming legs.
-  - Added real-time telemetry cards detailing live rail platforms (Darwin LDBWS), service delay status, next step instructions, and distance to the next stop and final destination in British English.
-  - Added client-side controller (`static/js/journey_tracker.js`) with 10-second auto-polling and smooth map updates.
-  - Updated application header navigation in `base.html` with direct links to "Dashboard" and "Live Journey" (with an active journey pulsing indicator), and added a Live Journey Tracking hero card to `index.html`.
-  - Updated mobile notification click actions (`data["url"] = "/journey"` and `data["clickAction"] = "/journey"`) to open directly into the live tracking screen.
-- Added Journey Progress Tracking and In-Place Notification Updates (`app/services/dispatcher/tracker.py` and `DepartureMonitor`):
-  - Continuously monitors Stuart's location (`person.stuart`) during an active journey and updates the existing mobile notification card in-place using persistent notification tags (`tag: journey_{id}`) sent directly to `notify.mobile_app_stuart_mobile` (no fallback).
-  - Implemented granular journey step transitions (`JourneyStepStatus`): `PRE_DEPARTURE` (getting ready at origin), `EN_ROUTE_TO_STOP` (walking towards the boarding stop), `AT_DEPARTURE_STOP` (arrived at stop awaiting transit), `ON_TRANSIT` (on board vehicle in transit), `AT_INTERCHANGE` (transferring between services at an intermediate hub), `EN_ROUTE_TO_DESTINATION` (final walking leg to destination), and `ARRIVED` (journey complete).
-  - Integrated real-time railway platform detection via National Rail Darwin Live (`TrainLiveClient`), probing fastest departures to announce platform numbers and live delay statuses (e.g. `Platform 4 (On time)`) as soon as published.
-  - Formatted British English notification messages containing next-step instructions, walking times, connection transfers, calling destinations, and arrival alerts.
-  - Added corridor boundary and leave-time expiration handling to ensure inactive or off-route journeys expire cleanly and allow subsequent departure notifications to trigger.
-- Added Journey Departure Detection and Notification Dispatcher (`app/services/dispatcher/`) with automated background monitoring daemon (`DepartureMonitor`):
-  - Automatically detects Stuart (`person.stuart`) near the start of any configured journey (within 200 metres GPS distance or inside the origin Home Assistant zone) during active scheduled time windows (`time_settings`).
-  - Calculates the optimal departure leave-by time ($T_{\text{leave}} = T_{\text{transit\_dep}} - T_{\text{walk\_mins}}$) using the in-memory RAPTOR solver (`plan_journey`) and live departure probe adjustments (National Rail Darwin Live).
-  - Dispatches rich departure notifications to Stuart's mobile device (`notify.mobile_app_stuart_mobile` with no fallback) exactly 15 minutes before the calculated leave time ($T_{\text{leave}} - 15\text{ mins}$), including leave-by time, walking duration, transit mode/line, origin boarding stop, scheduled vehicle departure time, estimated destination arrival, and dashboard tap action metadata.
-  - Automatically progresses to subsequent transit departures if Stuart does not leave as expected, alerting 15 minutes prior to the next viable service's leave time to minimise waiting time once the journey begins.
-  - Added `get_entity_state`, `call_service`, and `send_mobile_notification` methods to `HomeAssistantClient` in `app/datasources/homeassistant.py`.
-- Added modal sequence validation rules to Mode 1 Route Generator (`find_routes` and `prune_route_templates`):
-
-  - **No Consecutive Walking**: Walking legs cannot be immediately followed by another walking leg (`walk` → `walk` rejected, including intermediate stop interchanges and platform transfers). Single direct walking journeys remain valid.
-  - **Maximum of 2 Consecutive Legs of Same Mode**: Enforced a strict maximum of 2 consecutive legs sharing the identical transport mode in a row (e.g. 3 or more buses or trains in a row rejected unless separated by an intervening mode).
-- Added manual refresh buttons and 1-minute automatic background polling to both the Database (`/config/db`) and Background Synchronisation (`/config/sync`) configuration pages. Updated `/config/db/data` to include formatted database size metrics for live metric updates without full page reloads.
-- Added static asset access log filtering (`StaticAccessLogFilter`, `GunicornLogger`) that automatically diverts JavaScript (`.js`) and CSS (`.css`) HTTP request access log records to `DEBUG` level across Gunicorn and Werkzeug/Flask. When log level is set to `INFO`, high-frequency static asset requests are suppressed from console access logs, while retaining standard visibility when `LOG_LEVEL` is set to `DEBUG` or `TRACE`.
-- Enhanced application-wide system and background process logging across `main.py`, `SyncWorker`, dataset synchronisation pipelines (`stops`, `bus_routes`, `train_timetables`, `bus_timetables`, `stop_interchanges`, `ha_locations`, `walking`, `journey_routes`), configuration changeset managers, credential validation probes, database lifecycle operations, and route discovery engines. Background process executions, trigger reasons, pipeline stages, duration measurements, and record summaries are now emitted at `INFO` level with structured British English formatting.
-- Added `vis-network` JavaScript library integration in the Journey modal dialogue to render an interactive, vertical Directed Acyclic Graph (DAG) for calculated routes. Topological route corridors are merged into a unified top-to-bottom hierarchy connecting the single origin and destination nodes, with intermediate calling points, mode-coloured edges (walking, train, bus, metro, tram, ferry), rich hover tooltips displaying line and operator details, fit-to-view controls, and seamless light/dark theme adaptation.
-- Added hourly background synchronisation job (`journey_routes`) that automatically discovers and computes multi-modal topological routes for configured journeys lacking calculated routes (`calculated_routes is NULL`), with automatic asynchronous re-calculation triggers on journey creation/modification and upon successful walking or transit timetable synchronisations.
-- Added `calculated_routes` JSON column to the `Journey` model and SQLite `journeys` table with automated schema migration, and added a 2-tab navigation interface (**Journey Details** and **Calculated Routes**) in the Journey modal dialogue that displays raw calculated route paths when data is present and automatically clears the field upon modifying journey details.
-- Added multi-modal Journey Planner library service (`app/services/planner/`) implementing Mode 1 topological route discovery with NetworkX multi-directed graph traversal and 4-rule pruning (Last Possible Interchange, Subsumed Detours, Pareto Dominance, Senseless Detours), and Mode 2 scheduled itinerary planning with an in-memory RAPTOR solver supporting `depart`, `arrive`, and `window` timing constraints, transfer slack scoring, and 3-tier transfer hierarchy resolution.
-- Added comprehensive unit test suite (`app/tests/test_journey_planner.py`) verifying topological path discovery, RAPTOR trip scheduling, date validity filtering, transfer hierarchy precedence, and descriptive error diagnostics.
-- Added comprehensive technical architecture specification (`docs/architecture/03_journey_routing_and_planning_process.md`) defining the programmatic, multi-modal routing and itinerary planning process using pure SQLite database data (RAPTOR search engine, dual-mode topological corridor discovery and time-dependent trip scheduling, multi-criteria Pareto frontier ranking, and hierarchical transfer resolution).
-- Added weekly background synchronisation process and `stop_interchanges` table discovering nearby transit stop interchanges within 250 metres across all transport modes using SQLite R*Tree geospatial indexing on British National Grid `easting` and `northing` coordinates. Includes the `StopInterchange` model, `sync_stop_interchanges` pipeline, automated re-sync trigger upon `stops` ingest, and full integration into `SYNC_REGISTRY` and `/config/sync`.
-
-### Removed
-- Removed obsolete `rail_references` table, model (`RailReference`), datasource client (`RailReferencesClient`), and background sync task (`sync_rail_references`), as NaPTAN no longer provides the legacy `RailReferences.csv` endpoint and multi-modal transit linking is handled directly via the unified `stops` table and Darwin station resolvers. A migration automatically drops any legacy `rail_references` database tables on startup.
-
-### Changed
-- Synchronised project documentation across README, `travel-assistant/DOCS.md`, architecture specifications (`03_journey_routing_and_planning_process.md`), and `/browser` testing runbooks (`docs/testing/05_journeys.md`, `02_locations.md`, `06_ingress_and_theme.md`) to reflect the tabbed Journey modal dialogue, calculated routes inspection, completed Journey Planner library service, and British English language standards.
-- Removed hardcoded `KNOWN_TIPLOCS` dictionary in `TrainS3Client` and standardised train timetable stop generation to use canonical NaPTAN ATCO codes (`9100...`) mapped dynamically from Darwin XML TIPLOC codes and NaPTAN rail stop lookups, eliminating CRS stop ID mismatches across multi-modal `stop_interchanges` and shuttle bus timetables.
-
-### Fixed
-- Fixed Darwin rail timetable single-day validity expiry and AWS S3 listing pagination (`train_s3.py` and `app/db/core.py`):
-  - Previously, Darwin timetable extraction set `end_date` equal to `start_date` (`ssd`), causing recurring national rail timetables to expire after 24 hours (at midnight) and rendering all rail services inactive for journey departure evaluation and live tracking on subsequent days.
-  - Set `end_date` to `None` for Darwin timetables so recurring rail services remain active indefinitely until superseded by future synchronisations, matching bus timetable behaviour.
-  - Added startup migration in `run_migrations` that clears legacy single-day `end_date` values (`UPDATE timetables SET end_date = NULL WHERE auto_added = 1 AND transport_type = 'rail'`) on existing databases to immediately restore timetable validity without requiring a manual re-sync.
-  - Implemented pagination via `ContinuationToken` in `TrainS3Client.get_latest_timetable_keys_by_day_profile` and `get_latest_timetable_key` to reliably discover all snapshot objects when S3 buckets contain more than 1,000 keys.
-- Fixed Journey Departure Dispatcher failing to trigger departure notifications for journeys configured with `arrive` mode (`evaluator.py:is_journey_active_for_datetime`):
-  - Previously, `is_journey_active_for_datetime` ignored `time_window.mode` and assumed `start_time` was the departure time, opening the evaluation window only 30 minutes before `start_time`. For journeys specifying target arrival times (e.g. arrive between 08:30 and 10:00), the evaluation window opened long after the user needed to depart (e.g. at 08:00 for a 07:37 departure), preventing departure notifications from ever being evaluated or dispatched.
-  - Added dynamic journey duration calculation (`get_journey_estimated_duration_minutes`) that inspects calculated route templates to derive the maximum expected transit duration (defaulting to 120 minutes with a 60-minute minimum).
-  - Calculated the advance evaluation window for `arrive` mode as `advance_margin = est_duration + 45` minutes before `start_time`, ensuring the evaluation window opens in ample time to evaluate and dispatch departure notifications for early morning services.
-  - Added candidate route filtering in `evaluate_journey_notification` to verify that transit departures arrive before `end_time + 15` minutes in both `arrive` and `depart` modes.
-- Added En-Route Journey Detection & Active Session Recovery (`tracker.py:detect_en_route_journey` and `DepartureMonitor:check_and_dispatch`):
-  - When Stuart has already departed and is no longer near the journey origin (e.g. if the initial departure notification did not fire or Stuart left before the alert), the dispatcher now automatically inspects active journeys and correlates Stuart's GPS position against calculated route corridors.
-  - Identifies whether Stuart is at an intermediate stop or interchange (within 200 metres), walking to an access stop, or on board transit between calling points, creating and registering the `ActiveJourney` session dynamically.
-  - Immediately dispatches progress notifications to Stuart's mobile device (`notify.mobile_app_stuart_mobile`), enabling seamless live journey tracking (`/journey`) and in-place progress updates even after missing the departure origin alert.
-- Fixed Mode 1 Route Corridor Discovery (`find_routes` in `app/services/planner/route_finder.py`) over-eagerly merging distinct transit services sharing the same transport mode (e.g. merging a *Brighton to Cambridge* train and a *Cambridge to Norwich* train into a single direct *Stevenage to Cambridge North* leg). Transit leg compression now checks both `transport_mode` and `timetable_id` / `line_name`, preserving intermediate transfer stations (such as Cambridge Rail Station) and multi-leg connections across distinct timetables while continuing to compress intermediate calling points along single continuous routes.
-- Fixed Route Corridor Discovery (`find_routes` in `app/services/planner/route_finder.py`) candidate assembly and ranking:
-  - **Pure Per-Change Cost Model**: Replaced per-stop transit edge weights with near-zero fractional weighting ($w = 0.01$) and explicit transfer penalties ($w = \text{duration} + 12.0$), ensuring that continuous in-vehicle travel with intermediate calling points (e.g. multi-stop trains or local buses) incurs the same transit cost as direct express services.
-  - **Access Stop Preservation**: Expanded graph discovery to extract shortest paths per reachable origin access stop and normalised `access_stop_id` during corridor deduplication, ensuring closer walking stops (e.g. *Sweyns Mead*, 3m walk) are not eclipsed or pruned by downstream calling points (*Emperors Gate*, 4–5m walk) on the same vehicle route.
-  - **Continuous Mode Compression & Lookahead Resolution**: Merged contiguous in-vehicle transit edges sharing the same transport mode (`rail` or `bus`) into unified transit legs with deduplicated line names, and added forward lookahead path coverage to prioritise continuous long-distance timetables over short-turn services, eliminating candidate rejection under consecutive leg limits.
-- Fixed Journey Calculated Routes Directed Acyclic Graph (DAG) viewer layout, transit modes, and stop icons:
-  - Replaced heuristic topological progress averaging with longest-path relaxation computed directly on actual directed route legs ($u \to v$), ensuring initial bus stops (e.g. *Emperor's Head PH*) correctly precede downstream railway stations (*Stevenage Rail Station*) in the visual hierarchy.
-  - Preserved true transit modes and directions on DAG edges, correctly rendering bus legs from local stops to interchange stations as orange solid lines (`🚌`) rather than misclassified reverse walking links.
-  - Enforced strict top-to-bottom DAG hierarchy with consecutive level compaction to eliminate vertical voids and large empty gaps between origin and destination nodes.
-  - Strictly filtered out opposing reverse edges so that all directed transit arrows flow strictly downwards (`toLevel > fromLevel`) with zero upward-pointing lines.
-  - Prevented overlapping and crossing lines by consolidating parallel transit edges between the same stops into a single link with rich multi-line tooltips, curving multi-level bypass edges (`roundness: 0.45`), and optimising Vis.js hierarchical layout configuration (`blockShifting: true`, `edgeMinimization: true`, `parentCentralization: true`, `treeSpacing: 260`, `nodeSpacing: 220`).
-  - Canonicalised transit stop nodes in the DAG viewer using official dataset NaPTAN / ATCO codes (`stop_${id}`) rather than name heuristics, and preserved full dataset stop names (including directional and positional qualifiers) for node labels and hover tooltips, eliminating orphan disconnected nodes and standardising transport mode icons (`🚆`, `🚌`, `🚇`, `🚋`, `⛴️`, `✈️`, `🚏`).
-- Fixed Save button on configuration pages (`/config/locations`, `/config/timetables`, `/config/journeys`, `/config/transfers`, `/config/walking`) remaining permanently stuck displaying the animated loading spinner (`Saving...`) after clicking Save Changes by restoring the original button inner HTML content and state in `ConfigSave.save` on success and ensuring `ConfigDirtyManager.updateUI` reliably resets the button markup across clean, dirty, and save-completed lifecycle states.
-- Fixed BODS TransXChange bus timetable parsing dropping preceding and opposing directional corridors (such as inbound routes serving Sweyns Mead) due to an unindented timetable creation block in `BodsClient.parse_transxchange_xml`.
-- Fixed Darwin rail timetable synchronisation downloading only a single snapshot from AWS S3 (which omitted weekday timetables when running on weekends) by discovering snapshots across distinct operational day profiles (weekday, Saturday, and Sunday) in `TrainS3Client.get_latest_timetable_keys_by_day_profile` and merging national timetables across day profiles.
-- Fixed Route Finder path weighting penalising intermediate calling points on continuous transit lines by enforcing a pure per-change cost model: in-vehicle transit edges incur near-zero fractional weight ($w = 0.01$) so that journeys with 10 intermediate stops have the same transit cost as direct express services, while applying explicit transfer penalties ($w = \text{duration} + 12.0$) to vehicle and platform interchanges.
-- Expanded Route Finder corridor exploration with dedicated path extraction per reachable origin access point (e.g. Sweyns Mead, Emperors Gate, Emperor's Head PH) and normalised access stop identifiers in corridor fingerprinting, guaranteeing that closer access stops (e.g. Sweyns Mead 3m walk) are not eclipsed by downstream stops on the same transit line.
-- Fixed Route Finder generating single suboptimal routes or disjointed multi-train hops by enforcing transit line continuity (`timetable_id` matching across consecutive calling points) and exploring paths across all reachable access stops to generate multiple diverse viable route corridors.
-- Fixed double-prefixed location identifiers (e.g. `ha:ha:office`) appearing in journey routing diagnostic warning logs.
-- Fixed topological journey route graph connectivity failures where ATCO code prefix mismatches (`atco:9100...` vs `9100...`), double-prefixed Home Assistant/custom locations (`ha:ha:...`), and missing stop interchange edges prevented transit corridors from being identified and rendered in the Journey Calculated Routes Directed Acyclic Graph (DAG) viewer.
-- Fixed route calculation performance bottlenecks by replacing unindexed full-table scans over `stop_interchanges` with filtered batch queries on stops present in the active subgraph, filtering same-station platform transfers by station code, and adopting `nx.shortest_simple_paths` on simplified graph projections for sub-second corridor generation.
-- Fixed silent failures during background journey route calculation by elevating `JourneyPlanningError` from `DEBUG` to `WARNING` in `app/sync/journey_sync.py`, emitting detailed diagnostics with journey IDs, names, active operating days, endpoint IDs, and specific routing failure reasons.
-- Standardised transit and location identifier prefix scoping across data synchronisation pipelines, timetable parsers, configuration interfaces, sample database seeds, and test suites. Polymorphic stop and node references in `Timetable.content.stops` and multi-modal stage transitions now consistently include explicit namespace prefixes (`naptan:`, `atco:`, `ha:`, `custom:`, `tiploc:`), while strictly typed station identifiers in platform transfers omit redundant prefixes.
-- Fixed bus timetable synchronisation creating multiple duplicate timetable matrices for the same route and operating days (e.g. SB1 circular variations and short-working runs) by consolidating route pattern variations into a single master stop sequence using order-preserving topological insertion and padding unserved intermediate calling points with empty time cells (`""`).
-- Fixed bus timetables displaying odd operating days (such as Sunday-only for routes expected on weekdays) by parsing `<OperatingProfile>` at the `<VehicleJourney>` level in TransXChange XML feeds, correctly overriding service-level defaults so that weekday, Saturday, and Sunday vehicle journeys produce distinct timetables with accurate operating day flags.
-- Fixed rail timetables hardcoding all operating days (`monday..sunday=True` and `bank_holiday=True`) by classifying Darwin S3 XML passenger journeys according to their Scheduled Start Date (`ssd`), partitioning corridors into separate Weekday (`Mon-Fri`), Saturday (`Sat`), and Sunday (`Sun`) timetables with exact boolean day flags.
-- Fixed bus timetables being truncated during BODS synchronisation by consolidating TransXChange journey pattern fragments into master route corridors with superset stop alignment and merging trips across dataset files, preserving early morning peak journeys and complete circular route terminations.
-- Fixed raw database table identifier `stop_interchanges` displaying in place of a human-readable dataset title on the Background Synchronisation view (`/config/sync`) by defining a user-friendly display title ("Stop Interchanges") and dedicated Material Symbols icon (`transfer_within_a_station`) in `sync.js`.
-- Fixed rail transport type label wrapping awkwardly onto multiple lines by updating the display label from "Train / Rail" to "Train" across models, selectors, and UI badge renderers with `whitespace-nowrap` protection.
-- Fixed bus timetables not being downloaded during BODS synchronisation by resolving target bus stop references with prefix awareness (`naptan:` vs `atco:`) to their 12-digit ATCO codes before matching against TransXChange XML `<StopPointRef>` elements in `sync_bus_timetables`.
-- Fixed BODS dataset listing queries truncating at single-page limits (which omitted published datasets such as Arriva Thameside in Hertfordshire) by implementing multi-page offset-based pagination across `BodsClient.fetch_routes` and `BodsClient.fetch_timetables`.
-- Fixed BODS bus timetable synchronisation failing with HTTP 400 Bad Request ("Unsupported query parameter: boundingBox") by removing the unsupported `boundingBox` parameter from dataset metadata queries in `BodsClient.fetch_timetables` and `sync_bus_timetables`, relying on valid `adminArea` filtering.
-- Fixed synchronisation errors and skipped status diagnostics (such as bus timetable or bus route synchronisation failures) only appearing on the Web UI by emitting system log entries (`logger.error` and `logger.warning`) across `SyncMetadata.record_error`, `SyncMetadata.record_skipped`, `SyncWorker`, and all sync routines (`bus_timetables`, `bus_routes`, `stops`, `train_timetables`, `ha_locations`, `walking`), and configuring application-wide logging in `create_app` mapped from the `LOG_LEVEL` environment variable.
-- Fixed Grid.js table data fetching failure across configuration pages (`locations`, `timetables`, `journeys`, `transfers`, `walking`) caused by an undefined `createChangesetTracker` reference in `transit-ui.js`, which threw a runtime `ReferenceError` during initialisation and prevented `window.TransitUI` and subsequent Grid.js data fetch requests from executing.
-- Fixed obsolete dataset entries (e.g. legacy `bus_stops` and `stations`) persisting in `sync_metadata` and appearing on the Background Synchronisation page (`/config/sync`) by implementing automated startup cleanup in `run_migrations` and `SyncMetadata.cleanup_obsolete_entries`, restricting `get_sync_stats()` exclusively to registered datasets in `SYNC_REGISTRY`.
-- Fixed Background Synchronisation page (`/config/sync`) and endpoint (`/config/sync/data`) querying physical SQLite tables from `get_db_stats()` by introducing `get_sync_stats()` to query `sync_metadata` directly, restoring independent rows and status telemetry for all 6 registered background synchronisation datasets (`bus_routes`, `stops`, `ha_locations`, `train_timetables`, `walking`, `bus_timetables`).
-- Fixed Google Maps Directions API walking duration extraction to round durations in seconds up into whole minutes (`math.ceil`) rather than nearest-integer rounding, ensuring symmetrical forward and reverse walking durations produce a single bi-directional route entry.
-- Fixed concurrent walking route synchronisations creating duplicate records by introducing thread synchronization (`_walking_sync_lock`) in `walking_sync.py`.
-- Optimised transit candidate stop discovery in `find_candidate_stops_for_location` with bounding-box coordinate pre-filtering for large NaPTAN stop datasets.
-- Fixed Darwin live departure board (`LDBWS`) credential validation failing with HTTP 403 on Rail Data Marketplace by setting custom `User-Agent` headers and formatting operational path URLs (`/api/20220120/...`).
-- Fixed Timetable Grid Editor stop search autocomplete popup being overlapped by sticky table headers and displaying scrollbars by adjusting z-index stacking contexts, adding no-scrollbar utilities, and ensuring solid background opacities.
-- Fixed unmocked transit synchronisation calls (`sync_stops` and `sync_bus_routes`) in `test_sync_table_and_sync_all_with_ha` and background worker daemon checks in `test_sync.py`, eliminating live external NaPTAN CSV downloads and thread timeout delays to reduce unit test suite execution time from ~2 minutes to ~12 seconds.
-- Fixed Timetable Grid Editor stop search autocomplete popup being clipped and hidden inside the horizontally scrollable table container by positioning the stop search bar above the matrix table and resolving variable initialisation and Home Assistant Ingress path prefixing.
-
-### Removed
-- Removed unused `BusRoute.get_by_route_number()` and `BusRoute.get_all()` methods; neither is called from any production code path.
-- Removed unused `NaptanClient.fetch_rail_stations()` method; rail stations have always been ingested via `fetch_stops()` (where `StopType` values `RLY`/`RPL`/`MET` are classified as `"rail"`), so the method was unreachable dead code.
-- Removed obsolete inter-location transfers feature, `LocationTransfer` model, and `location_transfers` SQLite table in favour of the dedicated Walking feature (`/config/walking`).
-- Removed legacy Darwin SOAP XML protocol fallback, XML envelope generation, and `.asmx` endpoints in favour of pure OpenAPI/Swagger client integration.
-- Removed redundant hardcoded default base URL constants (`DEFAULT_DARWIN_OPENAPI_ENDPOINT`, `DEFAULT_LDBWS_BASE`), establishing the Swagger schema as the single source of truth for the default endpoint.
-
-### Changed
-- Replaced legacy `flake8` linter with `ruff` across development scripts, test requirements, CI workflows, and documentation.
-- Consolidated backend datasource settings resolution with `BaseDataSource.get_setting_getter(settings)` across all provider clients (`bods`, `google_maps`, `train_s3`, `openai`, `train_live`, `homeassistant`, `naptan`), unifying dictionary and `Setting` model lookups.
-- Standardised dataset synchronisation orchestration with shared `run_sync_task` and `ensure_db_initialised` in `app/sync/common.py`, eliminating duplicate telemetry tracking (`start`, `success`, `error`, `skipped`), connection contexts, elapsed duration calculations, and exception formatting across HA, Transit (BODS, NaPTAN, Train S3), and Walking sync modules.
-- Refactored form and grid item sanitisation across configuration views (`journeys`, `timetables`, `walking`, `transfers`) with `parse_optional_id` and `sanitise_choice` helpers in `app/views/config/common.py`.
-- Consolidated frontend UI formatting and components, adding `PlaceAutocomplete.bindSelection` for place search and preview chip binding, and standardising transport mode badges, icons, day matrices, and timestamp formatters across `journeys.js`, `transfers.js`, `walking.js`, `sync.js`, `locations.js`, and `db.js` using `TransitUI`.
-- Reordered `SYNC_REGISTRY` in `SyncWorker` so that `walking` route discovery executes prior to `bus_timetables` synchronisation, ensuring newly discovered walking connections immediately feed bus timetable downloads in the same sync pass.
-
-- Updated `post_save_hook` signature in `PageConfig` and `register_config_page` to pass both persistence statistics and the deserialised changeset dictionary (`stats, changeset`), enabling content-aware background sync dispatching without redundant execution.
-- Migrated configuration pages (`journeys`, `locations`, `timetables`, `transfers`, `walking`) from full-page HTML form POST submissions to asynchronous AJAX JSON POST persistence (`POST /config/xxx/data`), with inline toast notifications, button loading spinners, shared `ConfigSave` module, and automatic Grid.js table data reloading.
-- Refactored background synchronisation worker (`TransitBackgroundWorker` → `SyncWorker`) into a continuously running, flag-driven loop that serialises all sync operations, deduplicates concurrent requests via a `sync_requested` boolean flag persisted in `sync_metadata`, and idles with an interruptible 60-second sleep (`threading.Event`) when no work is pending.
-- Replaced fixed single-interval polling with a per-entry `SYNC_REGISTRY` defining ordered sync operations and individual age thresholds: `ha_locations` (1 hour), `bus_routes` / `train_timetables` / `walking` / `bus_timetables` (24 hours), `stops` (7 days).
-- Replaced `trigger_journey_walking_sync_async` (ad-hoc daemon thread) and `check_and_run_background_sync` / `sync_all` with a single `request_sync(table_name)` function that sets the DB flag and wakes the background loop immediately.
-- Updated `POST /config/db/sync/<table>` and `POST /api/sync/<table>` endpoints to fire-and-forget: they now set the sync flag and return `{"status": "queued"}` immediately rather than blocking until the sync completes.
-- Updated `_trigger_walking_sync_if_changed` in the journeys view to call `request_sync("walking")` instead of spawning a separate thread.
-- Removed `SYNCABLE_TABLES` constant from `app.db`; valid table names are now derived from `SYNC_REGISTRY` in `app.sync.worker`.
-- Refactored Transfers configuration page (`/config/transfers`) into a clean single-section layout focused exclusively on intra-station Platform & Stand Transfers with Grid.js and live autocomplete search.
-- Componentised staged collection and changeset management across all configuration controllers (`locations`, `timetables`, `journeys`, `transfers`, `walking`) with `TransitUI.createChangesetTracker` in `transit-ui.js`, unifying modal adjustment detection, item staging, deletion tracking, and delta payload generation.
-
-### Added
-- Added `easting` and `northing` (British National Grid) fields to the `Stop` model and NaPTAN sync, extracting the corresponding `Easting`/`Northing` columns from the NaPTAN CSV feed alongside the existing `latitude`/`longitude` values. A schema migration adds both columns to existing `stops` tables without data loss.
-- Added focused, entity-aware synchronisation triggers on configuration save: modifying journeys with Home Assistant or custom location endpoints queues `walking` discovery, modifying journeys with bus stop endpoints queues `bus_timetables` synchronisation, and saving walking routes involving bus stops queues `bus_timetables` synchronisation.
-- Added automated chaining of `bus_timetables` synchronisation from `sync_walking_routes` whenever newly discovered walking routes connect to bus stops (`bus_stops_added > 0`), avoiding redundant sync requests when only rail or tram connections are discovered.
-- Integrated Pydantic v2 schemas (`TimetableContent`, `TimetableStop`, `TimetableTrip`, `TripTiming`, and `JourneyTimeSetting`) and custom Peewee `PydanticField` for structured validation, serialisation, and deserialisation of embedded JSON fields (`Timetable.content` and `Journey.time_settings`).
-- Architectural and technical design specification for the **Route Planning Engine** (`docs/architecture/01_route_planning_engine.md`) and companion **Phased Implementation Roadmap** (`docs/architecture/02_route_planning_implementation_plan.md`), defining two-tier route/trip separation, multi-modal graph search across up to 6 modal stages with up to 3 intra-modal transfers each, two-phase intermediate timetable ingestion (BODS / Darwin S3), last-possible interchange pruning, Pareto dominance filtering, and a 6-chunk progressive implementation schedule.
-- Daily background synchronisation of bus timetables from the UK Bus Open Data Service (BODS) REST API and TransXChange timetable datasets (`sync_bus_timetables`).
-- Automated TransXChange XML and zip archive timetable ingestion, parsing route services, lines, operating periods, operating profiles (days of week, bank holidays), and vehicle journey calling sequences into structured stop-to-stop trip matrices stored in the `timetables` database table with `transport_type='bus'` and `auto_added=True`.
-- Automated discovery and extraction of target bus stops referenced in the `walking` and `journeys` tables, with geographic area and bounding box query scoping against BODS datasets.
-- Non-interfering timetable reconciliation ensuring train timetable synchronisation and bus timetable synchronisation preserve each other's auto-added entries and custom user timetables.
-- `bus_timetables` dataset entry in the Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness updates via `TransitBackgroundWorker`.
-- Client-side delta changeset calculation and submission across all configuration managers (`locations`, `timetables`, `journeys`, `transfers`, `walking`, `credentials`), computing `{ "added": [...], "updated": [...], "deleted": [...] }` payloads so only modified or newly created entries are sent over the network when clicking **Save Changes**.
-- Common differential model persistence architecture (`parse_json_form_changeset`, `apply_model_changeset`, and `save_changeset_config` in `common.py`) applying atomic insertions, updates, and scoped deletions without modifying or touching unchanged database rows.
-- Field-level change detection in `Setting.set_val` and API credentials form submissions to selectively update only altered setting keys.
-- On-demand SQLite database download option on the Database configuration page (`/config/db`) via dedicated **Download Database** action button and endpoint (`GET /config/db/download`) with WAL checkpointing and attachment streaming.
-- Integrated Swagger 2.0 OpenAPI client (`bravado`) into `TrainLiveClient` for National Rail Darwin Live Departure Boards (`LDBWS`), using schema defaults with optional custom base URL overrides.
-- Added automated startup schema download and local caching for the live LDBWS Swagger specification.
-- Added typed OpenAPI client methods on `TrainLiveClient` (`get_departure_board`, `get_dep_board_with_details`, `get_arrival_board`, `get_service_details`, `get_fastest_departures`) and structured JSON departure fetching.
-- Added optional Live Train Base URL override field in the Train Live Credentials web UI (`/config/credentials`).
-- Automated walking route discovery and background synchronisation (`walking_sync.py`), identifying public transit stops (NaPTAN stops and custom timetable stops) within 500 metres of custom and Home Assistant journey endpoints using the Haversine formula.
-- Google Maps Directions Walking API integration calculating forward and reverse walking durations in minutes, inserting a single `bidirectional=True` record when walking times match or two distinct directional records when they differ.
-- `auto_generated` boolean indicator on `Walking` model (`walking` table) and automatic SQLite schema migration, distinguishing auto-discovered walking connections from manual configurations.
-- Idempotent route creation preserving existing manual and auto-generated walking routes without overwriting.
-- Visual `Auto` badge and edit restrictions for auto-generated walking routes in the Walking configuration table (`/config/walking`), allowing deletion while preventing accidental manual alteration.
-- Asynchronous walking route synchronisation triggered automatically upon creating or modifying journeys on `/config/journeys`.
-- `walking` dataset entry in Background Synchronisation dashboard (`/config/sync`) and daily 24-hour periodic freshness checks in `TransitBackgroundWorker`.
-- Darwin AWS S3 train timetable background synchronisation ingesting National Rail Darwin XML timetable snapshots (`PPTimetable` v8), extracting passenger journey services, and grouping them by route corridor into timetable matrices with calling points and scheduled arrival/departure timings.
-- Train Operating Company (`toc`) code and operator name extraction on each timetable journey trip object in the content schema (e.g. `{"toc": "TL", "operator": "Thameslink"}`).
-- Auto-added indicator (`auto_added = BooleanField(default=False)`) on `Timetable` model and database schema migration, distinguishing Darwin-synced timetables from custom user timetables.
-- Protection and preservation of auto-added train timetables during manual timetable saves in the web configuration interface (`save_timetables_with_auto_preservation`).
-- Visual `Auto` badge with cloud sync icon, read-only view mode, and deletion protection for Darwin-synced timetables in the Timetables configuration table and Grid Editor.
-- `train_timetables` dataset entry in Background Synchronisation dashboard (`/config/sync`) and automated 24-hour periodic freshness checks in `TransitBackgroundWorker`.
-- Polymorphic timetable schema supporting dual arrival and departure timings per stop (`{"arr": "HH:MM", "dep": "HH:MM"}`) alongside standard single times (`"HH:MM"`).
-- Interactive stacked dual-input visual design in the Timetable Grid Editor with compact uppercase `ARR` and `DEP` labels and dedicated `<input type="time">` elements.
-- Seamless double-click cell interaction allowing users to double-click a single time box to split into Arrival & Departure, and double-click to collapse back to a single box.
-- Chronological sequence and dwell time validation checking both intra-stop dwell duration (`Arrival ≤ Departure`) and inter-stop progression (`Departure[i] ≤ Arrival[i+1]`).
-- Dwell time preservation during single and batch trip duplication and retiming across intervals.
-- Reusable `PlaceAutocomplete` JavaScript component (`place-autocomplete.js`) encapsulating place search querying, debounce management, filter chip bar interaction, and suggestions rendering across Journeys, Transfers, and Timetable views.
-- Interactive **Place Type Filter Chips** (`[All] [Train] [Bus] [Metro] [Tram] [Ferry] [Air] [HA] [Custom]`) pinned to the top of all place search autocomplete dropdowns across Journeys (`/config/journeys`), Transfers (`/config/transfers`), and the Timetable Grid Editor (`/config/timetables`).
-- Instant re-filtering on chip click with focus retention, active filter styling, and context-aware default transport modes.
-- Strict transport mode filtering in `GET /config/search/places`.
-- Dedicated **Walking Configuration** page (`/config/walking`) and `Walking` database model (`walking` table) for managing custom walking connections, durations in minutes, and bidirectionality between rail stations, bus stops, Home Assistant zones, and custom locations.
-- Full-width interactive **Timetable Grid Editor** on `/config/timetables` allowing direct configuration and matrix editing of stops down the left column and trips / timings across columns.
-- Transport Type classification on `Timetable` model and database schema supporting Bus (`bus`), Train / Rail (`rail`), Tram (`tram`), Metro (`metro`), Ferry (`ferry`), and Air (`air`) with Material Symbols icons and dedicated table column.
-- Autocomplete stop addition in Timetable Grid Editor querying `/config/search/places` filtered by timetable transport mode while including Home Assistant zones and custom locations.
-- Stop sequence management in Timetable Grid Editor with up/down reordering and deletion.
-- Multi-column selection and **Duplicate & Retime** workflow supporting single-column new departure times or multi-column batch intervals and copy counts, maintaining stop travel durations and sorting columns chronologically.
-- Chronological cell-level timing validation highlighting sequence errors in rose with contextual tooltips and a live validation warning banner.
-- Automated SQLite schema migration in `run_migrations` for existing `timetables` tables adding `transport_type` and `content` columns without data loss.
-- Automatic startup asset cache busting (`?v={{ cache_bust }}`) appended to all CSS and JavaScript imports across templates to prevent stale asset caching.
-- Enhanced collapsible sections across `/config/credentials` and `/config/transfers` with arrow button toggles (`keyboard_arrow_down` when expanded, `chevron_right` when collapsed).
-- Interactive API credentials status transformation on `/config/credentials` swapping between green verified `✓ Valid` badges and revealed `Check` action buttons on user edit with default collapse for passing services.
-- Database storage size display hiding exact byte counts within an accessible hover tooltip on `/config/db`.
-- Fixed Grid.js column widths and disabled sorting on actions and non-sortable columns across timetables, locations, journeys, transfers, and sync tables.
-- Added `pytest-xdist>=3.5.0` test runner dependency for parallel test execution.
-- Added argument forwarding to `scripts/run_tests.sh` to allow targeted test file execution.
-
-- Consolidated location search endpoint (`GET /config/search/places`) providing unified multi-modal search across rail stations, bus stops, Home Assistant locations, and custom locations with standardised namespaced identifiers (`naptan:<crs>`, `atco:<code>`, `ha:<id>`, `custom:<hex>`).
-- Removed obsolete, redundant search endpoints (`/api/timetables/search`, `/config/timetables/search`, `/config/transfers/search`, and `/config/journeys/search`) in favour of the single `/config/search/places` endpoint.
-
-### Removed
-- Obsolete backwards-compatibility aliases in `DATASOURCE_REGISTRY` (`bods`, `s3`, `darwin`, `openai`, `ha`, `googlemaps`, `maps`) in favour of canonical service keys.
-- Redundant service aliases from credential validation dispatcher (`validate_service_credentials`).
-- Obsolete constant re-exports in `app/validators/__init__.py` and view helper re-exports in `app/views/config/__init__.py`.
-- Legacy stop type search aliases (`train`, `station`, `stations`, `bus_stop`, `bus_stops`) in `Stop.search` in favour of canonical `rail` and `bus` modes.
-- Legacy `crs_code` dictionary fallback in `Stop.bulk_upsert`.
-### Changed
-- Optimised unit test database fixtures in `app/tests/conftest.py` to use fast shared in-memory SQLite URI databases (`file:mem_test_{uuid}?mode=memory&cache=shared`), eliminating disk I/O, temporary file overhead, and redundant table migration loops.
-- Enhanced `create_sqlite_database` and `get_db_stats` in `app/db/core.py` to support SQLite URI paths, in-memory configurations, and memory-safe file size telemetry.
-- Eliminated circular import dependencies between `app.db` and `app.models` by removing redundant model re-exports from `app/db/__init__.py`.
-- Guarded background transit worker daemon in `app/main.py` to prevent background thread startup during module imports and unit test discovery.
-- Mocked Darwin SOAP fallback requests in `test_validate_train_live_openapi_not_found` and sync routines in `test_api_sync_endpoints` to eliminate unmocked external network requests and socket timeouts.
-- Refactored monolithic configuration views (`app/views/config.py`) into a modular Python package (`app/views/config/`) with separate modules for `credentials`, `timetables`, `locations`, `places`, `transfers`, `journeys`, and database `sync`.
-- Standardised and simplified table action buttons across all Grid.js configuration tables (`Locations`, `Journeys`, `Timetables`, `Transfers`, and `Sync`) into compact 28x28px icon-only tinted buttons (`edit`, `delete`, `visibility`, `refresh`) with contextual native HTML tooltips (`title` and `aria-label`).
-- Updated API credentials check buttons on `/config/credentials` into compact 28x28px icon-only check buttons matching the unified action icon design.
-- Tightened Actions column widths across data tables to eliminate redundant whitespace.
-- Replaced separate `bus_stops` and `stations` synchronisation routines and database tables with the consolidated `stops` pipeline on `/config/sync` and `/config/db`.
-- Updated timetable, transfer, and journey location search endpoints (`/config/timetables/search`, `/config/transfers/search`, `/config/journeys/search`) to query the unified `Stop` model with `stop_type` filtering.
-- Automated schema migration in `run_migrations` dropping legacy `bus_stops` and `stations` tables and creating `stops`.
-
-### Fixed
-- Fixed timetable table action button click delegation on `/config/timetables`, resolving unresponsive table grid (`grid_on`), metadata edit, and delete buttons to open the interactive Timetable Grid Editor and edit dialogues.
-- Restored configuration UI design standards, including 80% viewport width modal dialogues across locations, journeys, and timetables, 15-minute interval time datalists, clean action bar Save/Discard icons and initial disabled states without redundant status badges, and single-page table pagination suppression rules in CSS.
-- Restored human-readable relative timestamps ("Just now", "2 hours ago") with formatted hover tooltips and dynamic 30-second interval updates on the Background Sync page (`/config/sync`).
-- Fixed Google Maps API credential validation error (`HTTP Error: 400`) by executing an active geocoding probe query instead of an empty query parameter.
-- Disabled browser caching across all configuration pages and endpoints by serving explicit `Cache-Control: no-cache, no-store, must-revalidate, max-age=0`, `Pragma: no-cache`, and `Expires: 0` response headers alongside HTML head meta tags, ensuring settings changes appear immediately without stale browser caching.
-- Eliminated all synthetic placeholder records (`S3-HUB`, `LDBWS-HUB`, `BODS-FEED-{id}`, and `DS-{id}` routes).
-- Connected bus stops and railway station synchronisation to public UK NaPTAN open dataset feeds for genuine, complete access node and rail station indexing.
-- Fixed visibility of Home Assistant location synchronisation (`locations`) on the Background Sync page (`/config/sync`) by marking the `locations` table as syncable in database telemetry (`get_db_stats`) and including it in client-side syncable table definitions.
-
-### Added
-- Unique text ID column (`id`) on the `locations` table and `Location` model with `ha:<object_id>` format for synchronised Home Assistant zones and `custom:<hex>` format for manual entries.
-- Automatic database migration for legacy `locations` tables to text primary keys while backfilling and preserving existing records.
-- Persistent SQLite database backend and `SettingsRepository` for application configuration and credentials.
-- Settings navigation cog button in the web UI header.
-- Settings page router (`/config/xxx`) using Jinja2 templates and the Post/Redirect/Get pattern.
-- API credentials management page (`/config/credentials`) supporting Bus API keys, Train S3 bucket details, Train live credentials, Open API credentials, and Google Maps API credentials with custom region bias.
-- Google Maps client library (`GoogleMapsClient`) and validator (`validate_google_maps_api_key`) supporting geocoding, reverse geocoding, distance matrix, directions, and zero-cost credential probe verification.
-- Added `googlemaps>=4.10.0` dependency to `requirements.txt`.
-- Asynchronous credential validation endpoint (`POST /config/credentials/validate`) supporting live verification for Bus Open Data Service (BODS REST API), AWS S3 buckets (`boto3`), National Rail LDBWS (`bravado` OpenAPI / SOAP), OpenAI services (`openai`), and Google Maps Platform services (`googlemaps`).
-
-- OpenAI chat model dropdown (`open_api_model`) auto-populated from discovered endpoint models on credential validation, with chat model filtering and standard fallback choices.
-- External OpenAI model pricing documentation link on the credentials configuration page next to the model selection dropdown.
-- Real-time client-side status badge indicators and on-demand "Re-check" buttons on the credentials configuration page that validate populated credentials on page load and on user request.
-- Timetables configuration page (`/config/timetables`) with CDN-hosted Grid.js table supporting client-side search, sorting, pagination, and deletion.
-- Transfers configuration page (`/config/transfers`) with stacked CDN-hosted Grid.js tables for managing inter-location walking links and intra-station platform transfers.
-- Locations configuration page (`/config/locations`) with Grid.js table and Leaflet interactive map modal dialogue supporting add, edit, delete, and two-way coordinate synchronisation.
-- Journeys configuration page (`/config/journeys`) with CDN-hosted Grid.js table, live search autocompletion for 4 location types (Train, Bus, Home Assistant, and Custom), and multi-time-window modal dialogue.
-- Peewee database model `Journey` and schema table `journeys` for persisting journeys and structured JSON time settings.
-- Location lookup endpoint (`GET /config/journeys/search`) supporting rail stations, bus stops, Home Assistant locations, and custom locations with visual indicators and icons.
-- Home Assistant location synchronisation (`ha_locations`) importing all Home Assistant zones (`zone.*` entities) daily and on-demand.
-- Boolean flag `ha` on `Location` model and schema migration for `locations` table to distinguish Home Assistant synchronised locations from manual entries.
-- UI protections and read-only View modal dialogue on `/config/locations` preventing direct editing or deletion of Home Assistant synchronised locations.
-- `HomeAssistantClient` datasource client in `app/datasources/homeassistant.py` communicating with Home Assistant Core API via Supervisor or `HA_URL` / `HA_TOKEN`.
-- Background worker integration and on-demand synchronisation on `/config/sync` for Home Assistant locations.
-- Granted Home Assistant Core API permissions via `homeassistant_api: true` in `travel-assistant/config.yaml`.
-- Peewee database model `Location` and schema table `locations` for persisting named geographic coordinates.
-- Dedicated location lookup and autocomplete endpoint (`GET /config/transfers/search`) querying local SQLite `stations` and `bus_stops` datasets with search deduplication and fallback support.
-- SQLite schema tables `location_transfers` and `platform_transfers` with index optimisations.
-- `LocationTransferRepository`, `PlatformTransferRepository`, and `TransferRepository` in `app/db/transfers.py` providing transactional batch replacement, CRUD helpers, and lifecycle management.
-- Search and lookup endpoint (`GET /api/timetables/search` and `/config/timetables/search`) for bus routes and rail stations with autocomplete in the Add Timetable modal.
-- `TimetableRepository` in SQLite for managing persisted timetable schedules.
-- Unified left sidebar configuration layout (`config_base.html`) across `/config/*` sections with collapsible mobile drawer.
-- Unsaved changes protection manager (`ConfigDirtyManager`) intercepting page reloads, tab navigation, and breadcrumbs with warning prompts.
-- Standard action bar with dynamic **Save Changes** and **Discard Changes** across all configuration sections.
-- Dedicated Background Synchronisation page at `/config/sync` featuring Grid.js interactive table for cached transit datasets (Bus Routes, Bus Stops, Train Stations), "Last updated" timestamps, status badges, per-table "Refresh" triggers, and a top "Refresh All Datasets" action without horizontal scrollbars, search, or pagination.
-- Restored Database storage page (`/config/db`) displaying the database disk size card alongside a clean, non-paginated 2-column Grid.js table of SQLite schema tables and persisted row counts.
-- Relocated **Save Changes** and **Discard Changes** action bar to the top header row of editable configuration pages (`/config/credentials`, `/config/timetables`, `/config/transfers`), omitting action bars on read-only pages.
-- Converted Add Timetable and Add Transfer action buttons into compact, rounded `+` icon-only buttons with accessible labels and tooltips.
-- Unnumbered API credentials section headings ("Bus API Key", "Train S3 Bucket Details", "Train Live Credentials", "OpenAI & LLM Credentials").
-- Replaced "Re-check" buttons with interactive "Check" buttons on the API Credentials page that remain disabled on page load and dynamically enable when text inputs are modified.
-- Fixed BODS endpoint resolution in `sync_bus_stops` to correctly target dataset feeds.
-- Comprehensive unit tests covering database lifecycle, repository operations, credential validators, timetable management, transit search lookups, transfers management, and configuration views with 100% code coverage.
-
-### Changed
-- Updated `Timetable` database model and schema table `timetables` to support timetable name, optional start and end date validity ranges, and individual day operating flags (`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`, `bank_holiday`).
-- Redesigned Timetables configuration page (`/config/timetables`) and modal dialogue with day selection toggles, quick-select helper buttons (*All*, *Weekdays*, *Weekends*, *Clear*), date range pickers with validation, and support for adding and editing timetable entries.
-- Standardised page container width across the entire application to `max-w-5xl`, eliminating layout shifting between the Overview dashboard and Configuration pages.
-- Standardised status badge and pill styling across all pages to `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold` with consistent dark-mode ring borders.
-- Established strict button sizing tiers: Medium (`rounded-xl px-4 py-2 text-sm font-semibold`) for primary/secondary actions, and Compact (`rounded-lg px-3 py-1.5 text-xs font-semibold`) for table rows and inline actions.
-- Unified application copy and terminology:
-  - Standardised on **"Refresh"** across all dataset operations on `/config/db` (*"Refresh All Datasets"*, *"Refresh"*, *"Refreshed"*, *"Refreshing..."*, *"Reload Page"*).
-  - Renamed Section 4 on the API credentials page to **"4. OpenAI & LLM Credentials"**.
-  - Standardised transit modes to **"Bus Route"** and **"Rail Station"** across all labels, selectors, and badges.
-  - Renamed Add Timetable modal submit button to **"Add Timetable"**.
-- Refactored `app/db` into a modular package with `BaseRepository` (`app/db/base.py`) providing unified connection management, `executemany` batch write optimisation, and timestamp formatting helpers.
-- Modularised `app/validators` into a domain-driven package (`app/validators/{bus,s3,train_live,openai,dispatcher,constants}.py`) with preserved backward-compatible top-level exports.
-- Decomposed monolithic `test_validators.py` (706 lines) into isolated unit test modules under `app/tests/validators/` maintaining 100% test coverage.
-- Extracted client-side JavaScript and CSS from Jinja templates into separate static files (`app/static/js/dirty-manager.js`, `app/static/js/credentials.js`, `app/static/js/timetables.js`, `app/static/js/db.js`, and `app/static/css/tables.css`), significantly reducing template sizes and complexity.
-- Migrated frontend styling from custom vanilla CSS to Tailwind CSS v4 via Browser CDN.
-- Modernised UI with responsive layout, automated dark mode support via `prefers-color-scheme`, and pulsing status animations.
-- Removed legacy `style.css` stylesheet.
-
-### Removed
-- Removed hardcoded sample timetable dataset (`SAMPLE_TIMETABLE_DATA`) and location search dataset (`SAMPLE_LOCATION_SEARCH_DATA`) from `app/views/config.py`, ensuring all search endpoints strictly query local cached SQLite datasets and return clean empty states when unpopulated.
-
-### Fixed
-- Added automatic SQLite schema migration in `run_migrations` for legacy `timetables` tables, resolving `peewee.OperationalError: no such column: t1.start_date` on `/config/timetables` while preserving existing timetable records.
+  - Updated notification payloads (`url` and `clickAction`) to resolve the dynamic add-on Ingress panel path, preventing Home Assistant Companion App navigation failures.
+- **RAPTOR Solver & Journey Route Discovery Performance**:
+  - Resolved Out-Of-Memory (OOM) killer terminations and worker timeouts on `/journey` and live polling by extending RAPTOR's in-memory parsed trip cache (`_TRIPS_CACHE_TTL_SECONDS = 86400.0`), combining stop extraction and trip conversion into a single pass, caching upcoming itineraries for 300 seconds, and adding SQL-level date range and day-of-week pre-filtering via `get_active_timetables`.
+  - Integrated automatic planner cache invalidation hooks (`_clear_planner_caches`) triggered on timetable or journey creation, modification, or removal.
+  - Added seamless topological route corridor fallback in live tracking (`j_obj.get_calculated_routes()`) when viewing journeys outside scheduled operating hours.
+  - Replaced expensive fallback `find_routes` in `plan_journey` with a fast BFS corridor connectivity check (`_check_corridor_connectivity`), eliminating 3-minute Gunicorn and dispatcher freezes.
+  - Added monotonic midnight rollover detection (`rollover_offset += 1440`) in `_extract_parsed_trips` and slack calculations to prevent negative-duration infinite loops on cross-midnight trips.
+  - Injected 0-minute direct access/egress edges in `plan_journey` when origin or destination endpoints are served directly by active timetable stops.
+  - Enforced a pure per-change cost model ($w = 0.01$ transit edge weight, $w = \text{duration} + 12.0$ transfer penalty), preserved reachable origin access stops in corridor exploration, and compressed contiguous legs while preserving distinct timetables and intermediate transfer stations.
+  - Resolved topological route graph connectivity failures by canonicalising namespaced identifiers (`naptan:`, `atco:`, `ha:`, `custom:`, `tiploc:`), eliminating double prefixes (`ha:ha:...`), and replacing unindexed full-table scans with filtered batch queries on `stop_interchanges`.
+  - Fixed Calculated Routes DAG viewer layout by replacing heuristic progress averaging with longest-path relaxation on directed legs, preserving transit modes and directional colours, enforcing top-to-bottom hierarchy with level compaction, and canonicalising stop nodes to official NaPTAN/ATCO codes.
+- **Data Synchronisation Pipelines**:
+  - Fixed Darwin rail timetable single-day validity expiry by setting `end_date = None` so recurring rail services remain active indefinitely, added startup migration clearing legacy single-day `end_date` values, and implemented `ContinuationToken` pagination for S3 buckets with >1,000 keys.
+  - Fixed BODS TransXChange bus timetable ingestion by preserving opposing directional corridors, consolidating journey pattern fragments into master route corridors with order-preserving topological insertion, correctly parsing vehicle journey `<OperatingProfile>` overrides for weekday/Saturday/Sunday day flags, resolving bus stops with prefix awareness to ATCO codes, adding multi-page offset pagination, and removing unsupported query parameters (`boundingBox`).
+  - Fixed synchronisation errors and skipped diagnostics only appearing on the Web UI by emitting structured system log entries (`logger.error`, `logger.warning`) across all sync routines, and elevated `JourneyPlanningError` to `WARNING`.
+  - Rounded Google Maps walking durations in seconds up into whole minutes (`math.ceil`) to produce symmetrical bi-directional records, and introduced `_walking_sync_lock` thread synchronisation.
+  - Resolved Darwin LDBWS credential validation HTTP 403 on Rail Data Marketplace by configuring custom `User-Agent` headers and operational path URLs.
+- **Model Context Protocol (MCP) Server**:
+  - Migrated `create_mcp_app` to `MCPServer.streamable_http_app` supporting HTTP POST initialisation, JSON-RPC execution, GET SSE streams, and route aliases (`/sse`, `/mcp`, `/`).
+  - Disabled strict DNS rebinding protection by default in `MCPServer.sse_app` to accept local network clients and Home Assistant reverse proxy requests with LAN Host headers without `HTTP 421 Misdirected Request`.
+  - Fixed Grid.js runtime exception on `StagedChangesetManager.getUpdated()` in MCP config UI, synchronised dirty state with `ConfigDirtyManager`, and resolved module namespace collision with the external `mcp` library.
+- **Configuration Web UI & Table Management**:
+  - Restored original Save button inner HTML and state in `ConfigSave.save` on completion, ensuring `ConfigDirtyManager.updateUI` resets button markup reliably without sticking on `Saving...`.
+  - Fixed timetable action button click delegation on `/config/timetables` to reliably open the Timetable Grid Editor and edit dialogues.
+  - Fixed Timetable Grid Editor stop search autocomplete popup layering (z-index stacking, positioning above table, no-scrollbar styling) and container clipping.
+  - Resolved undefined `createChangesetTracker` reference in `transit-ui.js` that caused runtime exceptions during Grid.js data fetch.
+  - Disabled browser caching across configuration pages and endpoints by serving explicit `Cache-Control: no-cache, no-store, must-revalidate` headers.
+  - Fixed Google Maps credential validation HTTP 400 error by executing an active geocoding probe query instead of an empty parameter.
+  - Added automatic SQLite schema migration in `run_migrations` for legacy `timetables` tables (`start_date`, `transport_type`, `content`).
+  - Mocked unmocked transit synchronisation calls and worker daemon checks in unit test fixtures, eliminating external network requests.
 
 ## [0.1.0] - 2026-08-15
 
