@@ -130,6 +130,8 @@ class DepartureMonitor:
                 current_dt=current_dt,
                 ha_client=client,
                 live_client=train_live,
+                sent_keys=self.sent_keys,
+                target_notify_service=self.target_notify_service,
             )
             if updated:
                 dispatched_count += 1

@@ -274,3 +274,15 @@ class HomeAssistantClient(BaseDataSource):
         if data:
             payload["data"] = data
         return self.call_service("notify", service_name, payload)
+
+    def clear_mobile_notification(
+        self,
+        tag: str,
+        service_name: str = "mobile_app_stuart_mobile",
+    ) -> bool:
+        """Clear a push notification with the specified tag from Stuart's mobile device."""
+        payload: Dict[str, Any] = {
+            "message": "clear_notification",
+            "data": {"tag": tag},
+        }
+        return self.call_service("notify", service_name, payload)

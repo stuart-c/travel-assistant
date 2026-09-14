@@ -391,7 +391,10 @@ def plan_journey(
     # 3. Execute RAPTOR for departure sweeps
     eval_departures: List[int] = []
     if t_mode == "depart":
-        eval_departures = [t_start_min]
+        if max_itineraries > 1:
+            eval_departures = list(range(t_start_min, t_start_min + 120, 10))
+        else:
+            eval_departures = [t_start_min]
     elif t_mode == "window":
         eval_departures = list(range(t_start_min, (t_end_min or t_start_min) + 1, 10))
     elif t_mode == "arrive":

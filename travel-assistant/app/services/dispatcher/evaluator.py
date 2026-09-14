@@ -358,6 +358,58 @@ def evaluate_journey_notification(
     return None
 
 
+def find_next_departure_candidate(
+    journey: Journey,
+    dt: datetime.datetime,
+    exclude_service_keys: Optional[Set[str]] = None,
+    live_client: Optional[TrainLiveClient] = None,
+    tolerance_minutes: int = 1,
+) -> Optional[DepartureCandidate]:
+    """Find the next viable upcoming departure candidate whose leave time has not yet passed.
+
+    Evaluates upcoming itineraries from current time onwards, validating arrival times against the journey's
+    active time window constraints (e.g. candidate must arrive by end_time for arrive mode).
+    """
+    is_active, active_ts = is_journey_active_for_datetime(journey, dt)
+    if not is_active:
+        return None
+
+    candidates = extract_departure_candidates(journey, dt)
+    if not candidates:
+        return None
+
+    current_minutes = dt.hour * 60 + dt.minute
+    excluded = exclude_service_keys or set()
+
+    for candidate in candidates:
+        # If leave time has already passed, Stuart cannot make this departure
+        if candidate.leave_minutes < current_minutes - tolerance_minutes:
+            continue
+
+        # Adjust for live feeds if available
+        adjusted = apply_live_departure_adjustments(candidate, live_client)
+
+        # Filter candidate against active time window constraints
+        if active_ts:
+            mode = (active_ts.mode or "depart").strip().lower()
+            if mode == "arrive" and active_ts.end_time:
+                end_arr = parse_time_to_minutes(active_ts.end_time)
+                cand_arr = parse_time_to_minutes(adjusted.arrival_time)
+                if end_arr is not None and cand_arr is not None and cand_arr > end_arr:
+                    continue
+            elif mode != "arrive" and active_ts.end_time:
+                end_dep = parse_time_to_minutes(active_ts.end_time)
+                if end_dep is not None and adjusted.leave_minutes > end_dep:
+                    continue
+
+        if adjusted.service_key in excluded:
+            continue
+
+        return adjusted
+
+    return None
+
+
 def format_departure_notification(
     candidate: DepartureCandidate,
 ) -> Tuple[str, str, Dict[str, Any]]:
