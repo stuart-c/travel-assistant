@@ -1945,3 +1945,53 @@ def test_raptor_midnight_rollover(app: Flask) -> None:
         assert itin.departure_time == "23:50"
         assert itin.arrival_time == "00:35"
         assert itin.total_duration_minutes == 45
+
+
+def test_load_interchanges_for_stops_filtering_and_chunking(app: Flask) -> None:
+    """Test that _load_interchanges_for_stops only retrieves relevant stops and handles chunking."""
+    from app.services.planner.raptor import _load_interchanges_for_stops
+
+    with app.app_context():
+        # Empty set returns empty dict without DB queries
+        assert _load_interchanges_for_stops(set()) == {}
+
+        # Seed test interchanges
+        StopInterchange.create(
+            from_stop_atco="2100_STOP_A",
+            from_stop_name="Stop A",
+            to_stop_atco="2100_STOP_B",
+            to_stop_name="Stop B",
+            distance_metres=100,
+            estimated_walk_minutes=2,
+        )
+        StopInterchange.create(
+            from_stop_atco="2100_STOP_C",
+            from_stop_name="Stop C",
+            to_stop_atco="2100_STOP_D",
+            to_stop_name="Stop D",
+            distance_metres=150,
+            estimated_walk_minutes=3,
+        )
+        StopInterchange.create(
+            from_stop_atco="2100_UNRELATED",
+            from_stop_name="Unrelated",
+            to_stop_atco="2100_OTHER",
+            to_stop_name="Other",
+            distance_metres=200,
+            estimated_walk_minutes=4,
+        )
+
+        # Only query for STOP_A and STOP_C
+        res = _load_interchanges_for_stops({"2100_STOP_A", "2100_STOP_C"})
+        assert "2100_STOP_A" in res
+        assert res["2100_STOP_A"] == [("2100_STOP_B", 2)]
+        assert "2100_STOP_C" in res
+        assert res["2100_STOP_C"] == [("2100_STOP_D", 3)]
+        assert "2100_UNRELATED" not in res
+
+        # Test chunking with >500 dummy stops
+        large_stops = {f"dummy_stop_{i}" for i in range(550)}
+        large_stops.add("2100_STOP_A")
+        chunked_res = _load_interchanges_for_stops(large_stops)
+        assert "2100_STOP_A" in chunked_res
+        assert chunked_res["2100_STOP_A"] == [("2100_STOP_B", 2)]
