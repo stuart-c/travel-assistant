@@ -166,6 +166,49 @@ def _extract_parsed_trips(
     return parsed_trips, timetable_stop_ids
 
 
+def _build_stop_to_trips(trips: List[_ParsedTrip]) -> Dict[str, List[_ParsedTrip]]:
+    """Index trips by normalised stop identifier."""
+    stop_to_trips: Dict[str, List[_ParsedTrip]] = {}
+    for tr in trips:
+        for s in tr.stops:
+            s_norm = normalise_id(s)
+            stop_to_trips.setdefault(s_norm, []).append(tr)
+    return stop_to_trips
+
+
+def _load_interchanges_for_stops(
+    stop_ids: Set[str],
+) -> Dict[str, List[Tuple[str, int]]]:
+    """Retrieve nearby stop interchanges for relevant transit stops using indexed queries.
+
+    Queries StopInterchange in chunked batches to respect SQLite parameter limits and
+    yields raw tuples to avoid instantiating Peewee model objects across millions of rows.
+    """
+    if not stop_ids:
+        return {}
+
+    interchanges: Dict[str, List[Tuple[str, int]]] = {}
+    candidate_stops = list(stop_ids)
+    batch_size = 500
+
+    for i in range(0, len(candidate_stops), batch_size):
+        chunk = candidate_stops[i : i + batch_size]
+        for f_st, t_st, walk_min in (
+            StopInterchange.select(
+                StopInterchange.from_stop_atco,
+                StopInterchange.to_stop_atco,
+                StopInterchange.estimated_walk_minutes,
+            )
+            .where(StopInterchange.from_stop_atco.in_(chunk))
+            .tuples()
+        ):
+            f_norm = normalise_id(f_st)
+            t_norm = normalise_id(t_st)
+            interchanges.setdefault(f_norm, []).append((t_norm, walk_min))
+
+    return interchanges
+
+
 def _check_corridor_connectivity(
     origin_walks: List[Tuple[str, str, str, str, int, str]],
     dest_walks: List[Tuple[str, str, str, str, int, str]],
@@ -188,27 +231,45 @@ def _check_corridor_connectivity(
 
     # Build adjacency list across all active trips
     adj: Dict[str, Set[str]] = {}
+    trip_stops: Set[str] = set()
     for tr in trips:
         for i in range(len(tr.stops) - 1):
             u = normalise_id(tr.stops[i])
             v = normalise_id(tr.stops[i + 1])
+            trip_stops.add(u)
+            trip_stops.add(v)
             if u != v:
                 adj.setdefault(u, set()).add(v)
 
-    # Interchanges
-    for si in StopInterchange.select():
-        u = normalise_id(si.from_stop_atco)
-        v = normalise_id(si.to_stop_atco)
-        if u != v:
-            adj.setdefault(u, set()).add(v)
+    # Interchanges for active corridor stops
+    relevant_stops = trip_stops | origin_stops | dest_stops
+    if relevant_stops:
+        rel_list = list(relevant_stops)
+        batch_size = 500
+        for i in range(0, len(rel_list), batch_size):
+            chunk = rel_list[i : i + batch_size]
+            for f_st, t_st in (
+                StopInterchange.select(
+                    StopInterchange.from_stop_atco,
+                    StopInterchange.to_stop_atco,
+                )
+                .where(StopInterchange.from_stop_atco.in_(chunk))
+                .tuples()
+            ):
+                u = normalise_id(f_st)
+                v = normalise_id(t_st)
+                if u != v:
+                    adj.setdefault(u, set()).add(v)
 
     # Walking links (e.g. transfer between stations)
-    for w in Walking.select():
-        u = normalise_id(w.start_id)
-        v = normalise_id(w.finish_id)
+    for w_start, w_fin, is_bi in Walking.select(
+        Walking.start_id, Walking.finish_id, Walking.bidirectional
+    ).tuples():
+        u = normalise_id(w_start)
+        v = normalise_id(w_fin)
         if u != v:
             adj.setdefault(u, set()).add(v)
-            if w.bidirectional:
+            if is_bi:
                 adj.setdefault(v, set()).add(u)
 
     # BFS from all origin stops
@@ -401,6 +462,12 @@ def plan_journey(
         earliest_dep = max(0, t_start_min - 240)
         eval_departures = list(range(earliest_dep, t_start_min, 10))
 
+    # Precompute stop-to-trips index and query relevant stop interchanges once across all sweeps
+    stop_to_trips = _build_stop_to_trips(trips)
+    origin_access_stops = {normalise_id(w[3]) for w in origin_walks if len(w) >= 4}
+    relevant_stops = set(stop_to_trips.keys()) | origin_access_stops
+    interchanges_by_stop = _load_interchanges_for_stops(relevant_stops)
+
     for dep_t in eval_departures:
         itinerary = _run_raptor_forward(
             dep_time_min=dep_t,
@@ -413,6 +480,8 @@ def plan_journey(
             t_id=t_id,
             min_transfer_min=min_transfer_minutes,
             max_rounds=max_transfers + 1,
+            stop_to_trips=stop_to_trips,
+            interchanges_by_stop=interchanges_by_stop,
         )
         if itinerary:
             if t_mode == "arrive":
@@ -485,6 +554,8 @@ def _run_raptor_forward(
     t_id: str,
     min_transfer_min: int = 3,
     max_rounds: int = 5,
+    stop_to_trips: Optional[Dict[str, List[_ParsedTrip]]] = None,
+    interchanges_by_stop: Optional[Dict[str, List[Tuple[str, int]]]] = None,
 ) -> Optional[ScheduledItinerary]:
     """Execute a single forward RAPTOR run from dep_time_min."""
     infinity = 99999
@@ -519,19 +590,13 @@ def _run_raptor_forward(
         }
         marked_stops.add(target_norm)
 
-    stop_to_trips: Dict[str, List[_ParsedTrip]] = {}
-    for tr in trips:
-        for s in tr.stops:
-            s_norm = normalise_id(s)
-            stop_to_trips.setdefault(s_norm, []).append(tr)
+    if stop_to_trips is None:
+        stop_to_trips = _build_stop_to_trips(trips)
 
-    stop_interchanges = list(StopInterchange.select())
-    interchanges_by_stop: Dict[str, List[Tuple[str, int]]] = {}
-    for si in stop_interchanges:
-        f_st = normalise_id(si.from_stop_atco)
-        t_st = normalise_id(si.to_stop_atco)
-        interchanges_by_stop.setdefault(f_st, []).append(
-            (t_st, si.estimated_walk_minutes)
+    if interchanges_by_stop is None:
+        origin_access_stops = {normalise_id(w[3]) for w in origin_walks if len(w) >= 4}
+        interchanges_by_stop = _load_interchanges_for_stops(
+            set(stop_to_trips.keys()) | origin_access_stops
         )
 
     for k in range(1, max_rounds + 1):
