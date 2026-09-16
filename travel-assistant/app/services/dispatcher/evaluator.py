@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from app.datasources.train_live import TrainLiveClient
+from app.datasources.train_live import TrainLiveClient, extract_live_services
 from app.models.journey import Journey, JourneyTimeSetting
 from app.models.setting import Setting
 from app.services.dispatcher.station_resolver import resolve_station_crs
@@ -269,18 +269,42 @@ def apply_live_departure_adjustments(
     filter_list = [dest_crs] if dest_crs else None
 
     try:
-        departures = live_client.get_fastest_departures(crs, filter_list)
-        # If live departure times are obtained, update candidate departure time
+        raw_departures = live_client.get_fastest_departures(crs, filter_list)
+        services = extract_live_services(raw_departures)
 
-        if departures and isinstance(departures, list):
-            first_dep = departures[0]
-            std = first_dep.get("std")  # Scheduled
-            etd = first_dep.get("etd")  # Expected
-            platform = first_dep.get("platform")
+        if not services and dest_crs:
+            try:
+                board = live_client.get_departure_board(
+                    crs=crs, filter_crs=dest_crs, num_rows=5
+                )
+                board_services = extract_live_services(board)
+                if board_services:
+                    services = board_services
+            except Exception as board_exc:
+                logger.debug(
+                    "Live departure board probe fallback skipped for %s -> %s: %s",
+                    crs,
+                    dest_crs,
+                    board_exc,
+                )
+
+        if services:
+            target_dep = None
+            if candidate.transit_dep_time:
+                for dep in services:
+                    if dep.get("std") == candidate.transit_dep_time:
+                        target_dep = dep
+                        break
+            if not target_dep:
+                target_dep = services[0]
+
+            std = target_dep.get("std")  # Scheduled
+            etd = target_dep.get("etd")  # Expected
+            platform = target_dep.get("platform")
             if platform:
                 candidate.platform = str(platform).strip()
 
-            raw_delay_reason = first_dep.get("delayReason")
+            raw_delay_reason = target_dep.get("delayReason")
             if raw_delay_reason:
                 from app.services.dispatcher.tracker import _clean_delay_reason
 
@@ -338,6 +362,9 @@ def evaluate_journey_notification(
         # Adjust for live feeds if available
         adjusted = apply_live_departure_adjustments(candidate, live_client)
 
+        if adjusted.leave_minutes < current_minutes - tolerance_minutes:
+            continue
+
         # Filter candidate against active time window constraints if present
         if active_ts:
             mode = (active_ts.mode or "depart").strip().lower()
@@ -377,6 +404,7 @@ def find_next_departure_candidate(
     exclude_service_keys: Optional[Set[str]] = None,
     live_client: Optional[TrainLiveClient] = None,
     tolerance_minutes: int = 1,
+    min_notice_minutes: int = 1,
 ) -> Optional[DepartureCandidate]:
     """Find the next viable upcoming departure candidate whose leave time has not yet passed.
 
@@ -387,7 +415,7 @@ def find_next_departure_candidate(
     if not is_active:
         return None
 
-    candidates = extract_departure_candidates(journey, dt)
+    candidates = extract_departure_candidates(journey, dt, max_plans=10)
     if not candidates:
         return None
 
@@ -395,12 +423,16 @@ def find_next_departure_candidate(
     excluded = exclude_service_keys or set()
 
     for candidate in candidates:
-        # If leave time has already passed, Stuart cannot make this departure
-        if candidate.leave_minutes < current_minutes - tolerance_minutes:
+        # If leave time has already passed or is too immediate, Stuart cannot make this departure
+        if candidate.leave_minutes < current_minutes + min_notice_minutes:
             continue
 
         # Adjust for live feeds if available
         adjusted = apply_live_departure_adjustments(candidate, live_client)
+
+        # Re-verify leave time after live adjustments
+        if adjusted.leave_minutes < current_minutes + min_notice_minutes:
+            continue
 
         # Filter candidate against active time window constraints
         if active_ts:

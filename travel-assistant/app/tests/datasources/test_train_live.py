@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.datasources.train_live import (
     TrainLiveClient,
+    extract_live_services,
     get_schema_path,
     sync_swagger_schema,
 )
@@ -373,3 +374,96 @@ def test_get_schema_path_instance_fallback() -> None:
         with patch("os.path.exists", return_value=False):
             path = get_schema_path()
             assert path.endswith("instance/ldbws_swagger.json")
+
+
+def test_extract_live_services_formats() -> None:
+    """Test extract_live_services across Darwin OpenAPI response variants and edge cases."""
+    # 1. Empty or None inputs
+    assert extract_live_services(None) == []
+    assert extract_live_services({}) == []
+    assert extract_live_services([]) == []
+
+    # 2. DeparturesBoard dict format (from GetFastestDepartures)
+    departures_board = {
+        "departures": [
+            {
+                "crs": "KGX",
+                "service": {
+                    "std": "08:14",
+                    "etd": "On time",
+                    "platform": "1",
+                    "operator": "Great Northern",
+                },
+            },
+            {
+                "crs": "EUS",
+                "service": {
+                    "std": "08:24",
+                    "etd": "Delayed",
+                    "platform": "4B",
+                    "delayReason": "Signalling fault",
+                },
+            },
+        ]
+    }
+    services = extract_live_services(departures_board)
+    assert len(services) == 2
+    assert services[0]["std"] == "08:14"
+    assert services[0]["platform"] == "1"
+    assert services[1]["std"] == "08:24"
+    assert services[1]["platform"] == "4B"
+
+    # 3. StationBoard dict format (from GetDepartureBoard)
+    station_board = {
+        "trainServices": [
+            {
+                "std": "09:05",
+                "etd": "On time",
+                "platform": "3",
+            }
+        ]
+    }
+    services = extract_live_services(station_board)
+    assert len(services) == 1
+    assert services[0]["std"] == "09:05"
+    assert services[0]["platform"] == "3"
+
+    # 4. Nested departuresBoard dict
+    nested_board = {
+        "departuresBoard": {
+            "departures": [
+                {
+                    "service": {
+                        "std": "10:00",
+                        "platform": "8",
+                    }
+                }
+            ]
+        }
+    }
+    services = extract_live_services(nested_board)
+    assert len(services) == 1
+    assert services[0]["platform"] == "8"
+
+    # 5. Flat list format (unit test mock format)
+    flat_list = [
+        {"std": "11:15", "platform": "2A"},
+        {"std": "11:45", "platform": "2B"},
+    ]
+    services = extract_live_services(flat_list)
+    assert len(services) == 2
+    assert services[0]["platform"] == "2A"
+
+
+@patch.object(TrainLiveClient, "_call_operation")
+def test_train_live_get_fastest_departures_list_filter(
+    mock_call_op: MagicMock,
+) -> None:
+    """Test TrainLiveClient.get_fastest_departures joins list filter_list into comma-separated string."""
+    client = TrainLiveClient(api_key="valid-key")
+    client.get_fastest_departures(crs="KGX", filter_list=["EUS", "STP"])
+    mock_call_op.assert_called_once_with(
+        "GetFastestDepartures",
+        crs="KGX",
+        filterList="EUS,STP",
+    )

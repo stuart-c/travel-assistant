@@ -102,6 +102,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed `SYNCABLE_TABLES` constant from `app.db`.
 
 ### Fixed
+- **Darwin OpenAPI Platform Resolution, Rollover Future Timing & Commute Window Retention** (`app/datasources/train_live.py`, `app/services/dispatcher/tracker.py`, `app/services/dispatcher/evaluator.py`):
+  - Normalised National Rail Darwin LDBWS OpenAPI dictionary responses (`DeparturesBoard` and `StationBoard`) via `extract_live_services`, unwrapping individual service objects to ensure real-time platforms and delay statuses are resolved instead of being dropped by list-type assertions.
+  - Added departure board fallback (`get_departure_board`) in `resolve_live_rail_platform` and `apply_live_departure_adjustments` when fastest departures data omits platform assignments.
+  - Sanitised `filter_list` inputs in `TrainLiveClient.get_fastest_departures` to join list parameters into valid comma-separated string parameters.
+  - Enforced strictly future leave times in `find_next_departure_candidate` (`candidate.leave_minutes >= current_minutes + 1`) and re-validated achievable leave times following live delay adjustments, eliminating confusing past-leave push notifications.
+  - Guarded pre-departure rollover expiry in `update_journey_progress` to ensure active journey tracking sessions do not prematurely transition to `JourneyStepStatus.EXPIRED` and clear mobile push notifications while the scheduled commute window remains active and viable options exist.
 - **Dispatcher Tracking, Platform Precision & Dynamic Timing Realignment** (`app/services/dispatcher/`):
   - Fixed bus interchange notifications showing "Platform to be announced" by strictly checking for rail mode or explicit bus stand/stop indicators before formatting platform clauses.
   - Added step 3 fallback in `resolve_live_rail_platform` to match the earliest upcoming calling departure when the scheduled time has passed or was adjusted due to earlier leg delays.

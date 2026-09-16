@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.datasources.homeassistant import HomeAssistantClient
-from app.datasources.train_live import TrainLiveClient
+from app.datasources.train_live import TrainLiveClient, extract_live_services
 from app.models.journey import Journey
 from app.models.setting import Setting
 from app.services.dispatcher.evaluator import (
@@ -267,19 +267,38 @@ def resolve_live_rail_platform(
     filter_list = [dest_crs] if dest_crs else None
 
     try:
-        departures = live_client.get_fastest_departures(crs, filter_list)
-        if departures and isinstance(departures, list):
+        raw_departures = live_client.get_fastest_departures(crs, filter_list)
+        services = extract_live_services(raw_departures)
+
+        # Fallback to departure board if no services found or destination platform missing
+        if not services or (dest_crs and not any(s.get("platform") for s in services)):
+            try:
+                board = live_client.get_departure_board(
+                    crs=crs, filter_crs=dest_crs, num_rows=5
+                )
+                board_services = extract_live_services(board)
+                if board_services:
+                    services = board_services
+            except Exception as board_exc:
+                logger.debug(
+                    "Live departure board fallback probe skipped for %s -> %s: %s",
+                    crs,
+                    dest_crs,
+                    board_exc,
+                )
+
+        if services:
             target_dep = None
             if scheduled_time:
                 sched_min = parse_time_to_minutes(scheduled_time)
                 # 1. Exact match on scheduled departure time (std)
-                for dep in departures:
+                for dep in services:
                     if dep.get("std") == scheduled_time:
                         target_dep = dep
                         break
                 # 2. Tolerant match within +/- 3 minutes for minor timetable variations
                 if not target_dep and sched_min is not None:
-                    for dep in departures:
+                    for dep in services:
                         std = dep.get("std")
                         std_m = parse_time_to_minutes(std) if std else None
                         if std_m is not None and abs(std_m - sched_min) <= 3:
@@ -287,7 +306,7 @@ def resolve_live_rail_platform(
                             break
                 # 3. If scheduled_time is in the past or unmatched, fall back to next upcoming departure calling at destination
                 if not target_dep:
-                    for dep in departures:
+                    for dep in services:
                         std = dep.get("std")
                         std_m = parse_time_to_minutes(std) if std else None
                         if std_m is not None and (
@@ -296,9 +315,9 @@ def resolve_live_rail_platform(
                             target_dep = dep
                             break
                     if not target_dep:
-                        target_dep = departures[0]
-            elif departures:
-                target_dep = departures[0]
+                        target_dep = services[0]
+            elif services:
+                target_dep = services[0]
 
             if target_dep:
                 platform = target_dep.get("platform")
@@ -1208,25 +1227,53 @@ def update_journey_progress(
                             )
                             return False
                     else:
-                        # No further viable departure options within the journey time window
-                        active.current_status = JourneyStepStatus.EXPIRED
-                        try:
-                            ha_client.clear_mobile_notification(
-                                tag=f"journey_{active.journey_id}",
-                                service_name=target_notify_service,
+                        # No unnotified departure candidate discovered.
+                        # Check whether all viable options for the journey window have genuinely elapsed.
+                        is_active = False
+                        if journey:
+                            is_active, _ = is_journey_active_for_datetime(
+                                journey, current_dt
                             )
+
+                        any_remaining = (
+                            find_next_departure_candidate(
+                                journey=journey,
+                                dt=current_dt,
+                                exclude_service_keys=None,
+                                live_client=live_client,
+                            )
+                            if journey
+                            else None
+                        )
+
+                        # Only expire and clear notifications if the commute window is closed or no viable options remain
+                        if not is_active or not any_remaining:
+                            active.current_status = JourneyStepStatus.EXPIRED
+                            try:
+                                ha_client.clear_mobile_notification(
+                                    tag=f"journey_{active.journey_id}",
+                                    service_name=target_notify_service,
+                                )
+                                logger.info(
+                                    "Commute window closed for journey %d (%s); no further viable departures. Cleared notification.",
+                                    active.journey_id,
+                                    active.journey_name,
+                                )
+                            except Exception as exc:
+                                logger.debug(
+                                    "Failed to clear mobile notification on expiry for journey %d: %s",
+                                    active.journey_id,
+                                    exc,
+                                )
+                            return False
+                        else:
                             logger.info(
-                                "Commute window closed for journey %d (%s); no further viable departures. Cleared notification.",
+                                "No new departure candidate for journey %d (%s) at %s, but commute window remains active. Retaining pre-departure tracking.",
                                 active.journey_id,
                                 active.journey_name,
+                                current_dt.strftime("%H:%M"),
                             )
-                        except Exception as exc:
-                            logger.debug(
-                                "Failed to clear mobile notification on expiry for journey %d: %s",
-                                active.journey_id,
-                                exc,
-                            )
-                        return False
+                            return False
 
     # Check if Stuart has arrived at the final destination (only once journey has started)
     if active.current_status != JourneyStepStatus.PRE_DEPARTURE:
