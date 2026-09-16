@@ -1279,6 +1279,30 @@ def test_find_next_departure_candidate_filters_and_exhaustion(
         assert cand_inactive is None
 
 
+def test_find_next_departure_candidate_rejects_past_and_immediate_leave_time(
+    app: Flask,
+) -> None:
+    """Test find_next_departure_candidate strictly rejects candidates with past or immediate leave times."""
+    with app.app_context():
+        journey = _seed_commute_data()
+        # Trips: 08:08 (leave 08:00) and 08:38 (leave 08:30)
+
+        # At exactly 08:00: leave time 08:00 is immediate; Stuart needs future notice
+        dt_0800 = datetime.datetime(2026, 9, 7, 8, 0)
+        cand_0800 = find_next_departure_candidate(journey, dt_0800)
+        assert cand_0800 is not None
+        # Must skip 08:08 trip (leave 08:00) and advance to 08:38 trip (leave 08:30)
+        assert cand_0800.transit_dep_time == "08:38"
+        assert cand_0800.leave_time == "08:30"
+
+        # At 07:55: leave time 08:00 is in the future (> current_time + 1 min)
+        dt_0755 = datetime.datetime(2026, 9, 7, 7, 55)
+        cand_0755 = find_next_departure_candidate(journey, dt_0755)
+        assert cand_0755 is not None
+        assert cand_0755.transit_dep_time == "08:08"
+        assert cand_0755.leave_time == "08:00"
+
+
 def test_update_journey_progress_rollover_on_missed_departure(
     app: Flask,
 ) -> None:
@@ -1496,6 +1520,112 @@ def test_update_journey_progress_clears_notification_on_exhaustion(
             tag=f"journey_{journey.id}",
             service_name="mobile_app_stuart_mobile",
         )
+
+
+def test_update_journey_progress_retains_session_while_window_active(
+    app: Flask,
+) -> None:
+    """Test update_journey_progress does not expire session or clear notification when window remains active."""
+    with app.app_context():
+        journey = _seed_commute_data()
+        from app.services.dispatcher.tracker import (
+            ActiveJourney,
+            JourneyStepStatus,
+            update_journey_progress,
+        )
+        from app.services.planner.models import (
+            ItineraryEndpoint,
+            ItineraryLeg,
+            ScheduledItinerary,
+        )
+
+        itin = ScheduledItinerary(
+            departure_time="08:00",
+            arrival_time="08:28",
+            total_duration_minutes=28,
+            transfers_count=0,
+            robustness_score="high",
+            legs=[
+                ItineraryLeg(
+                    leg_index=0,
+                    mode="walk",
+                    origin=ItineraryEndpoint(id="ha:home", name="Home", type="ha"),
+                    destination=ItineraryEndpoint(
+                        id="atco:490000077E",
+                        name="King's Cross Station (Stop E)",
+                        type="bus",
+                    ),
+                    dep_time="08:00",
+                    arr_time="08:08",
+                    duration_minutes=8,
+                ),
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="bus",
+                    line="73",
+                    origin=ItineraryEndpoint(
+                        id="atco:490000077E",
+                        name="King's Cross Station (Stop E)",
+                        type="bus",
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="atco:490000077C",
+                        name="Euston Station (Stop C)",
+                        type="bus",
+                    ),
+                    dep_time="08:08",
+                    arr_time="08:22",
+                    duration_minutes=14,
+                ),
+            ],
+        )
+
+        active = ActiveJourney(
+            journey_id=journey.id,
+            journey_name=journey.name,
+            from_type=journey.from_type,
+            from_id=journey.from_id,
+            from_name=journey.from_name,
+            to_type=journey.to_type,
+            to_id=journey.to_id,
+            to_name=journey.to_name,
+            itinerary=itin,
+            legs=list(itin.legs),
+            current_leg_index=0,
+            current_status=JourneyStepStatus.PRE_DEPARTURE,
+            started_at=datetime.datetime(2026, 9, 7, 7, 50),
+            expected_arrival_time="08:28",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        person_state = {
+            "entity_id": "person.stuart",
+            "state": "home",
+            "attributes": {"latitude": 51.5300, "longitude": -0.1230},
+        }
+
+        dt_0805 = datetime.datetime(2026, 9, 7, 8, 5)
+        cand_0838 = find_next_departure_candidate(journey, dt_0805)
+        assert cand_0838 is not None
+        sent_keys = {cand_0838.service_key}
+
+        # At 08:05, Stuart missed 08:00 leave time.
+        # find_next_departure_candidate with exclude_service_keys=sent_keys finds no unnotified candidate.
+        # BUT window is active until 09:00 and 08:38 trip still exists in timetable!
+        dispatched = update_journey_progress(
+            active=active,
+            person_state=person_state,
+            current_dt=dt_0805,
+            ha_client=mock_ha,
+            sent_keys=sent_keys,
+            target_notify_service="mobile_app_stuart_mobile",
+        )
+
+        assert dispatched is False
+        # Must NOT be marked EXPIRED
+        assert active.current_status == JourneyStepStatus.PRE_DEPARTURE
+        # Must NOT clear mobile notification
+        mock_ha.clear_mobile_notification.assert_not_called()
 
 
 def test_update_journey_progress_no_rollover_when_stuart_departed(

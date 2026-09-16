@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from bravado.client import SwaggerClient
@@ -70,6 +70,43 @@ def sync_swagger_schema(
     except Exception:
         pass
     return False
+
+
+def extract_live_services(raw_data: Any) -> List[Dict[str, Any]]:
+    """Extract and normalise a list of train service dictionaries from Darwin LDBWS OpenAPI responses.
+
+    Handles:
+    - DeparturesBoard dict: {"departures": [{"crs": "...", "service": {...}}]}
+    - DeparturesBoardWithDetails dict: {"departures": [{"crs": "...", "service": {...}}]}
+    - StationBoard dict: {"trainServices": [{...}]}
+    - Nested dict: {"departuresBoard": {"departures": [...]}}
+    - Pre-extracted list of services: [{"std": "...", ...}]
+    - Pre-extracted list of departure items: [{"service": {...}}]
+    """
+    if not raw_data:
+        return []
+
+    if isinstance(raw_data, list):
+        services: List[Dict[str, Any]] = []
+        for item in raw_data:
+            if isinstance(item, dict):
+                if "service" in item and isinstance(item["service"], dict):
+                    services.append(item["service"])
+                else:
+                    services.append(item)
+        return services
+
+    if isinstance(raw_data, dict):
+        if "departures" in raw_data and isinstance(raw_data["departures"], list):
+            return extract_live_services(raw_data["departures"])
+        if "trainServices" in raw_data and isinstance(raw_data["trainServices"], list):
+            return extract_live_services(raw_data["trainServices"])
+        if "departuresBoard" in raw_data and isinstance(
+            raw_data["departuresBoard"], (dict, list)
+        ):
+            return extract_live_services(raw_data["departuresBoard"])
+
+    return []
 
 
 class TrainLiveClient(BaseDataSource):
@@ -324,13 +361,19 @@ class TrainLiveClient(BaseDataSource):
         )
 
     def get_fastest_departures(
-        self, crs: str, filter_list: Optional[str] = None
+        self, crs: str, filter_list: Optional[Union[str, List[str]]] = None
     ) -> Dict[str, Any]:
         """Fetch fastest departures to a list of destinations."""
+        clean_filter = ""
+        if isinstance(filter_list, (list, tuple, set)):
+            clean_filter = ",".join(str(f).upper().strip() for f in filter_list if f)
+        elif filter_list is not None:
+            clean_filter = str(filter_list).upper().strip()
+
         return self._call_operation(
             "GetFastestDepartures",
             crs=crs.upper().strip(),
-            filterList=filter_list,
+            filterList=clean_filter,
         )
 
     def validate_credentials(self) -> Dict[str, Any]:

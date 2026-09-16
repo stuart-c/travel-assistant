@@ -206,6 +206,68 @@ def test_resolve_live_rail_platform_with_atco_and_tiploc() -> None:
     mock_live.get_fastest_departures.assert_called_once_with("KGX", ["PAD"])
 
 
+def test_resolve_live_rail_platform_with_openapi_dict() -> None:
+    """Test resolve_live_rail_platform correctly extracts platforms from Darwin OpenAPI DeparturesBoard dict."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    mock_live.get_fastest_departures.return_value = {
+        "departures": [
+            {
+                "crs": "PAD",
+                "service": {
+                    "std": "08:15",
+                    "etd": "08:20",
+                    "platform": "3",
+                    "delayReason": "This service has been delayed by a track inspection",
+                    "cancelReason": None,
+                    "isCancelled": False,
+                },
+            }
+        ]
+    }
+
+    res = resolve_live_rail_platform("KGX", "PAD", "08:15", mock_live)
+    assert res.platform == "3"
+    assert res.etd == "08:20"
+    assert res.delay_minutes == 5
+    assert res.delay_reason == "a track inspection"
+    mock_live.get_fastest_departures.assert_called_once_with("KGX", ["PAD"])
+
+
+def test_resolve_live_rail_platform_fallback_to_departure_board() -> None:
+    """Test resolve_live_rail_platform falls back to get_departure_board when fastest departures has no platform."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    # GetFastestDepartures returns service without platform
+    mock_live.get_fastest_departures.return_value = {
+        "departures": [
+            {
+                "crs": "PAD",
+                "service": {
+                    "std": "08:15",
+                    "etd": "On time",
+                    "platform": None,
+                },
+            }
+        ]
+    }
+    # GetDepartureBoard returns full board with platform
+    mock_live.get_departure_board.return_value = {
+        "trainServices": [
+            {
+                "std": "08:15",
+                "etd": "On time",
+                "platform": "5A",
+            }
+        ]
+    }
+
+    res = resolve_live_rail_platform("KGX", "PAD", "08:15", mock_live)
+    assert res.platform == "5A"
+    assert res.etd == "On time"
+    mock_live.get_departure_board.assert_called_once_with(
+        crs="KGX", filter_crs="PAD", num_rows=5
+    )
+
+
 def test_get_journey_live_tracking_data_with_rail_lookahead(app: Flask) -> None:
     """Test get_journey_live_tracking_data resolves platform for connecting rail leg during initial walk."""
     with app.app_context():
