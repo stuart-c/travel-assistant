@@ -26,11 +26,8 @@ from app.services.dispatcher.monitor import (
     get_departure_monitor,
     start_departure_monitor,
 )
-from app.services.dispatcher.proximity import (
-    haversine_distance,
-    is_person_near_origin,
-    resolve_endpoint_coordinates,
-)
+from app.services.dispatcher.proximity import is_person_near_origin
+from app.utils.geo import haversine_distance_m, resolve_endpoint_coordinates
 from app.services.planner.models import (
     ItineraryEndpoint,
     ItineraryLeg,
@@ -183,10 +180,10 @@ def _seed_commute_data() -> Journey:
 def test_haversine_distance() -> None:
     """Test haversine distance calculation."""
     # Identical coordinates should be 0 distance
-    assert haversine_distance(51.5, -0.1, 51.5, -0.1) == 0.0
+    assert haversine_distance_m(51.5, -0.1, 51.5, -0.1) == 0.0
 
     # Distance between King's Cross (51.5308, -0.1238) and Euston (51.5284, -0.1331)
-    dist = haversine_distance(51.5308, -0.1238, 51.5284, -0.1331)
+    dist = haversine_distance_m(51.5308, -0.1238, 51.5284, -0.1331)
     assert 650.0 < dist < 750.0
 
 

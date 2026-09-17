@@ -14,24 +14,24 @@ from app.models import (
     Walking,
 )
 from app.sync.walking_sync import (
-    calculate_haversine_distance_m,
     extract_walking_minutes,
     find_candidate_stops_for_location,
     resolve_location_coords,
     sync_walking_routes,
     walking_route_exists,
 )
+from app.utils.geo import haversine_distance_m
 
 
 def test_haversine_distance_calculation() -> None:
     """Test geodesic distance calculation with known coordinates."""
     # Same point -> 0 metres
-    dist_zero = calculate_haversine_distance_m(51.5308, -0.1238, 51.5308, -0.1238)
+    dist_zero = haversine_distance_m(51.5308, -0.1238, 51.5308, -0.1238)
     assert round(dist_zero, 2) == 0.0
 
     # London King's Cross (51.5308, -0.1238) to St Pancras International (51.5314, -0.1262)
     # Actual distance is approx ~180 metres
-    dist = calculate_haversine_distance_m(51.5308, -0.1238, 51.5314, -0.1262)
+    dist = haversine_distance_m(51.5308, -0.1238, 51.5314, -0.1262)
     assert 150.0 < dist < 220.0
 
 

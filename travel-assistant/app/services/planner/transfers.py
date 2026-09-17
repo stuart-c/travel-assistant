@@ -11,53 +11,13 @@ from app.models.transfer import PlatformTransfer
 from app.models.transit import Stop, StopInterchange
 from app.models.walking import Walking
 
-# Canonical transport days
-VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun", "bank_holiday")
-
-DAY_NAME_TO_CODE = {
-    "monday": "mon",
-    "tuesday": "tue",
-    "wednesday": "wed",
-    "thursday": "thu",
-    "friday": "fri",
-    "saturday": "sat",
-    "sunday": "sun",
-}
-
-CODE_TO_TIMETABLE_ATTR = {
-    "mon": "monday",
-    "tue": "tuesday",
-    "wed": "wednesday",
-    "thu": "thursday",
-    "fri": "friday",
-    "sat": "saturday",
-    "sun": "sunday",
-    "bank_holiday": "bank_holiday",
-}
-
-
-def parse_time_to_minutes(time_str: str) -> Optional[int]:
-    """Parse 'HH:MM' or 'HH:MM:SS' time string to minutes past midnight."""
-    if not time_str:
-        return None
-    s = str(time_str).strip()
-    if not s:
-        return None
-    parts = s.split(":")
-    try:
-        hours = int(parts[0])
-        minutes = int(parts[1]) if len(parts) > 1 else 0
-        return hours * 60 + minutes
-    except (ValueError, IndexError):
-        return None
-
-
-def format_minutes_to_time(minutes: int) -> str:
-    """Format minutes past midnight back to 'HH:MM' string."""
-    norm = minutes % (24 * 60)
-    hours = norm // 60
-    mins = norm % 60
-    return f"{hours:02d}:{mins:02d}"
+from app.utils.transit_time import (
+    CODE_TO_TIMETABLE_ATTR,
+    DAY_NAME_TO_CODE,
+    VALID_DAYS,
+    format_minutes_to_time,
+    parse_time_to_minutes,
+)
 
 
 def normalise_id(raw_id: str) -> str:
