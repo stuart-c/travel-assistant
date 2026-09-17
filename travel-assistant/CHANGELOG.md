@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Parallel test runner support (`pytest-xdist>=3.5.0`) and test argument forwarding in `scripts/run_tests.sh`.
 
 ### Changed
+- **Corridor Time-Window Filtering, Loop Suppression & Stale Timetable Invalidation** (`app/services/planner/`, `app/sync/`):
+  - Added time-window parameters (`start_time`, `end_time`, `timing_mode`) to `find_routes` and `calculate_routes_for_journey`, filtering active timetables and graph edges to services operating within an expanded journey evaluation window to prevent anomalous single-run early/late services from superseding multi-leg commuter corridors.
+  - Enforced loop suppression in `is_valid_leg_sequence` (`route_finder.py`) and `_is_invalid_transfer` (`raptor.py`), rejecting same-line reverse turnarounds and spatial loops.
+  - Added micro-bus hop penalties ($w \ge \text{duration} + 30.0$) in shortest-path Dijkstra graph construction to strictly favour walking between adjacent bus stands within interchanges and stations.
+  - Added multi-bus transfer penalties in RAPTOR destination egress scoring to disincentivise multi-bus hopping when direct options or short walks exist.
+  - Automated stale timetable cache invalidation on timetable sync (`sync_train_timetables`, `sync_bus_timetables`), clearing `_TRIPS_CACHE` in RAPTOR and resetting `Journey.calculated_routes = None` so `sync_journey_routes(force=True)` recalculates routes with updated timetable IDs.
+  - Added opposing bus stop pairing in `walking_sync.py` to discover and link opposite-side bus stops (`adj` / `opp`) on the same street for symmetric access.
 - **Location Privacy & London Public Data Standard**: Sanitised all documentation, test suites, architecture walkthroughs, datasource mock fixtures, and sample database seeds to use generic London public transport locations and landmarks (e.g. London King's Cross, London Euston, Old Street, TfL bus routes) per Rule 7.
 - **Rail Station ATCO/TIPLOC to CRS Resolver & Darwin Live Activation**:
   - Standardised rail station CRS resolution via `station_resolver.py` and embedded `tiploc_crs_map.json`, resolving NaPTAN rail ATCO codes (`9100...`) and Darwin TIPLOC codes to canonical 3-letter CRS station codes across platform resolution and departure evaluations.

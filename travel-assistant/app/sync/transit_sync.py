@@ -172,6 +172,11 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
     if result.get("status") == "success":
         try:
+            from app.services.planner.raptor import clear_raptor_cache
+
+            clear_raptor_cache()
+            Journey.update(calculated_routes=None).execute()
+
             from app.sync.worker import request_sync
 
             logger.info(
@@ -334,6 +339,11 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
     if result.get("status") == "success":
         try:
+            from app.services.planner.raptor import clear_raptor_cache
+
+            clear_raptor_cache()
+            Journey.update(calculated_routes=None).execute()
+
             from app.sync.worker import request_sync
 
             logger.info(
@@ -507,7 +517,7 @@ def sync_table(
     elif norm_name in ("walking", "walking_routes"):
         return sync_walking_routes(app=app, force=force)
     elif norm_name in ("journey_routes", "journeys", "calculated_routes"):
-        return sync_journey_routes(app=app)
+        return sync_journey_routes(app=app, force=force)
     else:
         err_msg = (
             f"Unknown or non-syncable table: '{norm_name}'. "

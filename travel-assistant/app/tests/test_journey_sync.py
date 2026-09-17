@@ -515,3 +515,77 @@ def test_sync_journey_routes_logs_warning_on_unreachable_journey(
             assert not any(
                 "ha:ha:" in msg or "custom:custom:" in msg for msg in warnings
             )
+
+
+def test_sync_journey_routes_force_recalculation(
+    seeded_transit_network: None, app: Flask
+) -> None:
+    """Test that sync_journey_routes(force=True) recalculates routes even if calculated_routes is already set."""
+    with app.app_context():
+        j = Journey.create(
+            name="Existing Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            time_settings=[
+                {
+                    "mode": "depart",
+                    "days": ["mon"],
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                }
+            ],
+            calculated_routes=[{"corridor_id": "stale_id"}],
+        )
+
+        # Non-force sync skips journeys where calculated_routes is not null
+        res_standard = sync_journey_routes(app=app, force=False)
+        assert res_standard["records"] == 0
+        j_fresh = Journey.get_by_id(j.id)
+        assert j_fresh.get_calculated_routes() == [{"corridor_id": "stale_id"}]
+
+        # Force sync recalculates routes for all journeys
+        res_forced = sync_journey_routes(app=app, force=True)
+        assert res_forced["records"] >= 1
+        j_fresh2 = Journey.get_by_id(j.id)
+        assert j_fresh2.get_calculated_routes() != [{"corridor_id": "stale_id"}]
+
+
+def test_calculate_routes_for_journey_passes_time_window(app: Flask) -> None:
+    """Test that calculate_routes_for_journey forwards start_time, end_time, and mode to find_routes."""
+    with app.app_context():
+        j = Journey.create(
+            name="Morning Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            time_settings=[
+                {
+                    "mode": "arrive",
+                    "days": ["mon", "tue"],
+                    "start_time": "08:30",
+                    "end_time": "10:00",
+                }
+            ],
+            calculated_routes=None,
+        )
+
+        with patch("app.sync.journey_sync.find_routes") as mock_find_routes:
+            mock_find_routes.return_value = []
+            calculate_routes_for_journey(j)
+            mock_find_routes.assert_called_once_with(
+                from_type="ha",
+                from_id="ha:home",
+                to_type="ha",
+                to_id="ha:work",
+                days_of_week=["mon", "tue"],
+                start_time="08:30",
+                end_time="10:00",
+                timing_mode="arrive",
+            )

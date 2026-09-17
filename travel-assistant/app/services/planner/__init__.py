@@ -22,10 +22,12 @@ from app.services.planner.models import (
 )
 from app.services.planner.raptor import plan_journey
 from app.services.planner.route_finder import (
+    extract_route_base_name,
     find_routes,
     get_leg_mode,
     is_valid_leg_sequence,
     prune_route_templates,
+    timetable_operates_in_window,
 )
 from app.services.planner.transfers import (
     DAY_NAME_TO_CODE,
@@ -48,6 +50,8 @@ __all__ = [
     "prune_route_templates",
     "is_valid_leg_sequence",
     "get_leg_mode",
+    "extract_route_base_name",
+    "timetable_operates_in_window",
     # Models
     "RouteTemplate",
     "RouteLeg",
