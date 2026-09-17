@@ -1811,3 +1811,78 @@ def test_departure_monitor_rollover_in_dispatch_loop(app: Flask) -> None:
         assert journey.id in monitor.active_journeys
         assert active.expected_arrival_time == "08:58"
         mock_ha.send_mobile_notification.assert_called_once()
+
+
+def test_departure_monitor_exponential_backoff_on_transient_errors(
+    app: Flask,
+) -> None:
+    """Test DepartureMonitor calculates exponential backoff and resets counter upon successful check."""
+    from app.datasources.exceptions import DataSourceConnectionError
+
+    with app.app_context():
+        _seed_commute_data()
+        monitor = DepartureMonitor(app=app, check_interval_seconds=30.0)
+
+        # Verify initial backoff calculation
+        assert monitor._consecutive_errors == 0
+        assert monitor._calculate_backoff_delay() == 30.0
+
+        # Simulate 1st error
+        monitor._consecutive_errors = 1
+        assert monitor._calculate_backoff_delay() == 30.0
+
+        # Simulate 2nd error
+        monitor._consecutive_errors = 2
+        assert monitor._calculate_backoff_delay() == 60.0
+
+        # Simulate 3rd error
+        monitor._consecutive_errors = 3
+        assert monitor._calculate_backoff_delay() == 120.0
+
+        # Simulate 4th error
+        monitor._consecutive_errors = 4
+        assert monitor._calculate_backoff_delay() == 240.0
+
+        # Simulate 5th+ error (capped at 300.0s)
+        monitor._consecutive_errors = 5
+        assert monitor._calculate_backoff_delay() == 300.0
+
+        monitor._consecutive_errors = 10
+        assert monitor._calculate_backoff_delay() == 300.0
+
+        # Reset error count
+        monitor._consecutive_errors = 0
+
+        # Test check_and_dispatch catches DataSourceConnectionError (e.g. 502 Bad Gateway)
+        mock_ha_502 = MagicMock(spec=HomeAssistantClient)
+        mock_ha_502.token = "valid_token"
+        mock_ha_502.get_entity_state.side_effect = DataSourceConnectionError(
+            "HTTP 502: Bad Gateway"
+        )
+
+        res1 = monitor.check_and_dispatch(ha_client=mock_ha_502)
+        assert res1 == 0
+        assert monitor._consecutive_errors == 1
+        assert monitor._calculate_backoff_delay() == 30.0
+
+        res2 = monitor.check_and_dispatch(ha_client=mock_ha_502)
+        assert res2 == 0
+        assert monitor._consecutive_errors == 2
+        assert monitor._calculate_backoff_delay() == 60.0
+
+        # Now simulate recovery where Home Assistant returns valid state
+        mock_ha_recovered = MagicMock(spec=HomeAssistantClient)
+        mock_ha_recovered.token = "valid_token"
+        mock_ha_recovered.get_entity_state.return_value = {
+            "entity_id": "person.stuart",
+            "state": "home",
+            "attributes": {"latitude": 51.5350, "longitude": -0.1230},
+        }
+
+        # A non-evaluating time (e.g. midnight) so no journeys dispatch, but communication succeeds
+        dt_night = datetime.datetime(2026, 9, 7, 3, 0)
+        res3 = monitor.check_and_dispatch(ha_client=mock_ha_recovered, now=dt_night)
+        assert res3 == 0
+        # Consecutive errors must be reset to 0 upon successful communication
+        assert monitor._consecutive_errors == 0
+        assert monitor._calculate_backoff_delay() == 30.0

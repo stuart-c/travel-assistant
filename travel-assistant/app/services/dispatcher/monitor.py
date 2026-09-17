@@ -6,6 +6,7 @@ import threading
 from typing import Dict, Optional, Set
 from flask import Flask
 
+from app.datasources.exceptions import DataSourceConnectionError, DataSourceError
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
 from app.models.journey import Journey
@@ -58,6 +59,16 @@ class DepartureMonitor:
         except Exception as exc:
             logger.warning("Failed to load active journey sessions: %s", exc)
         self._last_clean_date: Optional[datetime.date] = None
+        self._consecutive_errors: int = 0
+        self._max_backoff_seconds: float = 300.0
+
+    def _calculate_backoff_delay(self) -> float:
+        """Calculate exponential backoff delay based on consecutive errors."""
+        if self._consecutive_errors <= 0:
+            return self.check_interval_seconds
+        # Scale backoff exponentially up to _max_backoff_seconds (300s)
+        factor = 2 ** min(self._consecutive_errors - 1, 4)
+        return min(self._max_backoff_seconds, self.check_interval_seconds * factor)
 
     def start(self) -> None:
         """Start the departure monitor background thread."""
@@ -117,7 +128,20 @@ class DepartureMonitor:
             return 0
 
         # Query Stuart's state from Home Assistant Core API
-        stuart_state = client.get_entity_state(self.target_person)
+        try:
+            stuart_state = client.get_entity_state(self.target_person)
+        except (DataSourceConnectionError, DataSourceError) as exc:
+            self._consecutive_errors += 1
+            backoff_delay = self._calculate_backoff_delay()
+            logger.warning(
+                "Could not retrieve state for %s from Home Assistant (%s). Consecutive errors: %d; backing off for %ds.",
+                self.target_person,
+                exc,
+                self._consecutive_errors,
+                int(backoff_delay),
+            )
+            return 0
+
         if not stuart_state:
             logger.debug(
                 "Could not retrieve state for %s from Home Assistant; skipping check.",
@@ -193,6 +217,12 @@ class DepartureMonitor:
                         )
                         if sent:
                             recovered.last_notification_message = message
+                            recovered.last_notification_time = current_dt
+                            recovered.last_notified_status = recovered.current_status
+                            recovered.last_notified_platform = recovered.platform
+                            recovered.last_notified_delay_minutes = (
+                                recovered.delay_minutes
+                            )
                             dispatched_count += 1
                             logger.info(
                                 "Recovered en-route active journey %d (%s) for %s at [%s]: %s",
@@ -253,6 +283,10 @@ class DepartureMonitor:
                             itinerary=candidate.itinerary,
                             platform=candidate.platform,
                             last_notification_message=message,
+                            last_notification_time=current_dt,
+                            last_notified_status=JourneyStepStatus.PRE_DEPARTURE,
+                            last_notified_platform=candidate.platform,
+                            last_notified_delay_minutes=0,
                             started_at=current_dt,
                             expected_arrival_time=candidate.arrival_time,
                         )
@@ -274,6 +308,13 @@ class DepartureMonitor:
                     exc,
                 )
 
+        if self._consecutive_errors > 0:
+            logger.info(
+                "Departure monitor successfully communicated with Home Assistant; resetting error count from %d to 0.",
+                self._consecutive_errors,
+            )
+            self._consecutive_errors = 0
+
         return dispatched_count
 
     def reset_journey_session(self, journey_id: Optional[int] = None) -> bool:
@@ -288,15 +329,27 @@ class DepartureMonitor:
         return True
 
     def _run_loop(self) -> None:
-        """Daemon worker loop executing check_and_dispatch every check_interval_seconds."""
+        """Daemon worker loop executing check_and_dispatch with exponential backoff on failure."""
         while not self._stop_event.is_set():
             try:
                 with self.app.app_context():
                     self.check_and_dispatch()
             except Exception as exc:
-                logger.error("Unexpected error in departure monitor loop: %s", exc)
+                self._consecutive_errors += 1
+                backoff_delay = self._calculate_backoff_delay()
+                logger.error(
+                    "Unexpected error in departure monitor loop (consecutive errors: %d; backing off for %ds): %s",
+                    self._consecutive_errors,
+                    int(backoff_delay),
+                    exc,
+                )
 
-            if self._stop_event.wait(timeout=self.check_interval_seconds):
+            sleep_timeout = (
+                self._calculate_backoff_delay()
+                if self._consecutive_errors > 0
+                else self.check_interval_seconds
+            )
+            if self._stop_event.wait(timeout=sleep_timeout):
                 break
 
 
