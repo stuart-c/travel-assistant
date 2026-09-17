@@ -102,6 +102,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed `SYNCABLE_TABLES` constant from `app.db`.
 
 ### Fixed
+- **Notification Debouncing, Rate Limiting & Transient Error Backoff** (`app/services/dispatcher/tracker.py`, `app/services/dispatcher/monitor.py`):
+  - Added debouncing and rate limiting to in-progress journey updates (`update_journey_progress`) with a 120-second (2-minute) cooldown for minor telemetry fluctuations (small ETA drift $\le 2$ minutes).
+  - Reserved immediate notification dispatch for significant state changes (step progression e.g. `PRE_DEPARTURE` $\rightarrow$ `EN_ROUTE_TO_STOP` $\rightarrow$ `AT_DEPARTURE_STOP` $\rightarrow$ `ON_TRANSIT` $\rightarrow$ `AT_INTERCHANGE` $\rightarrow$ `EN_ROUTE_TO_DESTINATION` $\rightarrow$ `ARRIVED`, platform announcements or reassignments, and major delays $\ge 5$ minutes or cancellations).
+  - Stabilised walking leg estimated arrival times in `EN_ROUTE_TO_DESTINATION` so that expected arrival is locked upon entering the leg rather than continually recomputed as `now + duration`, eliminating artificial minute-by-minute text churn and notification storms.
+  - Added exponential backoff and transient error damping in `DepartureMonitor` daemon loop (`_calculate_backoff_delay`) to smoothly back off from 30s up to 300s during Home Assistant HTTP 502 Bad Gateway outages or network drops, resetting the backoff counter upon successful communication.
+  - Persisted debouncing timestamps and state attributes (`last_notification_time`, `last_notified_status`, `last_notified_platform`, `last_notified_delay_minutes`) across `ActiveJourney` session storage in the database.
 - **Darwin OpenAPI Platform Resolution, Rollover Future Timing & Commute Window Retention** (`app/datasources/train_live.py`, `app/services/dispatcher/tracker.py`, `app/services/dispatcher/evaluator.py`):
   - Normalised National Rail Darwin LDBWS OpenAPI dictionary responses (`DeparturesBoard` and `StationBoard`) via `extract_live_services`, unwrapping individual service objects to ensure real-time platforms and delay statuses are resolved instead of being dropped by list-type assertions.
   - Added departure board fallback (`get_departure_board`) in `resolve_live_rail_platform` and `apply_live_departure_adjustments` when fastest departures data omits platform assignments.

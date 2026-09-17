@@ -96,6 +96,10 @@ class ActiveJourney:
     started_at: datetime.datetime = field(default_factory=datetime.datetime.now)
     expected_arrival_time: str = ""
     last_notification_message: Optional[str] = None
+    last_notification_time: Optional[datetime.datetime] = None
+    last_notified_status: Optional[JourneyStepStatus] = None
+    last_notified_platform: Optional[str] = None
+    last_notified_delay_minutes: int = 0
     platform: Optional[str] = None
     live_status: Optional[str] = None
     delay_minutes: int = 0
@@ -125,6 +129,16 @@ class ActiveJourney:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "expected_arrival_time": self.expected_arrival_time,
             "last_notification_message": self.last_notification_message,
+            "last_notification_time": (
+                self.last_notification_time.isoformat()
+                if self.last_notification_time
+                else None
+            ),
+            "last_notified_status": (
+                self.last_notified_status.value if self.last_notified_status else None
+            ),
+            "last_notified_platform": self.last_notified_platform,
+            "last_notified_delay_minutes": self.last_notified_delay_minutes,
             "platform": self.platform,
             "live_status": self.live_status,
             "delay_minutes": self.delay_minutes,
@@ -150,6 +164,20 @@ class ActiveJourney:
         except ValueError:
             current_status = JourneyStepStatus.PRE_DEPARTURE
 
+        last_notif_time_str = data.get("last_notification_time")
+        last_notification_time = (
+            datetime.datetime.fromisoformat(last_notif_time_str)
+            if last_notif_time_str
+            else None
+        )
+        last_notified_status_val = data.get("last_notified_status")
+        last_notified_status = None
+        if last_notified_status_val:
+            try:
+                last_notified_status = JourneyStepStatus(last_notified_status_val)
+            except ValueError:
+                last_notified_status = None
+
         return cls(
             journey_id=data["journey_id"],
             journey_name=data.get("journey_name", ""),
@@ -166,6 +194,10 @@ class ActiveJourney:
             started_at=started_at,
             expected_arrival_time=data.get("expected_arrival_time", ""),
             last_notification_message=data.get("last_notification_message"),
+            last_notification_time=last_notification_time,
+            last_notified_status=last_notified_status,
+            last_notified_platform=data.get("last_notified_platform"),
+            last_notified_delay_minutes=data.get("last_notified_delay_minutes", 0),
             platform=data.get("platform"),
             live_status=data.get("live_status"),
             delay_minutes=data.get("delay_minutes", 0),
@@ -830,7 +862,7 @@ def format_progress_notification(
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION:
         arr_str = active.expected_arrival_time
-        if current_dt and current_leg and current_leg.duration_minutes:
+        if not arr_str and current_dt and current_leg and current_leg.duration_minutes:
             now_m = current_dt.hour * 60 + current_dt.minute
             arr_str = format_minutes_to_time(now_m + current_leg.duration_minutes)
         message = (
@@ -1110,6 +1142,36 @@ def _determine_transit_arrival_status(active: ActiveJourney) -> JourneyStepStatu
     return JourneyStepStatus.AT_INTERCHANGE
 
 
+def is_significant_progress_update(
+    active: ActiveJourney,
+    old_status: JourneyStepStatus,
+    old_leg_idx: int,
+    old_platform: Optional[str],
+    old_delay: int,
+    old_live_status: Optional[str] = None,
+) -> bool:
+    """Determine whether a journey progress state transition demands an immediate notification."""
+    # 1. Step progression / leg transition
+    if active.current_status != old_status or active.current_leg_index != old_leg_idx:
+        return True
+
+    # 2. Platform announcement or reassignment (e.g. None -> "Platform 4", or "Platform 3" -> "Platform 4")
+    if active.platform and active.platform != old_platform:
+        return True
+
+    # 3. Major delay escalation (>= 5 minutes change)
+    if abs(active.delay_minutes - old_delay) >= 5:
+        return True
+
+    # 4. Service cancellation or status change involving cancellation
+    curr_status_str = (active.live_status or "").lower()
+    old_status_str = (old_live_status or "").lower()
+    if ("cancel" in curr_status_str) != ("cancel" in old_status_str):
+        return True
+
+    return False
+
+
 def update_journey_progress(
     active: ActiveJourney,
     person_state: Optional[Dict[str, Any]],
@@ -1208,6 +1270,10 @@ def update_journey_progress(
                                 data=data,
                             )
                             active.last_notification_message = new_msg
+                            active.last_notification_time = current_dt
+                            active.last_notified_status = active.current_status
+                            active.last_notified_platform = active.platform
+                            active.last_notified_delay_minutes = active.delay_minutes
                             if sent_keys is not None:
                                 sent_keys.add(next_candidate.service_key)
                             logger.info(
@@ -1220,6 +1286,7 @@ def update_journey_progress(
                             )
                             return True
                         except Exception as exc:
+                            active.last_notification_time = current_dt
                             logger.error(
                                 "Failed to dispatch rollover departure notification for journey %d: %s",
                                 active.journey_id,
@@ -1292,9 +1359,16 @@ def update_journey_progress(
                 )
                 try:
                     ha_client.send_mobile_notification(
-                        title=title, message=msg, data=data
+                        title=title,
+                        message=msg,
+                        service_name=target_notify_service,
+                        data=data,
                     )
                     active.last_notification_message = msg
+                    active.last_notification_time = current_dt
+                    active.last_notified_status = active.current_status
+                    active.last_notified_platform = active.platform
+                    active.last_notified_delay_minutes = active.delay_minutes
                     logger.info(
                         "Dispatched journey arrival notification for journey %d (%s): %s",
                         active.journey_id,
@@ -1303,6 +1377,7 @@ def update_journey_progress(
                     )
                     return True
                 except Exception as exc:
+                    active.last_notification_time = current_dt
                     logger.error(
                         "Failed to send arrival notification for journey %d: %s",
                         active.journey_id,
@@ -1321,6 +1396,9 @@ def update_journey_progress(
     # Step through legs progression
     old_status = active.current_status
     old_leg_idx = active.current_leg_index
+    old_platform = active.platform
+    old_delay = active.delay_minutes
+    old_live_status = active.live_status
 
     # Identify current leg and check for progression
     if active.current_leg_index >= len(active.legs):
@@ -1519,9 +1597,14 @@ def update_journey_progress(
                                 if active.current_leg_index < len(active.legs)
                                 else 5
                             )
-                            active.expected_arrival_time = format_minutes_to_time(
-                                current_minutes + walk_dur
-                            )
+                            if (
+                                not active.expected_arrival_time
+                                or old_status
+                                != JourneyStepStatus.EN_ROUTE_TO_DESTINATION
+                            ):
+                                active.expected_arrival_time = format_minutes_to_time(
+                                    current_minutes + walk_dur
+                                )
                     else:
                         # Intermediate transfer
                         if (
@@ -1626,15 +1709,54 @@ def update_journey_progress(
 
     title, new_msg, data = format_progress_notification(active, current_dt=current_dt)
 
-    # Dispatch notification if status changed, platform updated, or message changed
-    if (
-        active.current_status != old_status
-        or active.current_leg_index != old_leg_idx
-        or new_msg != active.last_notification_message
-    ):
+    is_significant = is_significant_progress_update(
+        active=active,
+        old_status=old_status,
+        old_leg_idx=old_leg_idx,
+        old_platform=old_platform,
+        old_delay=old_delay,
+        old_live_status=old_live_status,
+    )
+
+    should_send = False
+    if is_significant:
+        should_send = (
+            active.current_status != old_status
+            or active.current_leg_index != old_leg_idx
+            or new_msg != active.last_notification_message
+        )
+    elif new_msg != active.last_notification_message:
+        # Low priority / minor telemetry update: apply 120-second (2-minute) cooldown
+        if active.last_notification_time is None:
+            should_send = True
+        else:
+            elapsed_seconds = (
+                current_dt - active.last_notification_time
+            ).total_seconds()
+            if elapsed_seconds >= 120.0:
+                should_send = True
+            else:
+                logger.debug(
+                    "Suppressing minor progress update for journey %d (%s) due to active cooldown (%.1fs < 120s): %s",
+                    active.journey_id,
+                    active.journey_name,
+                    elapsed_seconds,
+                    new_msg,
+                )
+
+    if should_send:
         try:
-            ha_client.send_mobile_notification(title=title, message=new_msg, data=data)
+            ha_client.send_mobile_notification(
+                title=title,
+                message=new_msg,
+                service_name=target_notify_service,
+                data=data,
+            )
             active.last_notification_message = new_msg
+            active.last_notification_time = current_dt
+            active.last_notified_status = active.current_status
+            active.last_notified_platform = active.platform
+            active.last_notified_delay_minutes = active.delay_minutes
             logger.info(
                 "Updated journey progress notification for journey %d (%s) [%s]: %s",
                 active.journey_id,
@@ -1644,11 +1766,13 @@ def update_journey_progress(
             )
             return True
         except Exception as exc:
+            active.last_notification_time = current_dt
             logger.error(
                 "Failed to send progress notification update for journey %d: %s",
                 active.journey_id,
                 exc,
             )
+            return False
 
     return False
 
