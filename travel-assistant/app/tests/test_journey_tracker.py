@@ -20,7 +20,9 @@ from app.services.dispatcher.tracker import (
     ActiveJourney,
     JourneyStepStatus,
     LiveRailStatus,
+    _format_platform_label,
     _format_transit_service_desc,
+    _format_upcoming_change_platforms,
     _realign_active_journey_timings,
     clear_active_journey_session,
     detect_en_route_journey,
@@ -28,6 +30,7 @@ from app.services.dispatcher.tracker import (
     format_progress_notification,
     get_journey_live_tracking_data,
     load_active_journey_sessions,
+    resolve_live_rail_arrival_platform,
     resolve_live_rail_platform,
     save_active_journey_session,
     update_journey_progress,
@@ -366,23 +369,31 @@ def test_format_progress_notification_stages() -> None:
     assert "London King's Cross" in msg
     assert "Estimated arrival at Tech Campus by 08:28." in msg
     assert data["tag"] == "journey_1"
-    assert data["url"] == "/journey"
-    assert data["clickAction"] == "/journey"
+    assert data["url"] == "/journey?journey_id=1"
+    assert data["clickAction"] == "/journey?journey_id=1"
     assert data["group"] == "travel_assistant_journeys"
+    assert data["persistent"] is True
+    assert data["sticky"] is True
+    assert data["actions"] == [
+        {"action": "URI", "title": "View Journey Plan", "uri": "/journey?journey_id=1"}
+    ]
 
     # PRE_DEPARTURE with announced platform
     active.platform = "4"
     active.live_status = "On time"
     _, msg_plat, _ = format_progress_notification(active)
     assert "(Platform 4)" in msg_plat
-    assert "departing at 08:08 (on time)" in msg_plat
+    assert "departing at 08:08 (scheduled 08:08, expected 08:08 - on time)" in msg_plat
 
     # 2. EN_ROUTE_TO_STOP
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
     active.current_leg_index = 0
     _, msg_en_route, _ = format_progress_notification(active)
     assert "On your way to London King's Cross." in msg_en_route
-    assert "Rail Thameslink (Platform 4) departs at 08:08 (on time)." in msg_en_route
+    assert (
+        "Rail Thameslink (Platform 4) departs at 08:08 (scheduled 08:08, expected 08:08 - on time)."
+        in msg_en_route
+    )
 
     # 3. AT_DEPARTURE_STOP (Rail)
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -392,7 +403,7 @@ def test_format_progress_notification_stages() -> None:
     _, msg_at_stop, _ = format_progress_notification(active)
     assert "At London King's Cross." in msg_at_stop
     assert "from Platform 4" in msg_at_stop
-    assert "departs at 08:08 (on time)" in msg_at_stop
+    assert "departs at 08:08 (scheduled 08:08, expected 08:08 - on time)" in msg_at_stop
 
     # 3b. AT_DEPARTURE_STOP (Rail, platform unannounced)
     active.platform = None
@@ -406,7 +417,10 @@ def test_format_progress_notification_stages() -> None:
     active_bus.current_leg_index = 1
     _, msg_bus_stop, _ = format_progress_notification(active_bus)
     assert "At King's Cross (Stop E)." in msg_bus_stop
-    assert "Bus 73 to Euston Station (Stop C) departs at 08:08." in msg_bus_stop
+    assert (
+        "Bus 73 to Euston Station (Stop C) departs at 08:08 (scheduled)."
+        in msg_bus_stop
+    )
 
     # 4. ON_TRANSIT (with next leg walk)
     active.current_status = JourneyStepStatus.ON_TRANSIT
@@ -436,7 +450,10 @@ def test_format_progress_notification_stages() -> None:
     multi_active.legs[2].mode = "bus"
     multi_active.legs[2].line = "14"
     _, msg_transfer, _ = format_progress_notification(multi_active)
-    assert "Transfer to Bus 14." in msg_transfer
+    assert (
+        "Transfer at Euston Station (Stop C) (stands to be announced) to Bus 14 departing at 08:22 (scheduled)."
+        in msg_transfer
+    )
 
     # 5. AT_INTERCHANGE
     active.current_status = JourneyStepStatus.AT_INTERCHANGE
@@ -455,9 +472,11 @@ def test_format_progress_notification_stages() -> None:
 
     # 7. ARRIVED
     active.current_status = JourneyStepStatus.ARRIVED
-    _, msg_arrived, _ = format_progress_notification(active)
+    _, msg_arrived, data_arrived = format_progress_notification(active)
     assert "Journey complete: Arrived at Tech Campus (08:28)." in msg_arrived
     assert "Have a great day!" in msg_arrived
+    assert data_arrived["persistent"] is False
+    assert data_arrived["sticky"] is False
 
 
 # --- Progress Update & State Transition Tests ---
@@ -543,7 +562,7 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
 
         active = _create_sample_active_journey(with_rail=False)
         active.current_status = JourneyStepStatus.PRE_DEPARTURE
-        active.last_notification_message = "Leave by 08:00 (walk 8m) for Bus 73 from King's Cross (Stop E) departing at 08:08. Estimated arrival at Tech Campus by 08:28."
+        active.last_notification_message = "Leave by 08:00 (walk 8m) for Bus 73 from King's Cross (Stop E) departing at 08:08 (scheduled). Estimated arrival at Tech Campus by 08:28."
 
         mock_ha = MagicMock(spec=HomeAssistantClient)
 
@@ -646,7 +665,7 @@ def test_update_journey_progress_live_platform_update(app: Flask) -> None:
         active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
         active.current_leg_index = 1
         active.platform = None
-        active.last_notification_message = "At London King's Cross. Rail Thameslink to Cambridge departs at 08:08 from Platform to be announced."
+        active.last_notification_message = "At London King's Cross. Rail Thameslink to Cambridge departs at 08:08 (scheduled) from Platform to be announced."
 
         mock_ha = MagicMock(spec=HomeAssistantClient)
         mock_live = MagicMock(spec=TrainLiveClient)
@@ -672,7 +691,9 @@ def test_update_journey_progress_live_platform_update(app: Flask) -> None:
         assert active.platform == "9"
         call_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
         assert "from Platform 9" in call_msg
-        assert "departs at 08:08 (on time)" in call_msg
+        assert (
+            "departs at 08:08 (scheduled 08:08, expected 08:08 - on time)" in call_msg
+        )
 
 
 def test_update_journey_progress_stuart_wanders_far_away(app: Flask) -> None:
@@ -1336,7 +1357,10 @@ def test_detect_en_route_journey_selects_current_over_stale_itinerary(
             # Check formatted notification message
             title, msg, data = format_progress_notification(recovered)
             assert "08:29" in msg
-            assert "delayed to 08:38 due to a fault with the signalling system" in msg
+            assert (
+                "scheduled 08:29, expected 08:38 due to a fault with the signalling system"
+                in msg
+            )
             assert "Platform 4" in msg
 
 
@@ -1395,8 +1419,17 @@ def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
         active = _create_sample_active_journey(with_rail=True)
         active.current_status = JourneyStepStatus.ON_TRANSIT
         title, msg, data = format_progress_notification(active)
-        assert data["url"] == "/1a842e7e_travel_assistant_dev"
-        assert data["clickAction"] == "/1a842e7e_travel_assistant_dev"
+        assert data["url"] == "/1a842e7e_travel_assistant_dev/journey?journey_id=1"
+        assert (
+            data["clickAction"] == "/1a842e7e_travel_assistant_dev/journey?journey_id=1"
+        )
+        assert data["actions"] == [
+            {
+                "action": "URI",
+                "title": "View Journey Plan",
+                "uri": "/1a842e7e_travel_assistant_dev/journey?journey_id=1",
+            }
+        ]
 
 
 def test_format_progress_notification_interchange_foot_modes() -> None:
@@ -1667,7 +1700,7 @@ def test_format_next_step_for_departure_scenarios() -> None:
     )
     assert (
         next_step
-        == " Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54 from Platform 2."
+        == " Next step: Transfer at Cambridge North Rail Station (arrive stand to be announced, depart Platform 2) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
     )
 
     # 2. From the rail leg (index 2), next step is final walk when only_transit is False
@@ -1713,7 +1746,7 @@ def test_format_next_step_for_departure_scenarios() -> None:
     )
     assert (
         same_orig_step
-        == " Next step: Rail Great Northern to Peterborough departs at 08:30."
+        == " Next step: Arrive at Cambridge, walk to London King's Cross to board Rail Great Northern to Peterborough departing at 08:30 (scheduled)."
     )
 
     # 5. Empty legs fallback
@@ -1799,9 +1832,12 @@ def test_format_progress_notification_at_departure_stop_connecting_train() -> No
     # 1. AT_DEPARTURE_STOP
     _, msg, _ = format_progress_notification(active)
     assert "At Shuttle Bus." in msg
-    assert "Shuttle Bus to Cambridge North Rail Station departs at 17:40." in msg
     assert (
-        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        "Shuttle Bus to Cambridge North Rail Station departs at 17:40 (scheduled)."
+        in msg
+    )
+    assert (
+        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
         in msg
     )
 
@@ -1810,7 +1846,7 @@ def test_format_progress_notification_at_departure_stop_connecting_train() -> No
     _, msg_pre, _ = format_progress_notification(active)
     assert "Leave by 17:36 (walk 4m)" in msg_pre
     assert (
-        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
         in msg_pre
     )
 
@@ -1819,7 +1855,7 @@ def test_format_progress_notification_at_departure_stop_connecting_train() -> No
     _, msg_en_route, _ = format_progress_notification(active)
     assert "On your way to Shuttle Bus." in msg_en_route
     assert (
-        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
         in msg_en_route
     )
 
@@ -1832,7 +1868,10 @@ def test_format_progress_notification_bus_interchange_no_platform() -> None:
     active.platform = None
     _, msg, _ = format_progress_notification(active)
     assert "Platform" not in msg
-    assert "Transfer at King's Cross (Stop E): Board Bus 73 departing at 08:08." in msg
+    assert (
+        "Transfer at King's Cross (Stop E): Board Bus 73 departing at 08:08 (scheduled)."
+        in msg
+    )
 
     # Even if active.platform was mistakenly populated with a rail platform number, bus ignores it
     active.platform = "3"
@@ -2394,3 +2433,181 @@ def test_update_journey_progress_walking_egress_stable_eta_no_notification_churn
         assert active.expected_arrival_time == "08:28"
         assert dispatched2 is False
         mock_ha.send_mobile_notification.assert_not_called()
+
+
+# --- Platform Resolution and Notification Enhancement Unit Tests ---
+
+
+def test_resolve_live_rail_arrival_platform_scenarios() -> None:
+    """Test resolve_live_rail_arrival_platform across varied live arrival responses and edge cases."""
+    # 1. No live client returns None
+    assert resolve_live_rail_arrival_platform("naptan:KGX", "naptan:CBG") is None
+
+    # 2. Unknown destination CRS returns None
+    mock_live = MagicMock(spec=TrainLiveClient)
+    assert (
+        resolve_live_rail_arrival_platform(
+            "naptan:KGX", "invalid:unknown", live_client=mock_live
+        )
+        is None
+    )
+
+    # 3. Exact arrival time match
+    mock_live.get_arrival_board.return_value = {
+        "trainServices": [
+            {"sta": "08:45", "eta": "On time", "platform": "1"},
+            {"sta": "08:50", "eta": "08:52", "platform": "3"},
+        ]
+    }
+    plat = resolve_live_rail_arrival_platform(
+        "naptan:KGX", "naptan:CBG", scheduled_arr_time="08:50", live_client=mock_live
+    )
+    assert plat == "3"
+
+    # 4. Approximate arrival time match (within 3 minutes)
+    plat_approx = resolve_live_rail_arrival_platform(
+        "naptan:KGX", "naptan:CBG", scheduled_arr_time="08:51", live_client=mock_live
+    )
+    assert plat_approx == "3"
+
+    # 5. Fallback to first arrival when time does not match
+    plat_fallback = resolve_live_rail_arrival_platform(
+        "naptan:KGX", "naptan:CBG", scheduled_arr_time="09:30", live_client=mock_live
+    )
+    assert plat_fallback == "1"
+
+    # 6. Service with missing or empty platform
+    mock_live.get_arrival_board.return_value = {
+        "trainServices": [
+            {"sta": "08:45", "eta": "On time", "platform": None},
+        ]
+    }
+    assert (
+        resolve_live_rail_arrival_platform(
+            "naptan:KGX", "naptan:CBG", live_client=mock_live
+        )
+        is None
+    )
+
+    # 7. Exception in get_arrival_board is swallowed gracefully
+    mock_live.get_arrival_board.side_effect = RuntimeError("Network error")
+    assert (
+        resolve_live_rail_arrival_platform(
+            "naptan:KGX", "naptan:CBG", live_client=mock_live
+        )
+        is None
+    )
+
+
+def test_format_platform_label_variations() -> None:
+    """Test _format_platform_label handles rail and bus formatting correctly in British English."""
+    # None or empty
+    assert _format_platform_label(None, "rail") is None
+    assert _format_platform_label("", "rail") is None
+    assert _format_platform_label("   ", "rail") is None
+
+    # Rail mode
+    assert _format_platform_label("4", "rail") == "Platform 4"
+    assert _format_platform_label("Platform 4", "rail") == "Platform 4"
+    assert _format_platform_label("platform 2B", "rail") == "platform 2B"
+
+    # Bus mode
+    assert _format_platform_label("Stop G", "bus") == "Stop G"
+    assert _format_platform_label("Stand A", "bus") == "Stand A"
+    assert _format_platform_label("Bay 3", "bus") == "Bay 3"
+    # Bare numbers should NOT become 'Platform' on buses
+    assert _format_platform_label("3", "bus") is None
+
+
+def test_format_upcoming_change_platforms_matrix() -> None:
+    """Test _format_upcoming_change_platforms covering all platform announcement combinations."""
+    # Rail to Rail
+    assert (
+        _format_upcoming_change_platforms("2", "4", "rail", "rail")
+        == "arrive Platform 2, depart Platform 4"
+    )
+    assert (
+        _format_upcoming_change_platforms("2", None, "rail", "rail")
+        == "arrive Platform 2, depart Platform to be announced"
+    )
+    assert (
+        _format_upcoming_change_platforms(None, "4", "rail", "rail")
+        == "arrive Platform to be announced, depart Platform 4"
+    )
+    assert (
+        _format_upcoming_change_platforms(None, None, "rail", "rail")
+        == "platforms to be announced"
+    )
+
+    # Bus to Rail
+    assert (
+        _format_upcoming_change_platforms("Stop A", "3", "bus", "rail")
+        == "arrive Stop A, depart Platform 3"
+    )
+    assert (
+        _format_upcoming_change_platforms("Stop A", None, "bus", "rail")
+        == "arrive Stop A, depart Platform to be announced"
+    )
+    assert (
+        _format_upcoming_change_platforms(None, "3", "bus", "rail")
+        == "arrive stand to be announced, depart Platform 3"
+    )
+
+    # Bus to Bus
+    assert (
+        _format_upcoming_change_platforms("Stop A", "Stand C", "bus", "bus")
+        == "arrive Stop A, depart Stand C"
+    )
+    assert (
+        _format_upcoming_change_platforms("Stop A", None, "bus", "bus")
+        == "arrive Stop A, depart stand to be announced"
+    )
+    assert (
+        _format_upcoming_change_platforms(None, "Stand C", "bus", "bus")
+        == "arrive stand to be announced, depart Stand C"
+    )
+    assert (
+        _format_upcoming_change_platforms(None, None, "bus", "bus")
+        == "stands to be announced"
+    )
+
+
+def test_persistent_notification_state_lifecycle(app: Flask) -> None:
+    """Test that notifications are persistent during journey progression and dismissible upon arrival."""
+    with app.app_context():
+        Setting.set_val("ingress_panel_slug", "travel_assistant")
+        active = _create_sample_active_journey(with_rail=True)
+
+        en_route_statuses = [
+            JourneyStepStatus.PRE_DEPARTURE,
+            JourneyStepStatus.EN_ROUTE_TO_STOP,
+            JourneyStepStatus.AT_DEPARTURE_STOP,
+            JourneyStepStatus.ON_TRANSIT,
+            JourneyStepStatus.AT_INTERCHANGE,
+            JourneyStepStatus.EN_ROUTE_TO_DESTINATION,
+        ]
+
+        expected_nav_url = f"/travel_assistant/journey?journey_id={active.journey_id}"
+        expected_action = {
+            "action": "URI",
+            "title": "View Journey Plan",
+            "uri": expected_nav_url,
+        }
+
+        for st in en_route_statuses:
+            active.current_status = st
+            _, _, data = format_progress_notification(active)
+            assert data["persistent"] is True, f"Expected persistent=True for {st}"
+            assert data["sticky"] is True, f"Expected sticky=True for {st}"
+            assert data["url"] == expected_nav_url
+            assert data["clickAction"] == expected_nav_url
+            assert expected_action in data["actions"]
+
+        # Final arrived status -> non-persistent / dismissible
+        active.current_status = JourneyStepStatus.ARRIVED
+        _, _, data_arrived = format_progress_notification(active)
+        assert data_arrived["persistent"] is False
+        assert data_arrived["sticky"] is False
+        assert data_arrived["url"] == expected_nav_url
+        assert data_arrived["clickAction"] == expected_nav_url
+        assert expected_action in data_arrived["actions"]
