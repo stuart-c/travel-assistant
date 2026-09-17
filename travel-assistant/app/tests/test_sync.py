@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.models import (
     BusRoute,
+    Journey,
     Setting,
     Stop,
     SyncMetadata,
@@ -1006,3 +1007,34 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
                         in record.message
                         for record in caplog.records
                     )
+
+
+def test_timetable_sync_resets_calculated_routes_and_cache(app: Flask) -> None:
+    """Test that syncing train or bus timetables clears the RAPTOR cache and resets journey calculated routes."""
+    from app.sync.transit_sync import sync_train_timetables
+
+    with app.app_context():
+        j = Journey.create(
+            name="Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            calculated_routes=[{"corridor_id": "old_1"}],
+        )
+
+        Setting.set_val("train_s3_bucket", "my-test-bucket")
+        with patch("app.datasources.TrainS3Client.fetch_timetables", return_value=[]):
+            with patch("app.sync.worker.request_sync") as mock_req:
+                with patch(
+                    "app.services.planner.raptor.clear_raptor_cache"
+                ) as mock_clear:
+                    res = sync_train_timetables(app=app)
+                    assert res["status"] == "success"
+                    mock_clear.assert_called_once()
+                    mock_req.assert_called_once_with("journey_routes")
+
+                    j_refreshed = Journey.get_by_id(j.id)
+                    assert j_refreshed.calculated_routes is None

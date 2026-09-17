@@ -127,6 +127,62 @@ def find_candidate_stops_for_location(
         except (ValueError, TypeError):
             continue
 
+    # Pair opposing bus stops on the opposite side of the street (e.g. adj / opp)
+    discovered_bus_stops = [c for c in candidates if c.get("type") == "bus"]
+    for c in discovered_bus_stops:
+        c_lat = c["latitude"]
+        c_lon = c["longitude"]
+        raw_nm = c["name"] or ""
+        base_name = (
+            raw_nm.replace("(adj)", "")
+            .replace("(opp)", "")
+            .replace("adj", "")
+            .replace("opp", "")
+            .strip()
+        )
+        if not base_name or len(base_name) < 3:
+            continue
+        for st in naptan_stops:
+            if st.stop_type != "bus":
+                continue
+            st_id = (
+                f"naptan:{st.naptan_code}" if st.naptan_code else f"atco:{st.atco_code}"
+            )
+            stop_key = ("bus", st_id)
+            if stop_key in seen_stop_keys:
+                continue
+            st_nm = st.name or ""
+            st_base = (
+                st_nm.replace("(adj)", "")
+                .replace("(opp)", "")
+                .replace("adj", "")
+                .replace("opp", "")
+                .strip()
+            )
+            if st_base.lower() == base_name.lower():
+                try:
+                    p_dist = calculate_haversine_distance_m(
+                        c_lat, c_lon, float(st.latitude), float(st.longitude)
+                    )
+                    if p_dist <= 120.0:
+                        loc_dist = calculate_haversine_distance_m(
+                            loc_lat, loc_lon, float(st.latitude), float(st.longitude)
+                        )
+                        if loc_dist <= max_distance_m + 120.0:
+                            seen_stop_keys.add(stop_key)
+                            candidates.append(
+                                {
+                                    "type": "bus",
+                                    "id": st_id,
+                                    "name": st.name,
+                                    "latitude": float(st.latitude),
+                                    "longitude": float(st.longitude),
+                                    "distance_m": round(loc_dist, 1),
+                                }
+                            )
+                except (ValueError, TypeError):
+                    continue
+
     # 2. Query custom / HA stops used in any Timetable
     timetables = Timetable.select()
     for tt in timetables:

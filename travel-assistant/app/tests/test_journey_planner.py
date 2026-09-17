@@ -1995,3 +1995,293 @@ def test_load_interchanges_for_stops_filtering_and_chunking(app: Flask) -> None:
         chunked_res = _load_interchanges_for_stops(large_stops)
         assert "2100_STOP_A" in chunked_res
         assert chunked_res["2100_STOP_A"] == [("2100_STOP_B", 2)]
+
+
+def test_extract_route_base_name() -> None:
+    """Test normalising diverse transit line strings into route base codes."""
+    from app.services.planner.route_finder import extract_route_base_name
+
+    assert extract_route_base_name("Bus SB1: Woodcock Road to Bus Station") == "sb1"
+    assert extract_route_base_name("Bus 37X: The Crown Inn to Bus Station") == "37x"
+    assert extract_route_base_name("Route 73") == "73"
+    assert extract_route_base_name("Bus 73") == "73"
+    assert extract_route_base_name("Thameslink: London to Cambridge") == "thameslink"
+    assert extract_route_base_name(None) == ""
+    assert extract_route_base_name("") == ""
+
+
+def test_timetable_operates_in_window(app: Flask) -> None:
+    """Test checking if a timetable has trips operating in a specified time window."""
+    from app.services.planner.route_finder import timetable_operates_in_window
+
+    with app.app_context():
+        tt = Timetable.create(
+            name="Morning Express",
+            transport_type="rail",
+            auto_added=False,
+            stops_count=2,
+            trips_count=1,
+            content=TimetableContent(
+                stops=[
+                    TimetableStop(id="9100KNGX", name="London King's Cross"),
+                    TimetableStop(id="9100CAMB", name="Cambridge"),
+                ],
+                trips=[
+                    TimetableTrip(
+                        id="trip_1",
+                        times=[
+                            {"dep": "08:15", "arr": "08:15"},
+                            {"dep": "09:05", "arr": "09:05"},
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        # 08:15 falls in 08:00-09:00 window (480 to 540 minutes)
+        assert timetable_operates_in_window(tt, 480, 540) is True
+        # 08:15 does not fall in 06:00-07:30 window (360 to 450 minutes)
+        assert timetable_operates_in_window(tt, 360, 450) is False
+        # Test empty timetable
+        empty_tt = Timetable.create(
+            name="Empty",
+            transport_type="bus",
+            auto_added=False,
+            stops_count=0,
+            trips_count=0,
+            content_json="{}",
+        )
+        assert timetable_operates_in_window(empty_tt, 0, 1440) is False
+
+
+def test_is_valid_leg_sequence_loop_guards() -> None:
+    """Test that is_valid_leg_sequence rejects same-line turnaround loops and spatial cycles."""
+    from app.services.planner.models import RouteLeg
+    from app.services.planner.route_finder import is_valid_leg_sequence
+
+    # 1. Valid multi-modal sequence
+    valid_legs = [
+        RouteLeg(
+            stage_index=1,
+            step_index=1,
+            leg_type="walk",
+            from_type="ha",
+            from_id="home",
+            from_name="Home",
+            to_type="bus",
+            to_id="stop_1",
+            to_name="Stop 1",
+            duration_minutes=5,
+            transport_mode="walk",
+        ),
+        RouteLeg(
+            stage_index=2,
+            step_index=2,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_1",
+            from_name="Stop 1",
+            to_type="bus",
+            to_id="stop_2",
+            to_name="Stop 2",
+            duration_minutes=15,
+            transport_mode="bus",
+            line_name="Bus 73: Victoria to Stoke Newington",
+        ),
+        RouteLeg(
+            stage_index=3,
+            step_index=3,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_2",
+            from_name="Stop 2",
+            to_type="rail",
+            to_id="stop_3",
+            to_name="Stop 3",
+            duration_minutes=30,
+            transport_mode="rail",
+            line_name="Thameslink",
+        ),
+    ]
+    assert is_valid_leg_sequence(valid_legs) is True
+
+    # 2. Reject same line turnaround (e.g. Bus 37X to Bus Station, then Bus 37X back)
+    turnaround_legs = [
+        RouteLeg(
+            stage_index=1,
+            step_index=1,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_1",
+            from_name="The Crown",
+            to_type="bus",
+            to_id="stop_bs",
+            to_name="Bus Station",
+            duration_minutes=10,
+            transport_mode="bus",
+            line_name="Bus 37X: The Crown Inn to Bus Station",
+        ),
+        RouteLeg(
+            stage_index=2,
+            step_index=2,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_bs",
+            from_name="Bus Station",
+            to_type="bus",
+            to_id="stop_1",
+            to_name="The Crown",
+            duration_minutes=10,
+            transport_mode="bus",
+            line_name="Bus 37X: Bus Station to The Crown Inn",
+        ),
+    ]
+    assert is_valid_leg_sequence(turnaround_legs) is False
+
+    # 3. Reject spatial return loop where a transit leg ends at a previously departed stop
+    spatial_loop_legs = [
+        RouteLeg(
+            stage_index=1,
+            step_index=1,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_a",
+            from_name="Stop A",
+            to_type="bus",
+            to_id="stop_b",
+            to_name="Stop B",
+            duration_minutes=10,
+            transport_mode="bus",
+            line_name="Line 1",
+        ),
+        RouteLeg(
+            stage_index=2,
+            step_index=2,
+            leg_type="transit",
+            from_type="bus",
+            from_id="stop_b",
+            from_name="Stop B",
+            to_type="bus",
+            to_id="stop_a",
+            to_name="Stop A",
+            duration_minutes=10,
+            transport_mode="bus",
+            line_name="Line 2",
+        ),
+    ]
+    assert is_valid_leg_sequence(spatial_loop_legs) is False
+
+
+def test_find_routes_with_time_window_filtering(seeded_planner: None) -> None:
+    """Test that find_routes filters out timetables operating outside the journey window."""
+    # Create two timetables: an early morning anomalous train and a regular commute train
+    tt_early = Timetable.create(
+        name="Rail King's Cross to Tech Campus (Night)",
+        transport_type="rail",
+        auto_added=False,
+        monday=True,
+        tuesday=True,
+        wednesday=True,
+        thursday=True,
+        friday=True,
+        stops_count=2,
+        trips_count=1,
+        content=TimetableContent(
+            stops=[
+                TimetableStop(id="9100KNGX", name="London King's Cross", type="rail"),
+                TimetableStop(id="9100FPK", name="Finsbury Park", type="rail"),
+            ],
+            trips=[
+                TimetableTrip(
+                    id="night_trip",
+                    times=[
+                        {"dep": "05:15", "arr": "05:15"},
+                        {"dep": "05:25", "arr": "05:25"},
+                    ],
+                )
+            ],
+        ),
+    )
+
+    tt_commute = Timetable.create(
+        name="Rail King's Cross to Tech Campus (Commute)",
+        transport_type="rail",
+        auto_added=False,
+        monday=True,
+        tuesday=True,
+        wednesday=True,
+        thursday=True,
+        friday=True,
+        stops_count=2,
+        trips_count=1,
+        content=TimetableContent(
+            stops=[
+                TimetableStop(id="9100KNGX", name="London King's Cross", type="rail"),
+                TimetableStop(id="9100FPK", name="Finsbury Park", type="rail"),
+            ],
+            trips=[
+                TimetableTrip(
+                    id="commute_trip",
+                    times=[
+                        {"dep": "08:30", "arr": "08:30"},
+                        {"dep": "08:40", "arr": "08:40"},
+                    ],
+                )
+            ],
+        ),
+    )
+
+    # Search routes for commute window 08:00 to 09:30
+    routes = find_routes(
+        from_type="rail",
+        from_id="9100KNGX",
+        to_type="rail",
+        to_id="9100FPK",
+        days_of_week=["mon"],
+        start_time="08:00",
+        end_time="09:30",
+        timing_mode="depart",
+    )
+
+    assert len(routes) >= 1
+    # Transit leg should match the commute timetable ID, not the night service
+    transit_legs = [leg for leg in routes[0].legs if leg.leg_type == "transit"]
+    assert len(transit_legs) >= 1
+    assert transit_legs[0].timetable_id == tt_commute.id
+    assert transit_legs[0].timetable_id != tt_early.id
+
+
+def test_raptor_same_line_transfer_suppression() -> None:
+    """Test that _is_invalid_transfer rejects boarding trips on the same base line in reverse."""
+    from app.services.planner.raptor import _ParsedTrip, _is_invalid_transfer
+
+    # Trip on Bus 37X heading outbound
+    trip_37x = _ParsedTrip(
+        trip_id="tr_2",
+        timetable_id=102,
+        line_name="Bus 37X: Bus Station to The Crown Inn",
+        transport_mode="bus",
+        operator=None,
+        headsign=None,
+        stops=["stop_bs", "stop_crown"],
+        arr_times=[500, 520],
+        dep_times=[500, 520],
+    )
+
+    leg_pointer = {
+        0: {},
+        1: {
+            "stop_bs": {
+                "mode": "bus",
+                "line": "Bus 37X: The Crown Inn to Bus Station",
+                "from_stop": "stop_crown",
+                "to_stop": "stop_bs",
+            }
+        },
+    }
+
+    # At round 2, boarding 37X after arriving on 37X should be rejected
+    assert _is_invalid_transfer(trip_37x, "stop_bs", 2, leg_pointer) is True
+
+    # At round 1 (first boarding), should not be rejected
+    assert _is_invalid_transfer(trip_37x, "stop_bs", 1, leg_pointer) is False

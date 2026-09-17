@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx as nx
 
+from app.models.timetable import Timetable
 from app.models.transit import StopInterchange
 from app.models.walking import Walking
 from app.services.planner.exceptions import (
@@ -32,6 +33,69 @@ from app.services.planner.transfers import (
 logger = logging.getLogger(__name__)
 
 
+def extract_route_base_name(line_name: Optional[str]) -> str:
+    """Extract normalised base route identifier from a line or service name.
+
+    Examples:
+        "Bus SB1: Woodcock Road to Bus Station" -> "sb1"
+        "Bus 37X: The Crown Inn to Bus Station" -> "37x"
+        "Route 73" -> "73"
+        "Bus 73" -> "73"
+        "Rail: London to Cambridge" -> "london to cambridge"
+    """
+    if not line_name:
+        return ""
+    name = str(line_name).strip()
+    for mode_prefix in ("rail:", "train:", "bus:", "coach:"):
+        if name.lower().startswith(mode_prefix):
+            name = name[len(mode_prefix) :].strip()
+
+    if ":" in name:
+        prefix_part = name.split(":", 1)[0].strip()
+        for p in ("bus ", "route ", "line "):
+            if prefix_part.lower().startswith(p):
+                prefix_part = prefix_part[len(p) :].strip()
+        if (
+            prefix_part
+            and len(prefix_part) <= 20
+            and prefix_part.lower() not in ("rail", "train")
+            and " to " not in prefix_part.lower()
+        ):
+            return prefix_part.lower()
+        name = name.split(":", 1)[1].strip()
+
+    for prefix in ("bus ", "route ", "line "):
+        if name.lower().startswith(prefix):
+            name = name[len(prefix) :].strip()
+    return name.lower()
+
+
+def timetable_operates_in_window(
+    timetable: Timetable,
+    window_start_min: int,
+    window_end_min: int,
+) -> bool:
+    """Determine if a timetable contains any scheduled trip operating within the time window."""
+    content = timetable.get_content()
+    trips = content.get("trips", [])
+    if not trips:
+        return False
+    for tr in trips:
+        times = tr.get("times", [])
+        for t_item in times:
+            if isinstance(t_item, dict):
+                t_str = t_item.get("dep") or t_item.get("arr") or ""
+            else:
+                t_str = str(t_item or "")
+            t_min = parse_time_to_minutes(t_str)
+            if t_min is not None:
+                if window_start_min <= t_min <= window_end_min:
+                    return True
+                if window_end_min > 1440 and (t_min + 1440) <= window_end_min:
+                    return True
+    return False
+
+
 def find_routes(
     from_type: str,
     from_id: str,
@@ -39,6 +103,9 @@ def find_routes(
     to_id: str,
     days_of_week: Optional[List[str]] = None,
     target_date: Optional[Union[datetime.date, str]] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    timing_mode: Optional[str] = None,
     max_stages: int = 10,
     max_transfers_per_stage: int = 3,
     max_routes: int = 50,
@@ -55,6 +122,9 @@ def find_routes(
         to_id: Destination location identifier.
         days_of_week: Optional list of active day codes ("mon".."sun", "bank_holiday").
         target_date: Optional target date object or YYYY-MM-DD string.
+        start_time: Optional journey start time ("HH:MM").
+        end_time: Optional journey end time ("HH:MM").
+        timing_mode: Optional journey timing mode ("depart", "arrive", "window").
         max_stages: Maximum number of modal stages allowed (default: 6).
         max_transfers_per_stage: Maximum transfers within a single modal stage (default: 3).
         max_routes: Maximum number of route templates to return (default: 5).
@@ -87,16 +157,54 @@ def find_routes(
 
     active_days, date_obj = resolve_active_days_and_date(days_of_week, target_date)
     logger.info(
-        "Searching multi-modal route corridors from %s:%s to %s:%s (days: %s)...",
+        "Searching multi-modal route corridors from %s:%s to %s:%s (days: %s, window: %s-%s)...",
         f_type,
         f_id,
         t_type,
         t_id,
         active_days,
+        start_time,
+        end_time,
     )
 
     # 1. Filter Active Timetables
     active_timetables = get_active_timetables(active_days, date_obj)
+
+    # Filter active timetables by journey time window when provided
+    if start_time or end_time:
+        start_min = parse_time_to_minutes(start_time) if start_time else None
+        end_min = parse_time_to_minutes(end_time) if end_time else None
+        if start_min is not None or end_min is not None:
+            if start_min is None:
+                start_min = max(0, (end_min or 0) - 120)
+            if end_min is None:
+                end_min = min(1440, (start_min or 0) + 120)
+            if start_min > end_min:
+                start_min, end_min = end_min, start_min
+
+            t_mode = (timing_mode or "depart").strip().lower()
+            if t_mode == "arrive":
+                eval_start = max(0, start_min - 120)
+                eval_end = end_min + 30
+            else:
+                eval_start = max(0, start_min - 30)
+                eval_end = end_min + 90
+
+            window_timetables = [
+                tt
+                for tt in active_timetables
+                if timetable_operates_in_window(tt, eval_start, eval_end)
+            ]
+            if window_timetables:
+                logger.info(
+                    "Filtered active timetables from %d to %d for journey window %s-%s (%s)",
+                    len(active_timetables),
+                    len(window_timetables),
+                    start_time,
+                    end_time,
+                    t_mode,
+                )
+                active_timetables = window_timetables
 
     # 2. Access & Egress Footpaths
     origin_walks = get_access_edges(f_type, f_id, is_origin=True)
@@ -364,9 +472,31 @@ def find_routes(
     for u, v, k, data in G.edges(keys=True, data=True):
         dur = data.get("duration", 1)
         leg_type = data.get("leg_type", "walk")
+        mode = data.get("transport_mode", "walk")
         if leg_type == "transit":
-            # In-vehicle transit travel carries a near-zero fractional weight (0.01) to prevent zero-weight cycles while maintaining pure per-change costs
-            w = 0.01
+            # In-vehicle transit travel carries fractional weight plus small duration slope
+            # Micro-bus hops within an interchange/station complex are heavily penalised to favour walking
+            from_nm = (data.get("from_name") or "").lower()
+            to_nm = (data.get("to_name") or "").lower()
+            is_micro_hop = (
+                mode == "bus"
+                and dur <= 3
+                and (
+                    ("bus station" in from_nm and "bus station" in to_nm)
+                    or (
+                        G.has_node(u)
+                        and G.has_node(v)
+                        and any(
+                            e.get("leg_type") in ("interchange", "platform_transfer")
+                            for e in (G.get_edge_data(u, v) or {}).values()
+                        )
+                    )
+                )
+            )
+            if is_micro_hop:
+                w = float(dur) + 30.0
+            else:
+                w = 0.01 + float(dur) * 0.001
         elif leg_type in ("interchange", "platform_transfer"):
             # Vehicle and station changes carry duration plus a transfer penalty
             w = float(dur) + 12.0
@@ -726,6 +856,8 @@ def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
 
     1. Walking cannot be followed by more walking (no consecutive walking legs).
     2. A maximum of 4 legs of the same transport mode may occur consecutively in a row (up to 3 intra-modal transfers per stage).
+    3. No reverse loops or transfers between opposite directions of the same transit line.
+    4. No spatial turnaround loops (transit leg returning to a previously departed stop).
 
     Args:
         legs: Ordered list of RouteLeg objects.
@@ -738,6 +870,8 @@ def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
 
     consecutive_count = 0
     previous_mode: Optional[str] = None
+    previous_transit_base: Optional[str] = None
+    departed_transit_stop_ids: Set[str] = set()
 
     for leg in legs:
         mode = get_leg_mode(leg)
@@ -754,6 +888,28 @@ def is_valid_leg_sequence(legs: List[RouteLeg]) -> bool:
         else:
             previous_mode = mode
             consecutive_count = 1
+
+        if leg.leg_type == "transit":
+            curr_base = extract_route_base_name(leg.line_name)
+            # Rule 3: Reject consecutive transit legs sharing the same base line (turnaround / reverse loop)
+            if (
+                curr_base
+                and previous_transit_base
+                and curr_base == previous_transit_base
+            ):
+                return False
+
+            # Rule 4: Reject spatial turnaround loops where a transit leg ends at a stop previously departed from
+            norm_from = normalise_id(leg.from_id)
+            norm_to = normalise_id(leg.to_id)
+            if norm_to and norm_to in departed_transit_stop_ids:
+                return False
+
+            if norm_from:
+                departed_transit_stop_ids.add(norm_from)
+            previous_transit_base = curr_base
+        elif leg.leg_type not in ("interchange", "platform_transfer", "walk"):
+            previous_transit_base = None
 
     return True
 
@@ -864,8 +1020,10 @@ def prune_route_templates(
 
 
 __all__ = [
+    "extract_route_base_name",
     "find_routes",
     "get_leg_mode",
     "is_valid_leg_sequence",
     "prune_route_templates",
+    "timetable_operates_in_window",
 ]

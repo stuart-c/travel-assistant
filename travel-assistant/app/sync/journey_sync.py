@@ -44,6 +44,9 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
             days = tw.get("days", [])
             if not days:
                 days = list(VALID_DAYS)
+            start_time = tw.get("start_time")
+            end_time = tw.get("end_time")
+            mode = tw.get("mode")
             try:
                 routes = find_routes(
                     from_type=journey.from_type,
@@ -51,14 +54,19 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
                     to_type=journey.to_type,
                     to_id=journey.to_id,
                     days_of_week=days,
+                    start_time=start_time,
+                    end_time=end_time,
+                    timing_mode=mode,
                 )
                 candidate_routes.extend(routes)
             except JourneyPlanningError as err:
                 logger.warning(
-                    "No route corridor for journey %d ('%s') on days %s: %s",
+                    "No route corridor for journey %d ('%s') on days %s (%s-%s): %s",
                     journey.id,
                     journey.name,
                     days,
+                    start_time,
+                    end_time,
                     err.message,
                 )
     else:
@@ -86,23 +94,29 @@ def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplat
     return pruned if pruned else None
 
 
-def sync_journey_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Discover and populate calculated route templates for all pending journeys.
+def sync_journey_routes(
+    app: Optional[Flask] = None, force: bool = False
+) -> Dict[str, Any]:
+    """Discover and populate calculated route templates for pending journeys.
 
-    Queries all journeys where ``calculated_routes`` is NULL, performs topological
-    route discovery, and saves the serialised route templates.
+    Queries journeys where ``calculated_routes`` is NULL (or all journeys if ``force=True``),
+    performs topological route discovery, and saves the serialised route templates.
 
     Args:
         app: Optional Flask application context.
+        force: If True, recalculates routes for all journeys regardless of existing routes.
 
     Returns:
         Standardised sync telemetry dictionary.
     """
 
     def _perform_sync() -> int:
-        pending_journeys = list(
-            Journey.select().where(Journey.calculated_routes.is_null())
-        )
+        if force:
+            pending_journeys = list(Journey.select())
+        else:
+            pending_journeys = list(
+                Journey.select().where(Journey.calculated_routes.is_null())
+            )
         if not pending_journeys:
             logger.info("No pending journeys requiring route calculation.")
             return 0

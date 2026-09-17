@@ -760,3 +760,38 @@ def test_sync_walking_routes_rail_stops_does_not_trigger_bus_sync(app: Flask) ->
                 assert res["records"] == 1
                 assert res["bus_stops_added"] == 0
                 mock_req.assert_called_once_with("journey_routes")
+
+
+def test_find_candidate_stops_pairs_opposing_stops(app: Flask) -> None:
+    """Test that discovering a bus stop automatically pairs its opposing counterpart across the road."""
+    with app.app_context():
+        loc_lat, loc_lon = 51.5308, -0.1238
+
+        # Stop 1: Bus stop within 500m
+        Stop.create(
+            atco_code="2100_ADJ",
+            naptan_code="HRTADJ",
+            stop_type="bus",
+            name="Sweyns Mead (adj)",
+            latitude=51.5350,
+            longitude=-0.1238,
+        )
+
+        # Stop 2: Opposing stop across the road (just outside 500m but within 120m of Stop 1)
+        Stop.create(
+            atco_code="2100_OPP",
+            naptan_code="HRTOPP",
+            stop_type="bus",
+            name="Sweyns Mead (opp)",
+            latitude=51.5353,
+            longitude=-0.1238,
+        )
+
+        candidates = find_candidate_stops_for_location(
+            loc_lat, loc_lon, max_distance_m=500.0
+        )
+        candidate_ids = [c["id"] for c in candidates]
+
+        # Both the adjacent stop and the opposing stop should be discovered
+        assert "naptan:HRTADJ" in candidate_ids or "atco:2100_ADJ" in candidate_ids
+        assert "naptan:HRTOPP" in candidate_ids or "atco:2100_OPP" in candidate_ids
