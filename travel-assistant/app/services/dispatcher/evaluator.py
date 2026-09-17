@@ -437,6 +437,7 @@ def find_next_departure_candidate(
 
 def format_departure_notification(
     candidate: DepartureCandidate,
+    live_client: Optional[TrainLiveClient] = None,
 ) -> Tuple[str, str, Dict[str, Any]]:
     """Format notification title, rich message, and tap action metadata in British English."""
     title = f"Travel Alert: {candidate.journey_name}"
@@ -458,22 +459,21 @@ def format_departure_notification(
         service_desc = mode_label
 
     plat_note = f" (Platform {candidate.platform})" if candidate.platform else ""
-    live_note = ""
+    sched_time = candidate.original_dep_time or (
+        format_minutes_to_time(candidate.transit_dep_minutes - candidate.delay_minutes)
+        if candidate.delay_minutes
+        else candidate.transit_dep_time
+    )
+
     if candidate.is_live and candidate.delay_minutes > 0:
         reason_clause = (
             f" due to {candidate.delay_reason}" if candidate.delay_reason else ""
         )
-        if candidate.original_dep_time:
-            dep_desc = f"{candidate.original_dep_time} (delayed to {candidate.transit_dep_time}{reason_clause})"
-        else:
-            live_note = (
-                f" (delayed by {candidate.delay_minutes}m{reason_clause})"
-                if candidate.delay_reason
-                else f" (delayed by {candidate.delay_minutes}m)"
-            )
-            dep_desc = candidate.transit_dep_time
+        dep_desc = f"{candidate.transit_dep_time} (scheduled {sched_time}, expected {candidate.transit_dep_time}{reason_clause})"
+    elif candidate.is_live:
+        dep_desc = f"{candidate.transit_dep_time} (scheduled {sched_time}, expected {candidate.transit_dep_time} - on time)"
     else:
-        dep_desc = candidate.transit_dep_time
+        dep_desc = f"{candidate.transit_dep_time} (scheduled)"
 
     next_step_info = ""
     if candidate.itinerary and getattr(candidate.itinerary, "legs", None):
@@ -488,11 +488,14 @@ def format_departure_notification(
         )
         if first_transit:
             next_step_info = format_next_step_for_departure(
-                candidate.itinerary.legs, first_transit, only_transit=True
+                candidate.itinerary.legs,
+                first_transit,
+                only_transit=True,
+                live_client=live_client,
             )
 
     message = (
-        f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note}{live_note} "
+        f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note} "
         f"from {candidate.origin_stop_name} departing at {dep_desc}.{next_step_info} "
         f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
     )
@@ -504,13 +507,23 @@ def format_departure_notification(
         )
         or ""
     ).strip("/")
-    nav_url = f"/{panel_slug}" if panel_slug else "/journey"
+    base_path = f"/{panel_slug}" if panel_slug else ""
+    nav_url = f"{base_path}/journey?journey_id={candidate.journey_id}"
 
     data: Dict[str, Any] = {
         "url": nav_url,
         "clickAction": nav_url,
         "tag": f"journey_{candidate.journey_id}",
         "group": "travel_assistant_journeys",
+        "persistent": True,
+        "sticky": True,
+        "actions": [
+            {
+                "action": "URI",
+                "title": "View Journey Plan",
+                "uri": nav_url,
+            }
+        ],
     }
 
     return title, message, data

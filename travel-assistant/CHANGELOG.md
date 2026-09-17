@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enhanced Persistent Journey Notifications, Web Plan Deep-Linking & Change Platform Guidance** (`app/services/dispatcher/`):
+  - Configured departure and progress mobile notifications to be persistent and sticky (`persistent: True`, `sticky: True`) while journeys are en route, automatically transitioning to dismissible (`persistent: False`, `sticky: False`) upon arrival at destination (`JourneyStepStatus.ARRIVED`).
+  - Added seamless deep linking to the web journey plan across tap actions (`url`, `clickAction`) and explicit `"View Journey Plan"` notification action buttons (`actions: [{"action": "URI", "title": "View Journey Plan", "uri": ...}]`), respecting configured Home Assistant ingress panel paths (`/{ingress_panel_slug}/journey?journey_id={id}`).
+  - Added arrival and departure platform instructions for upcoming changes across initial departure alerts, on-transit updates, and interchange guidance, displaying both platforms (e.g. `arrive Platform 1, depart Platform 4`), stands for buses, or graceful unannounced notifications (`Platform to be announced` / `stands to be announced`).
+  - Added real-time Darwin arrival board probing (`resolve_live_rail_arrival_platform`) via `TrainLiveClient.get_arrival_board` to dynamically discover arrival platforms at connecting rail stations.
+  - Standardised departure timing text in natural British English to explicitly display both scheduled and expected times for delayed, on-time, and timetable-only services.
 - **Journey Departure Detection, Notification Dispatcher & Rollover** (`app/services/dispatcher/`, `DepartureMonitor`):
   - Automatically detects user (`person.stuart`) near journey origin within scheduled operating windows (`time_settings`) and calculates optimal departure leave-by time ($T_{\text{leave}} = T_{\text{transit\_dep}} - T_{\text{walk\_mins}}$) using the in-memory RAPTOR solver (`plan_journey`) and live departure probe adjustments (National Rail Darwin Live).
   - Dispatches rich departure notifications to mobile device (`notify.mobile_app_stuart_mobile` with no fallback) 15 minutes prior to leave time ($T_{\text{leave}} - 15\text{ mins}$), including leave-by time, walking duration, transit mode/line, origin boarding stop, scheduled vehicle departure time, estimated destination arrival, and dashboard tap action metadata.

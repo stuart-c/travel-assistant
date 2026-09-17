@@ -7,6 +7,7 @@ from flask import Flask
 from app.datasources.homeassistant import HomeAssistantClient
 from app.models.journey import Journey
 from app.models.location import Location
+from app.models.setting import Setting
 from app.models.timetable import Timetable
 from app.models.transit import Stop
 from app.models.walking import Walking
@@ -429,11 +430,16 @@ def test_format_departure_notification() -> None:
     assert title == "Travel Alert: Daily Office Commute"
     assert "Leave by 08:00 (walk 8m)" in message
     assert "Bus 73" in message
-    assert "departing at 08:08" in message
+    assert "departing at 08:08 (scheduled)" in message
     assert "Estimated arrival at Tech Campus by 08:28." in message
-    assert data["url"] == "/journey"
-    assert data["clickAction"] == "/journey"
+    assert data["url"] == "/journey?journey_id=1"
+    assert data["clickAction"] == "/journey?journey_id=1"
     assert data["tag"] == "journey_1"
+    assert data["persistent"] is True
+    assert data["sticky"] is True
+    assert data["actions"] == [
+        {"action": "URI", "title": "View Journey Plan", "uri": "/journey?journey_id=1"}
+    ]
 
 
 # --- Monitor Tests ---
@@ -740,8 +746,8 @@ def test_format_departure_notification_variations() -> None:
     )
     title, message, data = format_departure_notification(cand)
     assert title == "Travel Alert: Train Commute"
-    assert "Leave by 08:14 (direct departure) for Rail (delayed by 6m)" in message
-    assert "departing at 08:14" in message
+    assert "Leave by 08:14 (direct departure) for Rail" in message
+    assert "departing at 08:14 (scheduled 08:08, expected 08:14)" in message
 
 
 def test_format_departure_notification_with_original_time_and_delay_reason() -> None:
@@ -775,7 +781,7 @@ def test_format_departure_notification_with_original_time_and_delay_reason() -> 
     assert title == "Travel Alert: London to Cambridge"
     assert "Platform 4" in message
     assert (
-        "departing at 08:29 (delayed to 08:38 due to a fault with the signalling system)"
+        "departing at 08:38 (scheduled 08:29, expected 08:38 due to a fault with the signalling system)"
         in message
     )
 
@@ -864,11 +870,11 @@ def test_format_departure_notification_multi_leg_connecting_train() -> None:
     title, message, data = format_departure_notification(cand)
     assert title == "Travel Alert: Evening Commute"
     assert (
-        "Leave by 17:36 (walk 4m) for Shuttle Bus (Evening) from Shuttle Bus departing at 17:40."
+        "Leave by 17:36 (walk 4m) for Shuttle Bus (Evening) from Shuttle Bus departing at 17:40 (scheduled)."
         in message
     )
     assert (
-        "Next step: Great Northern train from Cambridge North Rail Station to Stevenage Rail Station departs at 17:54."
+        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
         in message
     )
     assert "Estimated arrival at Home by 18:45." in message
@@ -1883,3 +1889,51 @@ def test_departure_monitor_exponential_backoff_on_transient_errors(
         # Consecutive errors must be reset to 0 upon successful communication
         assert monitor._consecutive_errors == 0
         assert monitor._calculate_backoff_delay() == 30.0
+
+
+def test_format_departure_notification_custom_ingress_slug_and_persistence(
+    app: Flask,
+) -> None:
+    """Test format_departure_notification with custom ingress slug and persistent notification metadata."""
+    with app.app_context():
+        Setting.set_val("ingress_panel_slug", "my_custom_transport_panel")
+        cand = DepartureCandidate(
+            journey_id=5,
+            journey_name="Work Commute",
+            service_key="test_key_5",
+            transit_mode="rail",
+            line_name="Great Northern",
+            operator_name="Great Northern",
+            origin_stop_name="London King's Cross",
+            origin_stop_id="naptan:KGX",
+            dest_stop_name="Cambridge",
+            dest_stop_id="naptan:CBG",
+            final_dest_name="Cambridge",
+            transit_dep_minutes=500,
+            transit_dep_time="08:20",
+            walk_minutes=5,
+            leave_minutes=495,
+            leave_time="08:15",
+            arrival_time="09:10",
+            notification_trigger_minutes=480,
+            is_live=True,
+            delay_minutes=0,
+        )
+
+        title, message, data = format_departure_notification(cand)
+        expected_url = "/my_custom_transport_panel/journey?journey_id=5"
+        assert title == "Travel Alert: Work Commute"
+        assert (
+            "departing at 08:20 (scheduled 08:20, expected 08:20 - on time)" in message
+        )
+        assert data["url"] == expected_url
+        assert data["clickAction"] == expected_url
+        assert data["persistent"] is True
+        assert data["sticky"] is True
+        assert data["actions"] == [
+            {
+                "action": "URI",
+                "title": "View Journey Plan",
+                "uri": expected_url,
+            }
+        ]
