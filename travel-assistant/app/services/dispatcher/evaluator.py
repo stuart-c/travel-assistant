@@ -12,9 +12,9 @@ from app.models.setting import Setting
 from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.planner.exceptions import JourneyPlanningError
 from app.services.planner.raptor import plan_journey
-from app.services.planner.transfers import (
-    DAY_NAME_TO_CODE,
+from app.utils.transit_time import (
     format_minutes_to_time,
+    get_day_code,
     parse_time_to_minutes,
 )
 
@@ -88,17 +88,7 @@ def is_journey_active_for_datetime(
         # If no explicit time windows are configured, journey is not scheduled for time-based alerts
         return False, None
 
-    weekday_idx = dt.weekday()
-    day_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
-    current_day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "")
+    current_day_code = get_day_code(dt)
     current_minutes = dt.hour * 60 + dt.minute
 
     for ts_dict in time_settings:
@@ -154,17 +144,7 @@ def extract_departure_candidates(
     time_str = format_minutes_to_time(current_minutes)
     date_obj = dt.date()
 
-    weekday_idx = dt.weekday()
-    day_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
-    day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+    day_code = get_day_code(dt)
 
     try:
         itineraries = plan_journey(

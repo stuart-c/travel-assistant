@@ -10,17 +10,12 @@ from app.services.dispatcher.evaluator import (
     get_journey_estimated_duration_minutes,
     is_journey_active_for_datetime,
 )
-
 from app.services.dispatcher.monitor import (
     DepartureMonitor,
     get_departure_monitor,
     start_departure_monitor,
 )
-from app.services.dispatcher.proximity import (
-    haversine_distance,
-    is_person_near_origin,
-    resolve_endpoint_coordinates,
-)
+from app.services.dispatcher.proximity import is_person_near_origin
 from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.dispatcher.tracker import (
     ActiveJourney,
@@ -30,6 +25,7 @@ from app.services.dispatcher.tracker import (
     get_journey_live_tracking_data,
     update_journey_progress,
 )
+from app.utils.geo import haversine_distance_m, resolve_endpoint_coordinates
 
 __all__ = [
     "ActiveJourney",
@@ -46,7 +42,7 @@ __all__ = [
     "get_departure_monitor",
     "get_journey_estimated_duration_minutes",
     "get_journey_live_tracking_data",
-    "haversine_distance",
+    "haversine_distance_m",
     "is_journey_active_for_datetime",
     "is_person_near_origin",
     "resolve_endpoint_coordinates",

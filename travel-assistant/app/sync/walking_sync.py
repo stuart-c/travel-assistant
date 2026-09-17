@@ -20,29 +20,12 @@ from app.models import (
     Walking,
 )
 from app.sync.common import run_sync_task
+from app.utils.geo import haversine_distance_m
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WALK_RADIUS_METRES = 500.0
 _walking_sync_lock = threading.Lock()
-
-
-def calculate_haversine_distance_m(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
-    """Calculate the great-circle distance between two points in metres using Haversine formula."""
-    r_earth = 6371000.0  # Earth mean radius in metres
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = (
-        math.sin(delta_phi / 2.0) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
-    )
-    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-    return r_earth * c
 
 
 def resolve_location_coords(
@@ -102,7 +85,7 @@ def find_candidate_stops_for_location(
 
     for st in naptan_stops:
         try:
-            dist = calculate_haversine_distance_m(
+            dist = haversine_distance_m(
                 loc_lat, loc_lon, float(st.latitude), float(st.longitude)
             )
             if dist <= max_distance_m:
@@ -161,11 +144,11 @@ def find_candidate_stops_for_location(
             )
             if st_base.lower() == base_name.lower():
                 try:
-                    p_dist = calculate_haversine_distance_m(
+                    p_dist = haversine_distance_m(
                         c_lat, c_lon, float(st.latitude), float(st.longitude)
                     )
                     if p_dist <= 120.0:
-                        loc_dist = calculate_haversine_distance_m(
+                        loc_dist = haversine_distance_m(
                             loc_lat, loc_lon, float(st.latitude), float(st.longitude)
                         )
                         if loc_dist <= max_distance_m + 120.0:
@@ -227,9 +210,7 @@ def find_candidate_stops_for_location(
                 continue
 
             try:
-                dist = calculate_haversine_distance_m(
-                    loc_lat, loc_lon, float(lat), float(lon)
-                )
+                dist = haversine_distance_m(loc_lat, loc_lon, float(lat), float(lon))
                 if dist <= max_distance_m:
                     stop_key = (raw_type, raw_id)
                     if stop_key not in seen_stop_keys:

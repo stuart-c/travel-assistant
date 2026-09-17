@@ -19,11 +19,7 @@ from app.services.dispatcher.evaluator import (
     format_departure_notification,
     is_journey_active_for_datetime,
 )
-from app.services.dispatcher.proximity import (
-    haversine_distance,
-    is_person_near_origin,
-    resolve_endpoint_coordinates,
-)
+from app.services.dispatcher.proximity import is_person_near_origin
 from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.planner.models import (
     ItineraryEndpoint,
@@ -31,10 +27,13 @@ from app.services.planner.models import (
     ScheduledItinerary,
 )
 from app.services.planner.transfers import (
-    DAY_NAME_TO_CODE,
-    format_minutes_to_time,
     get_active_timetables,
     normalise_id,
+)
+from app.utils.geo import haversine_distance_m, resolve_endpoint_coordinates
+from app.utils.transit_time import (
+    format_minutes_to_time,
+    get_day_code,
     parse_time_to_minutes,
 )
 
@@ -958,17 +957,7 @@ def _find_next_timetable_trip(
 
     Returns (dep_time, arr_time, line_name, operator_name) or None if no trip found.
     """
-    weekday_idx = current_dt.weekday()
-    day_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
-    day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+    day_code = get_day_code(current_dt)
     active_timetables = get_active_timetables([day_code], current_dt.date())
 
     norm_orig = normalise_id(origin_id)
@@ -1427,12 +1416,12 @@ def update_journey_progress(
                 )
 
                 f_dist_orig = (
-                    haversine_distance(person_lat, person_lon, f_orig_lat, f_orig_lon)
+                    haversine_distance_m(person_lat, person_lon, f_orig_lat, f_orig_lon)
                     if (f_orig_lat is not None and f_orig_lon is not None)
                     else None
                 )
                 f_dist_dest = (
-                    haversine_distance(person_lat, person_lon, f_dest_lat, f_dest_lon)
+                    haversine_distance_m(person_lat, person_lon, f_dest_lat, f_dest_lon)
                     if (f_dest_lat is not None and f_dest_lon is not None)
                     else None
                 )
@@ -1474,7 +1463,7 @@ def update_journey_progress(
                     and f_dist_orig is not None
                     and f_dist_dest is not None
                 ):
-                    span = haversine_distance(
+                    span = haversine_distance_m(
                         f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon
                     )
                     f_dep_m = parse_time_to_minutes(f_leg.dep_time)
@@ -1510,7 +1499,7 @@ def update_journey_progress(
                     and f_dist_orig is not None
                     and f_dist_dest is not None
                 ):
-                    span = haversine_distance(
+                    span = haversine_distance_m(
                         f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon
                     )
                     if (
@@ -1536,12 +1525,12 @@ def update_journey_progress(
             )
 
             dist_to_orig = (
-                haversine_distance(person_lat, person_lon, orig_lat, orig_lon)
+                haversine_distance_m(person_lat, person_lon, orig_lat, orig_lon)
                 if (person_lat is not None and orig_lat is not None)
                 else None
             )
             dist_to_dest = (
-                haversine_distance(person_lat, person_lon, dest_lat, dest_lon)
+                haversine_distance_m(person_lat, person_lon, dest_lat, dest_lon)
                 if (person_lat is not None and dest_lat is not None)
                 else None
             )
@@ -1565,7 +1554,7 @@ def update_journey_progress(
                         active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
                     else:
                         leg_dist = (
-                            haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
+                            haversine_distance_m(orig_lat, orig_lon, dest_lat, dest_lon)
                             if (orig_lat is not None and dest_lat is not None)
                             else 1000.0
                         )
@@ -1812,17 +1801,7 @@ def detect_en_route_journey(
         return None
 
     current_minutes = current_dt.hour * 60 + current_dt.minute
-    weekday_idx = current_dt.weekday()
-    day_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
-    day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+    day_code = get_day_code(current_dt)
 
     # Search for candidate itineraries covering a 2-hour window up to 15 minutes ahead
     search_start_min = max(0, current_minutes - 120)
@@ -1889,12 +1868,12 @@ def detect_en_route_journey(
             )
 
             dist_orig = (
-                haversine_distance(person_lat, person_lon, orig_lat, orig_lon)
+                haversine_distance_m(person_lat, person_lon, orig_lat, orig_lon)
                 if (orig_lat is not None and orig_lon is not None)
                 else None
             )
             dist_dest = (
-                haversine_distance(person_lat, person_lon, dest_lat, dest_lon)
+                haversine_distance_m(person_lat, person_lon, dest_lat, dest_lon)
                 if (dest_lat is not None and dest_lon is not None)
                 else None
             )
@@ -2064,7 +2043,7 @@ def detect_en_route_journey(
                 and (dist_orig is None or dist_orig > max_proximity_metres)
                 and (dist_dest is None or dist_dest > max_proximity_metres)
             ):
-                leg_span = haversine_distance(orig_lat, orig_lon, dest_lat, dest_lon)
+                leg_span = haversine_distance_m(orig_lat, orig_lon, dest_lat, dest_lon)
                 if (
                     dist_orig is not None
                     and dist_dest is not None
@@ -2124,7 +2103,7 @@ def detect_en_route_journey(
                 )
                 max_walk_time = next_dep_m if next_dep_m is not None else (walk_arr + 5)
                 if (walk_dep - 15) <= leg_cur_m < max_walk_time:
-                    leg_span = haversine_distance(
+                    leg_span = haversine_distance_m(
                         orig_lat, orig_lon, dest_lat, dest_lon
                     )
                     if (
@@ -2387,17 +2366,7 @@ def get_journey_live_tracking_data(
                     should_plan = True
 
             if should_plan:
-                weekday_idx = current_dt.weekday()
-                day_names = [
-                    "monday",
-                    "tuesday",
-                    "wednesday",
-                    "thursday",
-                    "friday",
-                    "saturday",
-                    "sunday",
-                ]
-                day_code = DAY_NAME_TO_CODE.get(day_names[weekday_idx], "mon")
+                day_code = get_day_code(current_dt)
                 try:
                     from app.services.planner.raptor import plan_journey
 
@@ -2616,7 +2585,7 @@ def get_journey_live_tracking_data(
     if person_lat is not None and person_lon is not None:
         if dest_lat is not None and dest_lon is not None:
             dist_to_dest_m = round(
-                haversine_distance(person_lat, person_lon, dest_lat, dest_lon), 1
+                haversine_distance_m(person_lat, person_lon, dest_lat, dest_lon), 1
             )
 
         if current_leg_index < len(serialized_legs):
@@ -2633,7 +2602,7 @@ def get_journey_live_tracking_data(
 
             if t_lat is not None and t_lon is not None:
                 dist_to_next_stop_m = round(
-                    haversine_distance(person_lat, person_lon, t_lat, t_lon), 1
+                    haversine_distance_m(person_lat, person_lon, t_lat, t_lon), 1
                 )
         elif dist_to_dest_m is not None:
             dist_to_next_stop_m = dist_to_dest_m

@@ -371,7 +371,7 @@ class TrainS3Client(BaseDataSource):
         from collections import defaultdict
         import gzip
         import io
-        import xml.etree.ElementTree as ET
+        import defusedxml.ElementTree as ET
 
         lookup = stop_lookup or {}
 

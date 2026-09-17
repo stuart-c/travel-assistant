@@ -3,9 +3,9 @@
 import datetime
 import gzip
 import io
-import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DefusedET
 import zipfile
 import requests
 
@@ -17,6 +17,11 @@ from app.datasources.exceptions import (
     DataSourceError,
     DataSourceRateLimitError,
 )
+from app.utils.transit_time import (
+    format_seconds_to_hh_mm,
+    parse_iso_duration_seconds,
+    parse_time_str_to_seconds,
+)
 
 DEFAULT_BODS_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1/dataset"
 
@@ -26,52 +31,6 @@ def _clean_tag(tag: str) -> str:
     if "}" in tag:
         return tag.split("}", 1)[1]
     return tag
-
-
-def _parse_iso_duration_seconds(dur_str: Optional[str]) -> int:
-    """Parse ISO 8601 duration string (e.g., PT10M, PT1H30M, PT45S, PT1M30S) into seconds."""
-    if not dur_str:
-        return 0
-    s = str(dur_str).strip().upper()
-    if not s.startswith("P"):
-        return 0
-
-    # Match hours, minutes, seconds components from PT#H#M#S
-    match = re.search(
-        r"PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?",
-        s,
-    )
-    if not match:
-        return 0
-
-    hours = int(match.group("hours") or 0)
-    minutes = int(match.group("minutes") or 0)
-    seconds = int(match.group("seconds") or 0)
-    return hours * 3600 + minutes * 60 + seconds
-
-
-def _parse_time_str_to_seconds(time_str: Optional[str]) -> Optional[int]:
-    """Parse HH:MM:SS or HH:MM string into seconds from midnight."""
-    if not time_str:
-        return None
-    parts = str(time_str).strip().split(":")
-    if len(parts) >= 2:
-        try:
-            h = int(parts[0])
-            m = int(parts[1])
-            s = int(parts[2]) if len(parts) > 2 else 0
-            return h * 3600 + m * 60 + s
-        except ValueError:
-            return None
-    return None
-
-
-def _format_seconds_to_hh_mm(total_seconds: int) -> str:
-    """Format seconds from midnight modulo 86400 into HH:MM string."""
-    norm = total_seconds % 86400
-    h = norm // 3600
-    m = (norm % 3600) // 60
-    return f"{h:02d}:{m:02d}"
 
 
 def _parse_operating_profile(
@@ -511,7 +470,7 @@ class BodsClient(BaseDataSource):
             return []
 
         try:
-            root = ET.fromstring(xml_content)
+            root = DefusedET.fromstring(xml_content)
         except ET.ParseError as e:
             raise DataSourceError(
                 f"Failed to parse TransXChange XML: {str(e)}", provider="bods"
@@ -589,7 +548,7 @@ class BodsClient(BaseDataSource):
                                     if _clean_tag(tc.tag) == "StopPointRef" and tc.text:
                                         to_ref = tc.text.strip()
                             elif c_tag == "RunTime" and child.text:
-                                runtime_sec = _parse_iso_duration_seconds(child.text)
+                                runtime_sec = parse_iso_duration_seconds(child.text)
                         if from_ref and to_ref:
                             links.append(
                                 {
@@ -805,7 +764,7 @@ class BodsClient(BaseDataSource):
                 if not jp_ref or not dep_time_str:
                     continue
 
-                dep_sec = _parse_time_str_to_seconds(dep_time_str)
+                dep_sec = parse_time_str_to_seconds(dep_time_str)
                 if dep_sec is None:
                     continue
 
@@ -831,7 +790,7 @@ class BodsClient(BaseDataSource):
                     vj_days = dict(base_days)
 
                 times = [
-                    _format_seconds_to_hh_mm(dep_sec + offset)
+                    format_seconds_to_hh_mm(dep_sec + offset)
                     for offset in p_seq["offsets"]
                 ]
                 op_name = operators_map.get(operator_ref) or operator_ref

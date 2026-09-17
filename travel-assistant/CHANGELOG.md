@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Parallel test runner support (`pytest-xdist>=3.5.0`) and test argument forwarding in `scripts/run_tests.sh`.
 
 ### Changed
+- **Shared Geospatial & Transit Time Utilities (`app/utils/`)**:
+  - Extracted unified `app/utils/geo.py` with `haversine_distance_m` and `resolve_endpoint_coordinates`, eliminating duplicate distance formulas in `proximity.py` and `walking_sync.py`.
+  - Integrated `geopy` library for high-precision great-circle distance calculations.
+  - Extracted unified `app/utils/transit_time.py` consolidating `parse_time_to_minutes`, `format_minutes_to_time`, `parse_iso_duration_seconds`, `parse_time_str_to_seconds`, `format_seconds_to_hh_mm`, and `get_day_code`.
+  - Replaced manual ISO duration regexes in `bods.py` with `isoduration` parsing.
+  - Hardened XML deserialization across UK BODS bus timetables and National Rail Darwin S3 snapshots using `defusedxml.ElementTree` to prevent XML entity expansion attacks.
+  - Added dependencies: `geopy>=2.4.1`, `tenacity>=8.3.0`, `defusedxml>=0.7.1`.
 - **Corridor Time-Window Filtering, Loop Suppression & Stale Timetable Invalidation** (`app/services/planner/`, `app/sync/`):
   - Added time-window parameters (`start_time`, `end_time`, `timing_mode`) to `find_routes` and `calculate_routes_for_journey`, filtering active timetables and graph edges to services operating within an expanded journey evaluation window to prevent anomalous single-run early/late services from superseding multi-leg commuter corridors.
   - Enforced loop suppression in `is_valid_leg_sequence` (`route_finder.py`) and `_is_invalid_transfer` (`raptor.py`), rejecting same-line reverse turnarounds and spatial loops.
