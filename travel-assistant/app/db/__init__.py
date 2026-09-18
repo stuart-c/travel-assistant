@@ -13,8 +13,8 @@ from app.db.core import (
     get_sync_stats,
     init_app,
     init_db,
-    run_migrations,
 )
+from app.db.migrations import run_migrations
 
 __all__ = [
     "db",
