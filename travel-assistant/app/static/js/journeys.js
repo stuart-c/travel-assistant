@@ -3,8 +3,8 @@
  * 
  * Manages client-side staged state for Travel Journeys with Grid.js and
  * an interactive modal dialogue featuring multi-location live search autocompletion
- * (Rail Stations, Bus Stops, Home Assistant, and Custom Locations) and dynamic
- * multi-time-window scheduling.
+ * (Rail Stations, Bus Stops, Home Assistant, and Custom Locations), dynamic
+ * multi-time-window scheduling, and delegates DAG route visualization to JourneyDagViewer.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -13,12 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('journeys-form');
   if (!configEl) return;
 
-  const searchBaseUrl =
-    configEl.getAttribute('data-search-url') || '/config/search/places';
   const dataUrl =
     configEl.getAttribute('data-data-url') || '/config/journeys/data';
 
-  // Staged changeset state manager
   const changesetManager =
     window.TransitUI && window.TransitUI.createStagedChangesetManager
       ? window.TransitUI.createStagedChangesetManager('id')
@@ -26,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let currentPageItems = [];
 
-  // DOM Elements
   const gridWrapper = document.getElementById('journeys-grid-wrapper');
   const emptyState = document.getElementById('journeys-grid-empty-state');
 
@@ -84,9 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
   const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
-  const getLocationIcon = (window.TransitUI && window.TransitUI.getTransportIcon) || (() => 'pin_drop');
   const formatDaysSummary = (window.TransitUI && window.TransitUI.formatDaysSummary) || ((days) => (days || []).join(', '));
-
 
   function formatScheduleSummary(timeSettings) {
     if (!timeSettings || !timeSettings.length) {
@@ -95,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </span>`;
     }
 
-    const items = timeSettings.map(tw => {
+    const items = timeSettings.map((tw) => {
       const daysText = formatDaysSummary(tw.days);
       const modeText = tw.mode === 'arrive' ? 'Arrive' : 'Depart';
       let timeText = '';
@@ -119,7 +113,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return `<div class="flex flex-col gap-1">${items.join('')}</div>`;
   }
 
-  // --- Grid.js Data Formatter ---
   function formatGridData(items) {
     return items.map((item, index) => {
       const fromBadge = getLocationBadge(item.from_type);
@@ -166,31 +159,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteTitle: 'Delete journey',
               })
             : `<div class="flex items-center gap-1.5">
-                <button 
-                  type="button" 
-                  class="edit-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 dark:bg-sky-950/50 dark:text-sky-400 dark:hover:bg-sky-900/60 transition-colors cursor-pointer" 
-                  data-index="${index}" 
-                  title="Edit journey"
-                  aria-label="Edit journey"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">edit</span>
-                </button>
-                <button 
-                  type="button" 
-                  class="delete-journey-btn inline-flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 dark:hover:bg-rose-900/60 transition-colors cursor-pointer" 
-                  data-index="${index}" 
-                  title="Delete journey"
-                  aria-label="Delete journey"
-                >
-                  <span class="material-symbols-outlined text-[17px] leading-none">delete</span>
-                </button>
+                <button type="button" class="edit-journey-btn w-7 h-7 rounded-lg bg-sky-50 text-sky-600 cursor-pointer" data-index="${index}"><span class="material-symbols-outlined text-[17px]">edit</span></button>
+                <button type="button" class="delete-journey-btn w-7 h-7 rounded-lg bg-rose-50 text-rose-600 cursor-pointer" data-index="${index}"><span class="material-symbols-outlined text-[17px]">delete</span></button>
               </div>`
         ),
       ];
     });
   }
 
-  // --- Grid Instance ---
   const columnsConfig = [
     { name: 'Journey', width: '26%', sort: true },
     { name: 'Start Location', width: '23%', sort: true },
@@ -212,16 +188,11 @@ document.addEventListener('DOMContentLoaded', () => {
         changesetManager.added.length -
         changesetManager.deleted.size
     );
-    if (effectiveTotal === 0) {
-      if (emptyState) emptyState.classList.remove('hidden');
-      if (gridWrapper) gridWrapper.classList.add('hidden');
-    } else {
-      if (emptyState) emptyState.classList.add('hidden');
-      if (gridWrapper) gridWrapper.classList.remove('hidden');
-    }
+    if (emptyState) emptyState.classList.toggle('hidden', effectiveTotal > 0);
+    if (gridWrapper) gridWrapper.classList.toggle('hidden', effectiveTotal === 0);
   }
 
-  function updateDirtyState() {
+  function syncDirtyState() {
     if (window.ConfigDirtyManager) {
       if (changesetManager.isDirty()) {
         window.ConfigDirtyManager.markDirty();
@@ -241,15 +212,13 @@ document.addEventListener('DOMContentLoaded', () => {
         syncEmptyState(data.total);
         return formatGridData(currentPageItems);
       },
-      total: (data) => {
-        const serverTotal = Number(data.total) || 0;
-        return Math.max(
+      total: (data) =>
+        Math.max(
           0,
-          serverTotal +
+          (Number(data.total) || 0) +
             changesetManager.added.length -
             changesetManager.deleted.size
-        );
-      },
+        ),
     },
     pagination: {
       enabled: true,
@@ -280,10 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
       },
     },
-    search: {
-      enabled: true,
-      placeholder: 'Search journeys...',
-    },
+    search: { enabled: true, placeholder: 'Search journeys...' },
     className: {
       table: 'w-full text-left text-sm',
       th: 'py-3.5 px-4 font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700',
@@ -301,21 +267,8 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   });
 
-  if (gridWrapper) {
-    gridInstance.render(gridWrapper);
-  }
+  if (gridWrapper) gridInstance.render(gridWrapper);
 
-  function syncDirtyState() {
-    if (window.ConfigDirtyManager) {
-      if (changesetManager.isDirty()) {
-        window.ConfigDirtyManager.markDirty();
-      } else {
-        window.ConfigDirtyManager.clearDirty();
-      }
-    }
-  }
-
-  // --- Location Autocomplete Component ---
   const fromAutocomplete = window.PlaceAutocomplete
     ? window.PlaceAutocomplete.bindSelection({
         searchInput: fromSearchInput,
@@ -346,8 +299,6 @@ document.addEventListener('DOMContentLoaded', () => {
       })
     : null;
 
-
-  // --- Dynamic Time Windows Builder ---
   const ALL_DAYS = [
     { key: 'mon', label: 'Mon' },
     { key: 'tue', label: 'Tue' },
@@ -361,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function createTimeWindowCard(twData = {}) {
     const card = document.createElement('div');
-    card.className = 'time-window-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 relative';
+    card.className =
+      'time-window-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 relative';
 
     const selectedDays = new Set(twData.days || []);
     const mode = twData.mode === 'arrive' ? 'arrive' : 'depart';
@@ -374,179 +326,118 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-sm">schedule</span>
           <span class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Time Window</span>
         </div>
-        <button 
-          type="button" 
-          class="remove-time-window-btn text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg transition-colors cursor-pointer"
-          title="Remove time window"
-        >
+        <button type="button" class="remove-time-window-btn text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg transition-colors cursor-pointer" title="Remove time window">
           <span class="material-symbols-outlined text-base">delete</span>
         </button>
       </div>
-
-      <!-- Days of the Week Selection -->
       <div>
         <div class="flex flex-wrap items-center justify-between gap-1 mb-1.5">
-          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-            Active Days
-          </label>
-          <!-- Quick Preset Buttons -->
+          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Active Days</label>
           <div class="flex items-center gap-1 text-[11px]">
-            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-slate-700 cursor-pointer" data-preset="weekdays">Weekdays</button>
+            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 cursor-pointer" data-preset="weekdays">Weekdays</button>
             <span class="text-slate-300 dark:text-slate-600">|</span>
-            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-slate-700 cursor-pointer" data-preset="weekends">Weekends</button>
+            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 cursor-pointer" data-preset="weekends">Weekends</button>
             <span class="text-slate-300 dark:text-slate-600">|</span>
-            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-slate-700 cursor-pointer" data-preset="all">All</button>
+            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-600 cursor-pointer" data-preset="all">All</button>
             <span class="text-slate-300 dark:text-slate-600">|</span>
-            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 cursor-pointer" data-preset="clear">Clear</button>
+            <button type="button" class="preset-btn px-1.5 py-0.5 rounded text-slate-500 hover:text-rose-600 cursor-pointer" data-preset="clear">Clear</button>
           </div>
         </div>
-
         <div class="flex flex-wrap gap-1.5 day-buttons-container">
-          ${ALL_DAYS.map(day => `
-            <button 
-              type="button" 
-              class="day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                selectedDays.has(day.key)
-                  ? 'border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold'
-                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700'
-              }"
-              data-day="${day.key}"
-            >
+          ${ALL_DAYS.map(
+            (day) => `
+            <button type="button" class="day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              selectedDays.has(day.key)
+                ? 'border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold'
+                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700'
+            }" data-day="${day.key}">
               ${day.label}
-            </button>
-          `).join('')}
+            </button>`
+          ).join('')}
         </div>
       </div>
-
-      <!-- Mode & Time Inputs Grid -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
         <div>
-          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-            Time Mode
-          </label>
+          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">Time Mode</label>
           <div class="inline-flex rounded-xl border border-slate-300 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-800 w-full">
-            <button 
-              type="button" 
-              class="mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                mode === 'depart'
-                  ? 'bg-sky-600 text-white'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-              }"
-              data-mode="depart"
-            >
-              Depart During
-            </button>
-            <button 
-              type="button" 
-              class="mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                mode === 'arrive'
-                  ? 'bg-sky-600 text-white'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-              }"
-              data-mode="arrive"
-            >
-              Arrive During
-            </button>
+            <button type="button" class="mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              mode === 'depart' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+            }" data-mode="depart">Depart During</button>
+            <button type="button" class="mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              mode === 'arrive' ? 'bg-sky-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+            }" data-mode="arrive">Arrive During</button>
           </div>
         </div>
-
         <div>
-          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-            From Time
-          </label>
-          <input 
-            type="text" 
-            list="time-intervals-datalist"
-            placeholder="08:00"
-            class="start-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            value="${startTime}"
-          >
+          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">From Time</label>
+          <input type="text" list="time-intervals-datalist" placeholder="08:00" class="start-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" value="${startTime}">
         </div>
-
         <div>
-          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-            To Time
-          </label>
-          <input 
-            type="text" 
-            list="time-intervals-datalist"
-            placeholder="09:30"
-            class="end-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" 
-            value="${endTime}"
-          >
+          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">To Time</label>
+          <input type="text" list="time-intervals-datalist" placeholder="09:30" class="end-time-input w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" value="${endTime}">
         </div>
       </div>
     `;
 
-    // Remove Card Handler
     card.querySelector('.remove-time-window-btn').addEventListener('click', () => {
       card.remove();
       updateTimeWindowsEmptyNotice();
     });
 
-    // Day Pill Buttons Handler
-    card.querySelectorAll('.day-pill-btn').forEach(btn => {
+    card.querySelectorAll('.day-pill-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const dayKey = btn.getAttribute('data-day');
         if (selectedDays.has(dayKey)) {
           selectedDays.delete(dayKey);
-          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
+          btn.className =
+            'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
         } else {
           selectedDays.add(dayKey);
-          btn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300';
+          btn.className =
+            'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300';
         }
       });
     });
 
-    // Presets Handlers
-    card.querySelectorAll('.preset-btn').forEach(btn => {
+    card.querySelectorAll('.preset-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const preset = btn.getAttribute('data-preset');
         selectedDays.clear();
-
         if (preset === 'weekdays') {
-          ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => selectedDays.add(d));
+          ['mon', 'tue', 'wed', 'thu', 'fri'].forEach((d) => selectedDays.add(d));
         } else if (preset === 'weekends') {
-          ['sat', 'sun'].forEach(d => selectedDays.add(d));
+          ['sat', 'sun'].forEach((d) => selectedDays.add(d));
         } else if (preset === 'all') {
-          ALL_DAYS.forEach(d => selectedDays.add(d.key));
+          ALL_DAYS.forEach((d) => selectedDays.add(d.key));
         }
 
-        card.querySelectorAll('.day-pill-btn').forEach(pBtn => {
+        card.querySelectorAll('.day-pill-btn').forEach((pBtn) => {
           const dKey = pBtn.getAttribute('data-day');
-          if (selectedDays.has(dKey)) {
-            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300';
-          } else {
-            pBtn.className = 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
-          }
+          pBtn.className = selectedDays.has(dKey)
+            ? 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300'
+            : 'day-pill-btn px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
         });
       });
     });
 
-    // Mode Selector Handler
     let activeMode = mode;
-    card.querySelectorAll('.mode-btn').forEach(btn => {
+    card.querySelectorAll('.mode-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         activeMode = btn.getAttribute('data-mode');
-        card.querySelectorAll('.mode-btn').forEach(b => {
-          if (b.getAttribute('data-mode') === activeMode) {
-            b.className = 'mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer bg-sky-600 text-white';
-          } else {
-            b.className = 'mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
-          }
+        card.querySelectorAll('.mode-btn').forEach((b) => {
+          b.className = b.getAttribute('data-mode') === activeMode
+            ? 'mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer bg-sky-600 text-white'
+            : 'mode-btn flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
         });
       });
     });
 
-    // Expose data getter on element
-    card.getData = () => {
-      return {
-        days: Array.from(selectedDays),
-        mode: activeMode,
-        start_time: card.querySelector('.start-time-input').value.trim(),
-        end_time: card.querySelector('.end-time-input').value.trim(),
-      };
-    };
+    card.getData = () => ({
+      days: Array.from(selectedDays),
+      mode: activeMode,
+      start_time: card.querySelector('.start-time-input').value.trim(),
+      end_time: card.querySelector('.end-time-input').value.trim(),
+    });
 
     return card;
   }
@@ -554,11 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateTimeWindowsEmptyNotice() {
     if (!timeWindowsList || !timeWindowsEmptyNotice) return;
     const count = timeWindowsList.querySelectorAll('.time-window-card').length;
-    if (count === 0) {
-      timeWindowsEmptyNotice.classList.remove('hidden');
-    } else {
-      timeWindowsEmptyNotice.classList.add('hidden');
-    }
+    timeWindowsEmptyNotice.classList.toggle('hidden', count > 0);
   }
 
   if (addTimeWindowBtn) {
@@ -569,675 +456,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Modal Tabs & Calculated Routes Management ---
   let isRoutesTabEnabled = false;
-  let currentNetwork = null;
-  let activeJourneyItem = null;
 
-  const MODE_CONFIG = {
-    walk: {
-      colour: '#64748b',
-      label: 'Walk',
-      dashes: [4, 4],
-      icon: 'directions_walk',
-    },
-    bus: {
-      colour: '#d97706',
-      label: 'Bus',
-      dashes: false,
-      icon: 'directions_bus',
-    },
-    rail: {
-      colour: '#4f46e5',
-      label: 'Train',
-      dashes: false,
-      icon: 'train',
-    },
-    train: {
-      colour: '#4f46e5',
-      label: 'Train',
-      dashes: false,
-      icon: 'train',
-    },
-    metro: {
-      colour: '#059669',
-      label: 'Metro',
-      dashes: false,
-      icon: 'subway',
-    },
-    tram: {
-      colour: '#ea580c',
-      label: 'Tram',
-      dashes: false,
-      icon: 'tram',
-    },
-    ferry: {
-      colour: '#0891b2',
-      label: 'Ferry',
-      dashes: false,
-      icon: 'directions_boat',
-    },
-    air: {
-      colour: '#9333ea',
-      label: 'Flight',
-      dashes: false,
-      icon: 'flight',
-    },
-    interchange: {
-      colour: '#64748b',
-      label: 'Interchange',
-      dashes: [2, 2],
-      icon: 'swap_horiz',
-    },
-    platform_transfer: {
-      colour: '#64748b',
-      label: 'Transfer',
-      dashes: [2, 2],
-      icon: 'transfer_within_a_station',
-    },
-    custom: {
-      colour: '#0284c7',
-      label: 'Transit',
-      dashes: false,
-      icon: 'pin_drop',
-    },
-  };
-
-  function getModeConfig(mode, legType) {
-    const key = String(mode || legType || 'custom').toLowerCase();
-    return MODE_CONFIG[key] || MODE_CONFIG.custom;
-  }
-
-  function isDarkMode() {
-    return (
-      document.documentElement.classList.contains('dark') ||
-      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
-    );
-  }
-
-  function getStopNodeId(id, name, type) {
-    const normId = (id || '')
-      .replace(/^(atco|naptan|crs|tiploc|ha|custom):/i, '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-    if (normId) {
-      return `stop_${normId}`;
-    }
-    const normName = (name || '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-    if (normName) {
-      return `stop_${normName}`;
-    }
-    return 'stop_unknown';
-  }
-
-  function getStopIcon(type, name) {
-    const t = String(type || '').toLowerCase();
-    const n = String(name || '').toLowerCase();
-    if (t === 'bus' || n.includes('bus')) return '🚌';
-    if (t === 'rail' || t === 'train' || n.includes('rail') || n.includes('train')) return '🚆';
-    if (t === 'metro' || t === 'subway' || n.includes('underground') || n.includes('tube') || n.includes('metro')) return '🚇';
-    if (t === 'tram' || n.includes('tram')) return '🚋';
-    if (t === 'ferry' || n.includes('ferry') || n.includes('pier')) return '⛴️';
-    if (t === 'air' || t === 'flight' || n.includes('airport')) return '✈️';
-    if (n.includes('station')) return '🚆';
-    return '🚏';
-  }
-
-  function createEdgeTooltip(leg, linesSet, operatorsSet, minDuration) {
-    const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
-    const modeName = leg.transport_mode
-      ? leg.transport_mode.charAt(0).toUpperCase() + leg.transport_mode.slice(1)
-      : leg.leg_type === 'walk'
-      ? 'Walking'
-      : 'Transit';
-
-    const linesList =
-      linesSet && linesSet.size > 0
-        ? Array.from(linesSet).filter(Boolean)
-        : leg.line_name
-        ? [leg.line_name]
-        : [];
-    const lineHeading =
-      linesList.length > 0 ? `${modeName} ${linesList.join(', ')}` : modeName;
-
-    const parts = [];
-    parts.push(
-      `<div style="font-weight: 700; margin-bottom: 4px; color: ${modeCfg.colour}; font-size: 13px;">${escapeHtml(
-        lineHeading
-      )}</div>`
-    );
-
-    const opsList =
-      operatorsSet && operatorsSet.size > 0
-        ? Array.from(operatorsSet).filter(Boolean)
-        : leg.operator_name
-        ? [leg.operator_name]
-        : [];
-    if (opsList.length > 0) {
-      parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Operator${
-          opsList.length > 1 ? 's' : ''
-        }:</strong> ${escapeHtml(opsList.join(', '))}</div>`
-      );
-    }
-    const dur =
-      minDuration !== undefined && minDuration !== null
-        ? minDuration
-        : leg.duration_minutes;
-    if (dur !== undefined && dur !== null) {
-      parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Duration:</strong> ~${dur} min${
-          dur === 1 ? '' : 's'
-        }</div>`
-      );
-    }
-    if (leg.distance_m) {
-      const distKm = (leg.distance_m / 1000).toFixed(1);
-      const distStr =
-        leg.distance_m >= 1000 ? `${distKm} km` : `${leg.distance_m} m`;
-      parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Distance:</strong> ${distStr}</div>`
-      );
-    }
-    if (leg.stops_count) {
-      parts.push(
-        `<div style="margin-bottom: 2px;"><strong>Stops:</strong> ${leg.stops_count} intermediate</div>`
-      );
-    }
-    parts.push(
-      `<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed rgba(148, 163, 184, 0.4); font-size: 11px; opacity: 0.85;">${escapeHtml(
-        leg.from_name || 'Start'
-      )} &rarr; ${escapeHtml(leg.to_name || 'End')}</div>`
-    );
-
-    const tooltipEl = document.createElement('div');
-    tooltipEl.innerHTML = parts.join('');
-    return tooltipEl;
-  }
-
-  function renderJourneyRoutesDag(routesData, item) {
-    if (currentNetwork) {
-      currentNetwork.destroy();
-      currentNetwork = null;
-    }
-
-    if (!dagContainer) return;
-
-    // Parse routes
-    let routes = [];
-    if (typeof routesData === 'string') {
-      try {
-        routes = JSON.parse(routesData);
-      } catch (e) {
-        routes = [];
-      }
-    } else if (Array.isArray(routesData)) {
-      routes = routesData;
-    } else if (routesData && typeof routesData === 'object') {
-      routes = [routesData];
-    }
-
-    if (!routes || routes.length === 0) {
-      if (routesEmptyState) routesEmptyState.classList.remove('hidden');
-      if (routesSummaryText) {
-        routesSummaryText.textContent =
-          'No calculated routes available for this journey.';
-      }
-      return;
-    }
-
-    if (routesEmptyState) routesEmptyState.classList.add('hidden');
-    if (routesSummaryText) {
-      const count = routes.length;
-      routesSummaryText.textContent = `${count} topological route corridor${
-        count === 1 ? '' : 's'
-      } discovered connecting origin to destination.`;
-    }
-
-    const dark = isDarkMode();
-    const originName = (item && item.from_name) || 'Origin';
-    const destName = (item && item.to_name) || 'Destination';
-    const originId = (item && item.from_id) || '';
-    const destId = (item && item.to_id) || '';
-
-    const normOriginId = (originId || '')
-      .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
-      .trim()
-      .toLowerCase();
-    const normDestId = (destId || '')
-      .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
-      .trim()
-      .toLowerCase();
-    const normOriginName = (originName || '').trim().toLowerCase();
-    const normDestName = (destName || '').trim().toLowerCase();
-
-    function isOriginEndpoint(id, name, isFirstLeg) {
-      if (isFirstLeg) return true;
-      const nName = (name || '').trim().toLowerCase();
-      const nId = (id || '')
-        .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
-        .trim()
-        .toLowerCase();
-      return (
-        (normOriginName && nName === normOriginName) ||
-        (normOriginId && nId === normOriginId)
-      );
-    }
-
-    function isDestEndpoint(id, name, isLastLeg) {
-      if (isLastLeg) return true;
-      const nName = (name || '').trim().toLowerCase();
-      const nId = (id || '')
-        .replace(/^(ha|custom|naptan|atco|crs|tiploc):/i, '')
-        .trim()
-        .toLowerCase();
-      return (
-        (normDestName && nName === normDestName) ||
-        (normDestId && nId === normDestId)
-      );
-    }
-
-    // 1. Process routes to extract actual directed legs and stop metadata
-    const stopMetadataMap = new Map(); // nodeId -> { name, type, id }
-    const rawDirectedEdges = []; // array of { from, to, leg }
-    const routeNodeSequences = [];
-
-    routes.forEach((route) => {
-      if (!route || !Array.isArray(route.legs) || route.legs.length === 0) return;
-      const legs = route.legs;
-      const sequence = [];
-
-      legs.forEach((leg, index) => {
-        const isFirstLeg = index === 0;
-        const isLastLeg = index === legs.length - 1;
-
-        let fromNodeId;
-        if (isOriginEndpoint(leg.from_id, leg.from_name, isFirstLeg)) {
-          fromNodeId = 'NODE_ORIGIN';
-        } else {
-          fromNodeId = getStopNodeId(leg.from_id, leg.from_name, leg.from_type);
-          if (!stopMetadataMap.has(fromNodeId)) {
-            stopMetadataMap.set(fromNodeId, {
-              name: leg.from_name || 'Stop',
-              type: leg.from_type,
-              id: leg.from_id,
-            });
-          }
-        }
-
-        let toNodeId;
-        if (isDestEndpoint(leg.to_id, leg.to_name, isLastLeg)) {
-          toNodeId = 'NODE_DESTINATION';
-        } else {
-          toNodeId = getStopNodeId(leg.to_id, leg.to_name, leg.to_type);
-          if (!stopMetadataMap.has(toNodeId)) {
-            stopMetadataMap.set(toNodeId, {
-              name: leg.to_name || 'Stop',
-              type: leg.to_type,
-              id: leg.to_id,
-            });
-          }
-        }
-
-        if (sequence.length === 0) {
-          sequence.push(fromNodeId);
-        } else if (sequence[sequence.length - 1] !== fromNodeId) {
-          sequence.push(fromNodeId);
-        }
-        if (sequence[sequence.length - 1] !== toNodeId) {
-          sequence.push(toNodeId);
-        }
-
-        if (fromNodeId !== toNodeId) {
-          rawDirectedEdges.push({
-            from: fromNodeId,
-            to: toNodeId,
-            leg: leg,
-          });
-        }
-      });
-
-      if (sequence[0] !== 'NODE_ORIGIN') sequence.unshift('NODE_ORIGIN');
-      if (sequence[sequence.length - 1] !== 'NODE_DESTINATION') {
-        sequence.push('NODE_DESTINATION');
-      }
-
-      routeNodeSequences.push(sequence);
-    });
-
-    if (rawDirectedEdges.length === 0) {
-      if (routesEmptyState) routesEmptyState.classList.remove('hidden');
-      return;
-    }
-
-    // 2. Compute topological longest-path levels on the actual route directed graph
-    const nodeLevels = new Map();
-    nodeLevels.set('NODE_ORIGIN', 0);
-
-    const allNodeIds = Array.from(
-      new Set(['NODE_ORIGIN', 'NODE_DESTINATION', ...stopMetadataMap.keys()])
-    );
-    allNodeIds.forEach((id) => {
-      if (id !== 'NODE_ORIGIN') nodeLevels.set(id, 1);
-    });
-
-    // Relaxation loop using actual directed route edges
-    let changed = true;
-    let iterations = 0;
-    const maxIterations = Math.max(15, allNodeIds.length * 2);
-
-    while (changed && iterations < maxIterations) {
-      changed = false;
-      iterations++;
-
-      rawDirectedEdges.forEach(({ from, to }) => {
-        if (to === 'NODE_ORIGIN') return;
-        const fromLevel = nodeLevels.get(from) ?? 0;
-        const toLevel = nodeLevels.get(to) ?? 1;
-        if (toLevel < fromLevel + 1) {
-          nodeLevels.set(to, fromLevel + 1);
-          changed = true;
-        }
-      });
-    }
-
-    // Compact intermediate levels into strictly consecutive levels (no vertical gaps)
-    const usedLevels = Array.from(
-      new Set(
-        Array.from(stopMetadataMap.keys())
-          .map((id) => nodeLevels.get(id))
-          .filter((l) => l !== undefined && l > 0)
-      )
-    ).sort((a, b) => a - b);
-
-    const levelCompactor = new Map();
-    usedLevels.forEach((lvl, idx) => {
-      levelCompactor.set(lvl, idx + 1);
-    });
-
-    stopMetadataMap.forEach((_, nodeId) => {
-      const oldLvl = nodeLevels.get(nodeId);
-      if (oldLvl !== undefined && levelCompactor.has(oldLvl)) {
-        nodeLevels.set(nodeId, levelCompactor.get(oldLvl));
-      }
-    });
-
-    const maxIntermediateLevel = usedLevels.length;
-    const destLevel = maxIntermediateLevel + 1;
-    nodeLevels.set('NODE_DESTINATION', destLevel);
-
-    // 3. Build Vis.js Nodes Map
-    const nodesMap = new Map();
-
-    // 3.1 Fixed Origin Node (Top: Level 0)
-    nodesMap.set('NODE_ORIGIN', {
-      id: 'NODE_ORIGIN',
-      level: 0,
-      label: `🚩 ${originName}\n(Start)`,
-      title: `Origin: ${originName}${originId ? ` (${originId})` : ''}`,
-      shape: 'box',
-      margin: { top: 10, bottom: 10, left: 14, right: 14 },
-      shapeProperties: { borderRadius: 10 },
-      color: {
-        background: dark ? '#064e3b' : '#ecfdf5',
-        border: dark ? '#34d399' : '#10b981',
-        highlight: {
-          background: dark ? '#065f46' : '#d1fae5',
-          border: '#10b981',
-        },
-        hover: {
-          background: dark ? '#065f46' : '#d1fae5',
-          border: '#10b981',
-        },
-      },
-      font: {
-        color: dark ? '#ecfdf5' : '#065f46',
-        bold: { color: dark ? '#ffffff' : '#064e3b' },
-        size: 13,
-        face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      },
-      borderWidth: 2,
-      shadow: {
-        enabled: true,
-        color: dark ? 'rgba(0,0,0,0.5)' : 'rgba(16,185,129,0.15)',
-        size: 6,
-        x: 0,
-        y: 2,
-      },
-    });
-
-    // 3.2 Intermediate Stop Nodes (Deduplicated, with Mode Icon and Explicit Level)
-    stopMetadataMap.forEach((meta, nodeId) => {
-      const stopLevel = nodeLevels.get(nodeId) || 1;
-      const icon = getStopIcon(meta.type, meta.name);
-      nodesMap.set(nodeId, {
-        id: nodeId,
-        level: stopLevel,
-        label: `${icon} ${meta.name}`,
-        title: `Stop: ${meta.name}${meta.type ? ` (${meta.type})` : ''}${
-          meta.id ? ` [${meta.id}]` : ''
-        }`,
-        shape: 'box',
-        margin: { top: 8, bottom: 8, left: 12, right: 12 },
-        shapeProperties: { borderRadius: 8 },
-        color: {
-          background: dark ? '#1e293b' : '#f8fafc',
-          border: dark ? '#475569' : '#cbd5e1',
-          highlight: {
-            background: dark ? '#334155' : '#e2e8f0',
-            border: dark ? '#94a3b8' : '#64748b',
-          },
-          hover: {
-            background: dark ? '#334155' : '#e2e8f0',
-            border: dark ? '#94a3b8' : '#64748b',
-          },
-        },
-        font: {
-          color: dark ? '#f1f5f9' : '#1e293b',
-          size: 12,
-          face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        },
-        borderWidth: 1.5,
-        shadow: {
-          enabled: true,
-          color: dark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
-          size: 4,
-          x: 0,
-          y: 1,
-        },
-      });
-    });
-
-    // 3.3 Fixed Destination Node (Bottom: Level destLevel)
-    nodesMap.set('NODE_DESTINATION', {
-      id: 'NODE_DESTINATION',
-      level: destLevel,
-      label: `🏁 ${destName}\n(End)`,
-      title: `Destination: ${destName}${destId ? ` (${destId})` : ''}`,
-      shape: 'box',
-      margin: { top: 10, bottom: 10, left: 14, right: 14 },
-      shapeProperties: { borderRadius: 10 },
-      color: {
-        background: dark ? '#4c0519' : '#fff1f2',
-        border: dark ? '#fb7185' : '#f43f5e',
-        highlight: {
-          background: dark ? '#881337' : '#ffe4e6',
-          border: '#f43f5e',
-        },
-        hover: {
-          background: dark ? '#881337' : '#ffe4e6',
-          border: '#f43f5e',
-        },
-      },
-      font: {
-        color: dark ? '#ffe4e6' : '#881337',
-        bold: { color: dark ? '#ffffff' : '#4c0519' },
-        size: 13,
-        face: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      },
-      borderWidth: 2,
-      shadow: {
-        enabled: true,
-        color: dark ? 'rgba(0,0,0,0.5)' : 'rgba(244,63,94,0.15)',
-        size: 6,
-        x: 0,
-        y: 2,
-      },
-    });
-
-    // 4. Build Aggregated Edges Map (Strictly Downward, Consolidated, No Overlaps)
-    const edgesMap = new Map();
-
-    rawDirectedEdges.forEach(({ from, to, leg }) => {
-      const fromLevel = nodeLevels.get(from) ?? 0;
-      const toLevel = nodeLevels.get(to) ?? destLevel;
-
-      // STRICT RULE: Only include edges pointing downwards (toLevel > fromLevel)
-      if (toLevel <= fromLevel) return;
-
-      const edgeKey = `${from}->${to}`;
-
-      if (edgesMap.has(edgeKey)) {
-        const existing = edgesMap.get(edgeKey);
-        if (leg.line_name) existing.lines.add(leg.line_name);
-        if (leg.operator_name) existing.operators.add(leg.operator_name);
-        if (
-          leg.duration_minutes &&
-          (!existing.minDuration || leg.duration_minutes < existing.minDuration)
-        ) {
-          existing.minDuration = leg.duration_minutes;
-        }
-        // If one of the parallel paths is a transit mode (bus/train), prefer transit over walk
-        if (existing.leg.leg_type === 'walk' && leg.leg_type !== 'walk') {
-          existing.leg = leg;
-          existing.modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
-        }
-      } else {
-        const modeCfg = getModeConfig(leg.transport_mode, leg.leg_type);
-        const lines = new Set();
-        if (leg.line_name) lines.add(leg.line_name);
-        const operators = new Set();
-        if (leg.operator_name) operators.add(leg.operator_name);
-
-        edgesMap.set(edgeKey, {
-          id: `edge_${from}_${to}`,
-          from: from,
-          to: to,
-          fromLevel: fromLevel,
-          toLevel: toLevel,
-          leg: leg,
-          lines: lines,
-          operators: operators,
-          minDuration: leg.duration_minutes || null,
-          modeCfg: modeCfg,
-        });
-      }
-    });
-
-    const edgesList = Array.from(edgesMap.values()).map((e) => {
-      const levelDiff = e.toLevel - e.fromLevel;
-      const roundness = levelDiff > 1 ? 0.45 : 0.3;
-
-      return {
-        id: e.id,
-        from: e.from,
-        to: e.to,
-        arrows: {
-          to: {
-            enabled: true,
-            scaleFactor: 0.85,
-          },
-        },
-        width: 2.5,
-        color: {
-          color: e.modeCfg.colour,
-          highlight: e.modeCfg.colour,
-          hover: e.modeCfg.colour,
-          opacity: 0.9,
-        },
-        dashes: e.modeCfg.dashes,
-        title: createEdgeTooltip(e.leg, e.lines, e.operators, e.minDuration),
-        smooth: {
-          type: 'cubicBezier',
-          forceDirection: 'vertical',
-          roundness: roundness,
-        },
-      };
-    });
-
-    if (typeof vis === 'undefined' || !vis.Network) {
-      console.warn('vis-network library not loaded.');
-      return;
-    }
-
-    const networkData = {
-      nodes: new vis.DataSet(Array.from(nodesMap.values())),
-      edges: new vis.DataSet(edgesList),
-    };
-
-    const networkOptions = {
-      layout: {
-        hierarchical: {
-          enabled: true,
-          direction: 'UD', // Vertical DAG layout (top to bottom)
-          sortMethod: 'directed',
-          levelSeparation: 110,
-          nodeSpacing: 220,
-          treeSpacing: 260,
-          blockShifting: true,
-          edgeMinimization: true,
-          parentCentralization: true,
-          shakeTowards: 'roots',
-        },
-      },
-      physics: {
-        enabled: false,
-      },
-      interaction: {
-        hover: true,
-        hoverConnectedEdges: true,
-        selectConnectedEdges: true,
-        tooltipDelay: 80,
-        zoomView: true,
-        dragView: true,
-        dragNodes: true,
-      },
-    };
-
-    currentNetwork = new vis.Network(dagContainer, networkData, networkOptions);
-    currentNetwork.once('afterDrawing', () => {
-      if (currentNetwork) currentNetwork.fit();
+  if (window.JourneyDagViewer) {
+    window.JourneyDagViewer.init({
+      container: dagContainer,
+      summaryText: routesSummaryText,
+      emptyState: routesEmptyState,
+      fitBtn: routesFitBtn,
     });
   }
 
   function setRoutesTabState(enabled, content = null, item = null) {
     isRoutesTabEnabled = Boolean(enabled);
-    activeJourneyItem = item;
-
     if (tabRoutes) {
       tabRoutes.disabled = !isRoutesTabEnabled;
-      if (isRoutesTabEnabled) {
-        tabRoutes.className =
-          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
-      } else {
-        tabRoutes.className =
-          'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
-      }
+      tabRoutes.className = isRoutesTabEnabled
+        ? 'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700'
+        : 'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
     }
 
-    if (isRoutesTabEnabled && content) {
-      renderJourneyRoutesDag(content, item);
-    } else {
-      if (currentNetwork) {
-        currentNetwork.destroy();
-        currentNetwork = null;
-      }
+    if (isRoutesTabEnabled && content && window.JourneyDagViewer) {
+      window.JourneyDagViewer.render(content, item);
+    } else if (window.JourneyDagViewer) {
+      window.JourneyDagViewer.destroy();
     }
   }
 
@@ -1257,10 +499,9 @@ document.addEventListener('DOMContentLoaded', () => {
           'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
       }
 
-      // Re-fit diagram when tab becomes visible
-      if (currentNetwork) {
+      if (window.JourneyDagViewer) {
         requestAnimationFrame(() => {
-          if (currentNetwork) currentNetwork.fit();
+          window.JourneyDagViewer.fit();
         });
       }
     } else {
@@ -1272,13 +513,9 @@ document.addEventListener('DOMContentLoaded', () => {
           'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold';
       }
       if (tabRoutes) {
-        if (isRoutesTabEnabled) {
-          tabRoutes.className =
-            'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700';
-        } else {
-          tabRoutes.className =
-            'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
-        }
+        tabRoutes.className = isRoutesTabEnabled
+          ? 'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer bg-white text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700'
+          : 'journey-modal-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800/60 dark:text-slate-500 dark:border-slate-700 opacity-60';
       }
     }
   }
@@ -1286,42 +523,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabDetails) tabDetails.addEventListener('click', () => switchTab('details'));
   if (tabRoutes) tabRoutes.addEventListener('click', () => switchTab('routes'));
 
-  if (routesFitBtn) {
-    routesFitBtn.addEventListener('click', () => {
-      if (currentNetwork) {
-        currentNetwork.fit({
-          animation: {
-            duration: 350,
-            easingFunction: 'easeInOutQuad',
-          },
-        });
-      }
-    });
-  }
-
-  // Observe theme changes to adapt DAG colours dynamically
-  const themeObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (
-        mutation.attributeName === 'class' &&
-        isRoutesTabEnabled &&
-        activeJourneyItem &&
-        activeJourneyItem.calculated_routes
-      ) {
-        renderJourneyRoutesDag(activeJourneyItem.calculated_routes, activeJourneyItem);
-      }
-    });
-  });
-  themeObserver.observe(document.documentElement, { attributes: true });
-
-  // --- Modal Open / Close Handlers ---
   function openAddModal() {
     editIndexInput.value = '-1';
     modalTitle.textContent = 'Add New Journey';
     modalIcon.textContent = 'route';
     journeyNameInput.value = '';
-    fromAutocomplete.clearSelection();
-    toAutocomplete.clearSelection();
+    if (fromAutocomplete) fromAutocomplete.clearSelection();
+    if (toAutocomplete) toAutocomplete.clearSelection();
     timeWindowsList.innerHTML = '';
     updateTimeWindowsEmptyNotice();
     modalError.classList.add('hidden');
@@ -1342,21 +550,25 @@ document.addEventListener('DOMContentLoaded', () => {
     modalIcon.textContent = 'edit';
     journeyNameInput.value = item.name || '';
 
-    fromAutocomplete.setSelection({
-      type: item.from_type,
-      id: item.from_id,
-      name: item.from_name,
-    });
+    if (fromAutocomplete) {
+      fromAutocomplete.setSelection({
+        type: item.from_type,
+        id: item.from_id,
+        name: item.from_name,
+      });
+    }
 
-    toAutocomplete.setSelection({
-      type: item.to_type,
-      id: item.to_id,
-      name: item.to_name,
-    });
+    if (toAutocomplete) {
+      toAutocomplete.setSelection({
+        type: item.to_type,
+        id: item.to_id,
+        name: item.to_name,
+      });
+    }
 
     timeWindowsList.innerHTML = '';
     if (item.time_settings && Array.isArray(item.time_settings)) {
-      item.time_settings.forEach(tw => {
+      item.time_settings.forEach((tw) => {
         const card = createTimeWindowCard(tw);
         timeWindowsList.appendChild(card);
       });
@@ -1369,10 +581,20 @@ document.addEventListener('DOMContentLoaded', () => {
       item.calculated_routes !== null &&
       item.calculated_routes !== undefined &&
       item.calculated_routes !== '' &&
-      !(Array.isArray(item.calculated_routes) && item.calculated_routes.length === 0) &&
-      !(typeof item.calculated_routes === 'object' && Object.keys(item.calculated_routes).length === 0);
+      !(
+        Array.isArray(item.calculated_routes) &&
+        item.calculated_routes.length === 0
+      ) &&
+      !(
+        typeof item.calculated_routes === 'object' &&
+        Object.keys(item.calculated_routes).length === 0
+      );
 
-    setRoutesTabState(hasRoutesContent, hasRoutesContent ? item.calculated_routes : null, item);
+    setRoutesTabState(
+      hasRoutesContent,
+      hasRoutesContent ? item.calculated_routes : null,
+      item
+    );
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -1380,11 +602,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeModal() {
-    if (currentNetwork) {
-      currentNetwork.destroy();
-      currentNetwork = null;
+    if (window.JourneyDagViewer) {
+      window.JourneyDagViewer.destroy();
     }
-    activeJourneyItem = null;
     if (modal && typeof modal.close === 'function') {
       modal.close();
     }
@@ -1395,7 +615,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
   if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
 
-  // --- Confirm Save Modal Handler ---
   if (confirmBtn) {
     confirmBtn.addEventListener('click', () => {
       const name = journeyNameInput.value.trim();
@@ -1407,15 +626,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const toName = toNameInput.value.trim();
 
       if (!name || !fromId || !fromName || !toId || !toName) {
-        modalError.textContent = 'Please enter a journey name and select valid start and end locations.';
+        modalError.textContent =
+          'Please enter a journey name and select valid start and end locations.';
         modalError.classList.remove('hidden');
         return;
       }
 
-      // Collect time windows
       const cards = timeWindowsList.querySelectorAll('.time-window-card');
       const timeSettings = [];
-      cards.forEach(card => {
+      cards.forEach((card) => {
         if (typeof card.getData === 'function') {
           timeSettings.push(card.getData());
         }
@@ -1452,7 +671,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Grid Button Actions (Edit / Delete) ---
   document.addEventListener('click', (e) => {
     const editBtn = e.target.closest('.edit-journey-btn');
     if (editBtn) {
@@ -1475,7 +693,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Register discard handler
   if (window.ConfigDirtyManager) {
     window.ConfigDirtyManager.registerDiscardHandler(() => {
       changesetManager.reset();
@@ -1487,9 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.ConfigSave) {
     window.ConfigSave.register({
       endpoint: dataUrl,
-      getChangeset: () => {
-        return changesetManager.getChangeset();
-      },
+      getChangeset: () => changesetManager.getChangeset(),
       onSaveSuccess: () => {
         changesetManager.reset();
         syncDirtyState();

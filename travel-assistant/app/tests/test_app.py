@@ -97,6 +97,7 @@ def test_static_assets_served(client: FlaskClient) -> None:
         "/static/js/timetables.js",
         "/static/js/transfers.js",
         "/static/js/locations.js",
+        "/static/js/journey-dag-viewer.js",
         "/static/js/journeys.js",
         "/static/js/walking.js",
         "/static/js/place-autocomplete.js",
@@ -109,6 +110,18 @@ def test_static_assets_served(client: FlaskClient) -> None:
         response = client.get(asset_path)
         assert response.status_code == 200, f"Failed to load static asset: {asset_path}"
         assert len(response.data) > 0
+
+
+def test_journey_dag_viewer_script_served(client: FlaskClient) -> None:
+    """Test that journey-dag-viewer.js is served and defines window.JourneyDagViewer."""
+    response = client.get("/static/js/journey-dag-viewer.js")
+    assert response.status_code == 200
+    content = response.data.decode("utf-8")
+    assert "window.JourneyDagViewer" in content
+    assert "init" in content
+    assert "render" in content
+    assert "fit" in content
+    assert "destroy" in content
 
 
 def test_timetables_js_action_button_handlers(client: FlaskClient) -> None:
@@ -180,6 +193,20 @@ def test_grid_loader_js_included_in_config_pages(client: FlaskClient) -> None:
         assert (
             loader_pos < page_pos
         ), f"grid_loader.js must appear before {page_js} script tag on {url}"
+
+
+def test_journey_dag_viewer_included_in_journeys_page(client: FlaskClient) -> None:
+    """Test that journey-dag-viewer.js is loaded before journeys.js on /config/journeys."""
+    response = client.get("/config/journeys")
+    assert response.status_code == 200
+    html = response.data.decode("utf-8")
+    dag_tag = "/static/js/journey-dag-viewer.js"
+    journeys_tag = "/static/js/journeys.js"
+    assert dag_tag in html, "journey-dag-viewer.js missing from /config/journeys"
+    assert journeys_tag in html, "journeys.js missing from /config/journeys"
+    assert html.find(dag_tag) < html.find(
+        journeys_tag
+    ), "journey-dag-viewer.js must appear before journeys.js script tag on /config/journeys"
 
 
 def test_transit_ui_js_exports_and_syntax(client: FlaskClient) -> None:
