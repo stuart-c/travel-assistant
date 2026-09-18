@@ -3,6 +3,7 @@
 from typing import Any, Dict, Tuple
 
 from app.datasources.bods import BodsClient, DEFAULT_BODS_BASE_URL
+from app.datasources.bus_live import BodsLiveClient
 from app.datasources.google_maps import GoogleMapsClient
 from app.datasources.openai import DEFAULT_OPENAI_BASE_URL, OpenAIClient
 from app.datasources.train_live import TrainLiveClient
@@ -30,6 +31,15 @@ def validate_service_credentials(
         client = BodsClient(
             api_key=payload.get("bus_api_key", ""),
             base_url=payload.get("bus_api_base_url") or DEFAULT_BODS_BASE_URL,
+            timeout=timeout,
+        )
+        valid, msg = client.validate_tuple()
+        return valid, msg, {}
+
+    if service_normalised == "bus_live":
+        client = BodsLiveClient(
+            api_key=payload.get("bus_api_key", ""),
+            base_url=payload.get("bus_live_endpoint") or None,
             timeout=timeout,
         )
         valid, msg = client.validate_tuple()

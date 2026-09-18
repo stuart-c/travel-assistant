@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **BODS SIRI-VM Live Bus Telemetry Client (`BodsLiveClient`)** (`app/datasources/bus_live.py`, `app/tests/datasources/test_bus_live.py`):
+  - Implemented `BodsLiveClient` connecting to DfT Bus Open Data Service (BODS) SIRI-VM real-time vehicle monitoring XML feeds (`/api/v1/datafeed/`).
+  - Added structured `LiveBusStatus` dataclass and parsing with `defusedxml`, extracting vehicle coordinates (`latitude`, `longitude`), bearing, operator code, line reference, vehicle ID, aim/scheduled departure timings, and freshness timestamps.
+  - Implemented signed ISO 8601 duration delay parsing (`parse_iso_delay`) for positive delays (`Delayed`), on-time running (`On time`), and early running (`Early`).
+  - Added service vehicle matching (`get_matching_vehicle`) for correlating upcoming scheduled bus legs against live active vehicles.
+  - Registered `bus_live` in `DATASOURCE_REGISTRY` and credential validation dispatcher (`validate_service_credentials`).
+  - Delivered 100% unit test code coverage using generic London transport fixtures (TfL Route 73 and Route 205).
 - **Enhanced Persistent Journey Notifications, Web Plan Deep-Linking & Change Platform Guidance** (`app/services/dispatcher/`):
   - Configured departure and progress mobile notifications to be persistent and sticky (`persistent: True`, `sticky: True`) while journeys are en route, automatically transitioning to dismissible (`persistent: False`, `sticky: False`) upon arrival at destination (`JourneyStepStatus.ARRIVED`).
   - Added seamless deep linking to the web journey plan across tap actions (`url`, `clickAction`) and explicit `"View Journey Plan"` notification action buttons (`actions: [{"action": "URI", "title": "View Journey Plan", "uri": ...}]`), respecting configured Home Assistant ingress panel paths (`/{ingress_panel_slug}/journey?journey_id={id}`).
