@@ -316,12 +316,14 @@ def test_bods_live_get_matching_vehicle(mock_get: MagicMock) -> None:
     mock_get.return_value = mock_resp
 
     client = BodsLiveClient(api_key="test-key")
+    now_ref = datetime.datetime(2026, 9, 18, 8, 15, 0, tzinfo=datetime.timezone.utc)
 
     # 1. Exact match on scheduled origin departure time 08:00
     match = client.get_matching_vehicle(
         line_name="73",
         scheduled_time="08:00",
         origin_ref="490000077E",
+        now_utc=now_ref,
     )
     assert match is not None
     assert match.vehicle_id == "LTZ1073"
@@ -330,6 +332,7 @@ def test_bods_live_get_matching_vehicle(mock_get: MagicMock) -> None:
     match_tolerant = client.get_matching_vehicle(
         line_name="73",
         scheduled_time="08:03",
+        now_utc=now_ref,
     )
     assert match_tolerant is not None
     assert match_tolerant.vehicle_id == "LTZ1073"
@@ -338,6 +341,7 @@ def test_bods_live_get_matching_vehicle(mock_get: MagicMock) -> None:
     match_dest = client.get_matching_vehicle(
         line_name="205",
         destination_ref="490000028B",
+        now_utc=now_ref,
     )
     assert match_dest is not None
     assert match_dest.vehicle_id == "LTZ1205"
@@ -453,20 +457,22 @@ def test_bods_live_get_matching_vehicle_origin_and_fallbacks(
     mock_get.return_value = mock_resp
 
     client = BodsLiveClient(api_key="test-key")
+    now_ref = datetime.datetime(2026, 9, 18, 8, 15, 0, tzinfo=datetime.timezone.utc)
 
     # Match by origin_ref
     match_origin = client.get_matching_vehicle(
         line_name="73",
         origin_ref="490000077E",
+        now_utc=now_ref,
     )
     assert match_origin is not None
     assert match_origin.vehicle_id == "LTZ1073"
 
     # Match fallback to first active vehicle when no time/origin/destination specified
-    match_first = client.get_matching_vehicle(line_name="73")
+    match_first = client.get_matching_vehicle(line_name="73", now_utc=now_ref)
     assert match_first is not None
     assert match_first.vehicle_id == "LTZ1073"
 
     # Exception during query -> returns None gracefully
     mock_get.side_effect = RuntimeError("Network crashed")
-    assert client.get_matching_vehicle(line_name="73") is None
+    assert client.get_matching_vehicle(line_name="73", now_utc=now_ref) is None
