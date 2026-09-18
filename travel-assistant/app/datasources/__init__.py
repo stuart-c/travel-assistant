@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional, Type
 
 from app.datasources.base import BaseDataSource
 from app.datasources.bods import BodsClient
+from app.datasources.bus_live import BodsLiveClient, LiveBusStatus
 from app.datasources.exceptions import (
     DataSourceAuthError,
     DataSourceConfigError,
@@ -23,6 +24,7 @@ from app.datasources.train_s3 import TrainS3Client
 
 DATASOURCE_REGISTRY: Dict[str, Type[BaseDataSource]] = {
     "bus": BodsClient,
+    "bus_live": BodsLiveClient,
     "train_s3": TrainS3Client,
     "train_live": TrainLiveClient,
     "open_api": OpenAIClient,
@@ -64,6 +66,8 @@ __all__ = [
     "DataSourceConnectionError",
     "DataSourceRateLimitError",
     "BodsClient",
+    "BodsLiveClient",
+    "LiveBusStatus",
     "TrainS3Client",
     "TrainLiveClient",
     "OpenAIClient",
