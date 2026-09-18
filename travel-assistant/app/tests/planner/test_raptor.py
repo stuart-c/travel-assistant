@@ -311,3 +311,36 @@ def test_raptor_same_line_transfer_suppression() -> None:
 
     # At round 1 (first boarding), should not be rejected
     assert _is_invalid_transfer(trip_37x, "stop_bs", 1, leg_pointer) is False
+
+
+def test_raptor_submodules_and_trips_indexing() -> None:
+    """Test RAPTOR package submodules, _build_stop_to_trips, and cache clearing."""
+    from app.services.planner.raptor import (
+        _TRIPS_CACHE,
+        clear_raptor_cache,
+    )
+    from app.services.planner.raptor.trips import _build_stop_to_trips
+
+    trip = _ParsedTrip(
+        trip_id="test_1",
+        timetable_id=1,
+        line_name="T1",
+        transport_mode="rail",
+        operator="GWR",
+        headsign="Paddington",
+        stops=["atco:KGX", "naptan:EUS"],
+        arr_times=[600, 620],
+        dep_times=[600, 620],
+    )
+    assert trip.stop_indices == {"atco:KGX": 0, "naptan:EUS": 1}
+
+    index = _build_stop_to_trips([trip])
+    assert "KGX" in index
+    assert "EUS" in index
+    assert index["KGX"][0].trip_id == "test_1"
+
+    # Verify cache flushes correctly
+    _TRIPS_CACHE[(("mon",), "2026-09-18")] = (12345.0, [trip], {"KGX", "EUS"})
+    assert len(_TRIPS_CACHE) > 0
+    clear_raptor_cache()
+    assert len(_TRIPS_CACHE) == 0
