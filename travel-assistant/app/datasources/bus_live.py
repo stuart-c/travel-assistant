@@ -425,6 +425,7 @@ class BodsLiveClient(BaseDataSource):
         scheduled_time: Optional[str] = None,
         origin_ref: Optional[str] = None,
         destination_ref: Optional[str] = None,
+        now_utc: Optional[datetime.datetime] = None,
     ) -> Optional[LiveBusStatus]:
         """Find the best-matching active live vehicle for a scheduled bus service leg."""
         norm_line = (line_name or "").strip().lower()
@@ -435,6 +436,7 @@ class BodsLiveClient(BaseDataSource):
             vehicles = self.fetch_live_vehicles(
                 operator_ref=operator_ref,
                 line_ref=line_name.strip(),
+                now_utc=now_utc,
             )
         except Exception as exc:
             logger.debug(
