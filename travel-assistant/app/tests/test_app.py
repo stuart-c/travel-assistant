@@ -91,6 +91,9 @@ def test_static_assets_served(client: FlaskClient) -> None:
         "/static/js/dirty-manager.js",
         "/static/js/credentials.js",
         "/static/js/grid_loader.js",
+        "/static/js/timetable-time-utils.js",
+        "/static/js/timetable-retime-modal.js",
+        "/static/js/timetable-grid-editor.js",
         "/static/js/timetables.js",
         "/static/js/transfers.js",
         "/static/js/locations.js",
@@ -118,6 +121,26 @@ def test_timetables_js_action_button_handlers(client: FlaskClient) -> None:
     assert "edit-timetable-btn" in content
     assert "delete-timetable-btn" in content
     assert "openEditor(idx)" in content
+
+
+def test_timetable_modular_scripts_served(client: FlaskClient) -> None:
+    """Test that modular timetable scripts are served with expected APIs."""
+    utils_res = client.get("/static/js/timetable-time-utils.js")
+    assert utils_res.status_code == 200
+    utils_txt = utils_res.data.decode("utf-8")
+    assert "window.TimetableTimeUtils" in utils_txt
+    assert "sortTripsChronologically" in utils_txt
+    assert "validateTripColumn" in utils_txt
+
+    retime_res = client.get("/static/js/timetable-retime-modal.js")
+    assert retime_res.status_code == 200
+    retime_txt = retime_res.data.decode("utf-8")
+    assert "window.TimetableRetimeModal" in retime_txt
+
+    editor_res = client.get("/static/js/timetable-grid-editor.js")
+    assert editor_res.status_code == 200
+    editor_txt = editor_res.data.decode("utf-8")
+    assert "window.TimetableGridEditor" in editor_txt
 
 
 def test_grid_loader_js_exposes_window_namespace(client: FlaskClient) -> None:

@@ -353,8 +353,11 @@
   </div>
 {% endcall %}
 
-<!-- Grid.js UMD Script (CDN) and Timetables Controller -->
+<!-- Grid.js UMD Script (CDN) and Timetable Modules -->
 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
 <script src="{{ ingress_path }}/static/js/grid_loader.js?v={{ cache_bust }}"></script>
+<script src="{{ ingress_path }}/static/js/timetable-time-utils.js?v={{ cache_bust }}"></script>
+<script src="{{ ingress_path }}/static/js/timetable-retime-modal.js?v={{ cache_bust }}"></script>
+<script src="{{ ingress_path }}/static/js/timetable-grid-editor.js?v={{ cache_bust }}"></script>
 <script src="{{ ingress_path }}/static/js/timetables.js?v={{ cache_bust }}"></script>
 {% endblock %}
