@@ -389,6 +389,10 @@ def format_progress_notification(
         "group": "travel_assistant_journeys",
         "persistent": is_persistent,
         "sticky": is_persistent,
+        "alert_once": False,
+        "importance": "high",
+        "priority": "high",
+        "channel": "Travel Assistant",
         "actions": [
             {
                 "action": "URI",

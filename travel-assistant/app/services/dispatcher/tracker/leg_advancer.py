@@ -55,8 +55,19 @@ def _advance_future_legs(
             else None
         )
 
+        f_prox_orig = max_proximity_metres
+        f_prox_dest = max_proximity_metres
+        if f_leg.mode == "rail":
+            f_prox_orig = max(max_proximity_metres, 400.0)
+            f_prox_dest = max(max_proximity_metres, 400.0)
+        else:
+            if f_idx > 0 and active.legs[f_idx - 1].mode == "rail":
+                f_prox_orig = max(max_proximity_metres, 400.0)
+            if f_idx + 1 < len(active.legs) and active.legs[f_idx + 1].mode == "rail":
+                f_prox_dest = max(max_proximity_metres, 400.0)
+
         # 1. At the destination of future leg
-        if f_dist_dest is not None and f_dist_dest <= max_proximity_metres:
+        if f_dist_dest is not None and f_dist_dest <= f_prox_dest:
             active.current_leg_index = f_idx + 1
             if active.current_leg_index >= len(active.legs):
                 active.current_status = JourneyStepStatus.ARRIVED
@@ -67,7 +78,7 @@ def _advance_future_legs(
             return True
 
         # 2. At the origin of future leg
-        if f_dist_orig is not None and f_dist_orig <= max_proximity_metres:
+        if f_dist_orig is not None and f_dist_orig <= f_prox_orig:
             active.current_leg_index = f_idx
             if f_idx == 0 or (f_idx == 1 and active.legs[0].mode in FOOT_MODES):
                 active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -95,8 +106,8 @@ def _advance_future_legs(
             )
             is_time_valid = f_dep_m is None or cur_eff >= (f_dep_m - 2)
             is_between = (
-                f_dist_dest < (span + max_proximity_metres)
-                and f_dist_orig > max_proximity_metres
+                f_dist_dest < (span + f_prox_dest)
+                and f_dist_orig > f_prox_orig
                 and (f_dist_orig + f_dist_dest) <= max(span * 1.5, span + 1000.0)
             )
             if is_time_valid and is_between:
@@ -115,8 +126,8 @@ def _advance_future_legs(
         ):
             span = haversine_distance_m(f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon)
             if (
-                f_dist_dest < (span + max_proximity_metres)
-                and f_dist_orig > max_proximity_metres
+                f_dist_dest < (span + f_prox_dest)
+                and f_dist_orig > f_prox_orig
                 and (f_dist_orig + f_dist_dest) <= max(span * 1.5, span + 1000.0)
             ):
                 active.current_leg_index = f_idx
@@ -159,14 +170,31 @@ def _advance_current_leg(
         else None
     )
 
+    curr_prox_orig = max_proximity_metres
+    curr_prox_dest = max_proximity_metres
+    if leg.mode == "rail":
+        curr_prox_orig = max(max_proximity_metres, 400.0)
+        curr_prox_dest = max(max_proximity_metres, 400.0)
+    else:
+        if (
+            active.current_leg_index > 0
+            and active.legs[active.current_leg_index - 1].mode == "rail"
+        ):
+            curr_prox_orig = max(max_proximity_metres, 400.0)
+        if (
+            active.current_leg_index + 1 < len(active.legs)
+            and active.legs[active.current_leg_index + 1].mode == "rail"
+        ):
+            curr_prox_dest = max(max_proximity_metres, 400.0)
+
     dep_min = parse_time_to_minutes(leg.dep_time)
 
     if leg.mode in FOOT_MODES:
         if active.current_leg_index == 0:
             # First walking leg (origin -> departure stop)
-            if dist_to_orig is not None and dist_to_orig <= max_proximity_metres:
+            if dist_to_orig is not None and dist_to_orig <= curr_prox_orig:
                 active.current_status = JourneyStepStatus.PRE_DEPARTURE
-            elif dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
+            elif dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
                 active.current_leg_index += 1
                 active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
             else:
@@ -175,11 +203,16 @@ def _advance_current_leg(
                     if (orig_lat is not None and dest_lat is not None)
                     else 1000.0
                 )
-                max_allowed = max(
-                    leg_dist * 1.5, leg_dist + max_proximity_metres, 500.0
-                )
+                max_allowed = max(leg_dist * 1.5, leg_dist + curr_prox_dest, 500.0)
                 if dist_to_dest is not None and dist_to_dest <= max_allowed:
                     active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+                elif dist_to_dest is None:
+                    # Missing coordinates or temporary GPS drop: preserve status rather than expiring
+                    active.current_status = (
+                        old_status
+                        if old_status != JourneyStepStatus.EXPIRED
+                        else JourneyStepStatus.EN_ROUTE_TO_STOP
+                    )
                 else:
                     active.current_status = JourneyStepStatus.EXPIRED
                     return False
@@ -187,7 +220,7 @@ def _advance_current_leg(
             # Egress or intermediate walking transfer
             if active.current_leg_index == len(active.legs) - 1:
                 # Final walking egress
-                if dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
+                if dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
                     active.current_leg_index += 1
                     active.current_status = JourneyStepStatus.ARRIVED
                     active.expected_arrival_time = current_dt.strftime("%H:%M")
@@ -207,7 +240,7 @@ def _advance_current_leg(
                         )
             else:
                 # Intermediate transfer
-                if dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
+                if dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
                     active.current_leg_index += 1
                     active.current_status = _determine_transit_arrival_status(active)
                     _realign_active_journey_timings(active, current_dt, live_client)
@@ -215,7 +248,7 @@ def _advance_current_leg(
                     active.current_status = JourneyStepStatus.AT_INTERCHANGE
     else:
         # Transit leg (rail, bus, metro, tram)
-        if dist_to_orig is not None and dist_to_orig <= max_proximity_metres:
+        if dist_to_orig is not None and dist_to_orig <= curr_prox_orig:
             if active.current_leg_index == 0 or (
                 active.current_leg_index == 1 and active.legs[0].mode in FOOT_MODES
             ):
@@ -223,7 +256,7 @@ def _advance_current_leg(
             else:
                 active.current_status = JourneyStepStatus.AT_INTERCHANGE
         elif dep_min is not None and current_minutes >= dep_min:
-            if dist_to_dest is not None and dist_to_dest <= max_proximity_metres:
+            if dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
                 active.current_leg_index += 1
                 active.current_status = _determine_transit_arrival_status(active)
                 _realign_active_journey_timings(active, current_dt, live_client)

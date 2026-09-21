@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from app.datasources.train_live import TrainLiveClient, extract_live_services
 from app.services.dispatcher.station_resolver import resolve_station_crs
@@ -26,6 +26,34 @@ def _clean_delay_reason(reason: Optional[str]) -> Optional[str]:
     ).strip()
     cleaned = cleaned.rstrip(". ")
     return cleaned if cleaned else None
+
+
+def _service_calls_at_dest(service: Dict[str, Any], dest_crs: Optional[str]) -> bool:
+    """Verify whether a train service calls at or terminates at the destination CRS."""
+    if not dest_crs:
+        return True
+    dest_crs_upper = dest_crs.upper()
+    dest = service.get("destination")
+    if isinstance(dest, list):
+        for d in dest:
+            if isinstance(d, dict) and d.get("crs", "").upper() == dest_crs_upper:
+                return True
+    elif isinstance(dest, dict):
+        if dest.get("crs", "").upper() == dest_crs_upper:
+            return True
+
+    calling_points_lists = service.get("subsequentCallingPoints")
+    if isinstance(calling_points_lists, list):
+        for cpl in calling_points_lists:
+            pts = cpl.get("callingPointList") if isinstance(cpl, dict) else cpl
+            if isinstance(pts, list):
+                for pt in pts:
+                    if (
+                        isinstance(pt, dict)
+                        and pt.get("crs", "").upper() == dest_crs_upper
+                    ):
+                        return True
+    return False
 
 
 def resolve_live_rail_platform(
@@ -67,17 +95,25 @@ def resolve_live_rail_platform(
                 )
 
         if services:
+            candidate_services = (
+                [s for s in services if _service_calls_at_dest(s, dest_crs)]
+                if dest_crs
+                else services
+            )
+            if not candidate_services:
+                candidate_services = services
+
             target_dep = None
             if scheduled_time:
                 sched_min = parse_time_to_minutes(scheduled_time)
                 # 1. Exact match on scheduled departure time (std)
-                for dep in services:
+                for dep in candidate_services:
                     if dep.get("std") == scheduled_time:
                         target_dep = dep
                         break
                 # 2. Tolerant match within +/- 3 minutes for minor timetable variations
                 if not target_dep and sched_min is not None:
-                    for dep in services:
+                    for dep in candidate_services:
                         std = dep.get("std")
                         std_m = parse_time_to_minutes(std) if std else None
                         if std_m is not None and abs(std_m - sched_min) <= 3:
@@ -85,7 +121,7 @@ def resolve_live_rail_platform(
                             break
                 # 3. If scheduled_time is in the past or unmatched, fall back to next upcoming departure calling at destination
                 if not target_dep:
-                    for dep in services:
+                    for dep in candidate_services:
                         std = dep.get("std")
                         std_m = parse_time_to_minutes(std) if std else None
                         if std_m is not None and (
@@ -94,9 +130,9 @@ def resolve_live_rail_platform(
                             target_dep = dep
                             break
                     if not target_dep:
-                        target_dep = services[0]
-            elif services:
-                target_dep = services[0]
+                        target_dep = candidate_services[0]
+            elif candidate_services:
+                target_dep = candidate_services[0]
 
             if target_dep:
                 platform = target_dep.get("platform")

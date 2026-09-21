@@ -256,3 +256,59 @@ def test_update_journey_progress_advances_forward_bypassing_intermediate_leg(
         assert "On board Great Northern train towards Cambridge Rail Station." in msg
         assert "Expected arrival at 07:18." in msg
         assert "Next step: Walk 10m to Cambridge Office." in msg
+
+
+def test_update_journey_progress_unresolved_coordinates_safe_fallback(
+    app: Flask,
+) -> None:
+    """Test that missing coordinates or GPS drop does not prematurely expire active journey."""
+    with app.app_context():
+        active = create_sample_active_journey(with_rail=True)
+        active.current_leg_index = 0
+        active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Person state with no latitude/longitude attributes (e.g. GPS drop)
+        state_no_gps = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {},
+        }
+        now = datetime.datetime(2026, 9, 7, 8, 2)
+        # When person_state has no coordinates, leg advancement preserves status rather than expiring
+        update_journey_progress(active, state_no_gps, now, mock_ha)
+        assert active.current_status == JourneyStepStatus.EN_ROUTE_TO_STOP
+        assert active.current_status != JourneyStepStatus.EXPIRED
+
+
+def test_advance_future_legs_rail_station_400m_geofence(
+    app: Flask,
+) -> None:
+    """Test that dynamic 400m proximity threshold triggers rail station arrival and interchange."""
+    with app.app_context():
+        active = create_sample_active_journey(with_rail=True)
+        active.current_leg_index = 0
+        active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+
+        Stop.create(
+            atco_code="naptan:KGX",
+            naptan_code="KGX",
+            name="London King's Cross",
+            stop_type="rail",
+            latitude=51.5308,
+            longitude=-0.1238,
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Position 320m away from King's Cross (within 400m rail radius, but > 200m standard)
+        # 51.5335, -0.1238 is ~300m north of 51.5308
+        state_near_kgx = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5335, "longitude": -0.1238},
+        }
+        now = datetime.datetime(2026, 9, 7, 8, 4)
+        res = update_journey_progress(active, state_near_kgx, now, mock_ha)
+        assert res is True
+        assert active.current_leg_index == 1
+        assert active.current_status == JourneyStepStatus.AT_DEPARTURE_STOP

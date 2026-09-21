@@ -150,8 +150,30 @@ def _refresh_live_platform_status(
         active.live_status = None
         active.delay_minutes = 0
         active.delay_reason = None
-        if active.platform and not any(
-            w in active.platform.lower() for w in ("stand", "stop")
+        if current_leg.origin and current_leg.origin.platform:
+            active.platform = current_leg.origin.platform
+        elif current_leg.origin and current_leg.mode == "bus":
+            try:
+                from app.models.transit import Stop
+
+                s = Stop.get_by_code(current_leg.origin.id)
+                if s and s.indicator:
+                    ind = s.indicator.strip()
+                    if (
+                        any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                        or len(ind) <= 3
+                    ):
+                        bus_plat = (
+                            ind
+                            if any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                            else f"Stop {ind}"
+                        )
+                        current_leg.origin.platform = bus_plat
+                        active.platform = bus_plat
+            except Exception:
+                pass
+        elif active.platform and not any(
+            w in active.platform.lower() for w in ("stand", "stop", "bay")
         ):
             active.platform = None
 

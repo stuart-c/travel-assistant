@@ -17,6 +17,7 @@ from app.services.dispatcher.tracker.notification_formatter import (
     format_progress_notification,
 )
 from app.services.dispatcher.tracker.platform_service import (
+    resolve_live_rail_arrival_platform,
     resolve_live_rail_platform,
 )
 from app.services.dispatcher.tracker.schematic_builder import (
@@ -184,7 +185,7 @@ def get_journey_live_tracking_data(
                         )
                     )
 
-    # Check live rail platform if applicable
+    # Check live rail platform and arrival platforms for all upcoming legs
     target_rail_leg = None
     if current_leg_index < len(legs):
         cur_leg = legs[current_leg_index]
@@ -196,17 +197,53 @@ def get_journey_live_tracking_data(
                 None,
             )
 
-    if target_rail_leg and live_client:
-        live_res = resolve_live_rail_platform(
-            origin_id=target_rail_leg.origin.id,
-            dest_id=target_rail_leg.destination.id,
-            scheduled_time=target_rail_leg.dep_time,
-            live_client=live_client,
-        )
-        if live_res.platform:
-            platform = live_res.platform
-        if live_res.etd:
-            live_status = live_res.etd
+    for idx, r_leg in enumerate(legs):
+        if r_leg.mode == "rail" and live_client:
+            # Departure platform lookup if not set or if current target rail leg
+            if not r_leg.origin.platform or r_leg == target_rail_leg:
+                live_res = resolve_live_rail_platform(
+                    origin_id=r_leg.origin.id,
+                    dest_id=r_leg.destination.id,
+                    scheduled_time=r_leg.dep_time,
+                    live_client=live_client,
+                )
+                if live_res.platform:
+                    r_leg.origin.platform = live_res.platform
+                    if r_leg == target_rail_leg:
+                        platform = live_res.platform
+                if live_res.etd and r_leg == target_rail_leg:
+                    live_status = live_res.etd
+            # Arrival platform lookup
+            if not r_leg.destination.platform:
+                arr_plat = resolve_live_rail_arrival_platform(
+                    origin_id=r_leg.origin.id,
+                    dest_id=r_leg.destination.id,
+                    scheduled_arr_time=r_leg.arr_time,
+                    live_client=live_client,
+                )
+                if arr_plat:
+                    r_leg.destination.platform = arr_plat
+        elif r_leg.mode == "bus" and not r_leg.origin.platform:
+            try:
+                from app.models.transit import Stop
+
+                s = Stop.get_by_code(r_leg.origin.id)
+                if s and s.indicator:
+                    ind = s.indicator.strip()
+                    if (
+                        any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                        or len(ind) <= 3
+                    ):
+                        bus_plat = (
+                            ind
+                            if any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                            else f"Stop {ind}"
+                        )
+                        r_leg.origin.platform = bus_plat
+                        if idx == current_leg_index:
+                            platform = bus_plat
+            except Exception:
+                pass
 
     # 6. Resolve coordinates and build waypoints
     (

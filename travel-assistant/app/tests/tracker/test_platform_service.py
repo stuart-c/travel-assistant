@@ -261,3 +261,39 @@ def test_resolve_live_rail_arrival_platform_scenarios() -> None:
         )
         is None
     )
+
+
+def test_resolve_live_rail_platform_destination_filtering() -> None:
+    """Test that departures calling at dest_crs are prioritized over services that do not."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    # Service 0 departs earlier to Norwich (NRW), service 1 departs to Cambridge (CBG)
+    mock_live.get_fastest_departures.return_value = [
+        {
+            "std": "08:00",
+            "platform": "1",
+            "destination": [{"crs": "NRW", "locationName": "Norwich"}],
+        },
+        {
+            "std": "08:05",
+            "platform": "7",
+            "destination": [{"crs": "CBG", "locationName": "Cambridge"}],
+        },
+    ]
+
+    res = resolve_live_rail_platform(
+        origin_id="naptan:KGX",
+        dest_id="naptan:CBG",
+        scheduled_time="08:05",
+        live_client=mock_live,
+    )
+    assert res.platform == "7"
+    assert res.std == "08:05"
+
+    # If scheduled_time is in the past, upcoming departure calling at CBG is selected
+    res_upcoming = resolve_live_rail_platform(
+        origin_id="naptan:KGX",
+        dest_id="naptan:CBG",
+        scheduled_time="07:50",
+        live_client=mock_live,
+    )
+    assert res_upcoming.platform == "7"

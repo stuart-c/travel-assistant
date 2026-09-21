@@ -81,7 +81,21 @@ def test_resolve_endpoint_coordinates(app: Flask) -> None:
         assert lat == 51.5308
         assert lon == -0.1238
 
-        # 5. Non-existent and empty
+        # 5. Case-insensitive and general Location fallback
+        lat, lon, name = resolve_endpoint_coordinates("walk", "home")
+        assert lat == 51.5000
+        assert lon == -0.1000
+        assert name == "Home"
+
+        lat, lon, name = resolve_endpoint_coordinates("ha", "HOME")
+        assert lat == 51.5000
+        assert lon == -0.1000
+
+        lat, lon, name = resolve_endpoint_coordinates("custom", "OFFICE")
+        assert lat == 51.5200
+        assert lon == -0.0800
+
+        # 6. Non-existent and empty
         lat, lon, name = resolve_endpoint_coordinates("unknown", "unknown:999")
         assert lat is None and lon is None and name is None
 

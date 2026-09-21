@@ -2,6 +2,7 @@
 
 from typing import Optional, Tuple
 from geopy.distance import great_circle
+from peewee import fn
 
 from app.models.location import Location
 from app.models.transit import Stop
@@ -31,21 +32,24 @@ def resolve_endpoint_coordinates(
             clean_id = clean_id[len(prefix) :]
             break
 
+    raw_lower = raw_id.lower()
+    clean_lower = clean_id.lower()
+
     # 1. Location table lookups (HA zones and custom locations)
     if (
         e_type in ("ha", "custom")
-        or raw_id.startswith("ha:")
-        or raw_id.startswith("custom:")
+        or raw_lower.startswith("ha:")
+        or raw_lower.startswith("custom:")
     ):
         loc = (
             Location.select()
             .where(
-                (Location.id == raw_id)
-                | (Location.id == f"ha:{clean_id}")
-                | (Location.id == f"custom:{clean_id}")
-                | (Location.id == clean_id)
-                | (Location.name == raw_id)
-                | (Location.name == clean_id)
+                (fn.LOWER(Location.id) == raw_lower)
+                | (fn.LOWER(Location.id) == f"ha:{clean_lower}")
+                | (fn.LOWER(Location.id) == f"custom:{clean_lower}")
+                | (fn.LOWER(Location.id) == clean_lower)
+                | (fn.LOWER(Location.name) == raw_lower)
+                | (fn.LOWER(Location.name) == clean_lower)
             )
             .first()
         )
@@ -56,26 +60,28 @@ def resolve_endpoint_coordinates(
     stop = (
         Stop.select()
         .where(
-            (Stop.atco_code == raw_id)
-            | (Stop.atco_code == clean_id)
-            | (Stop.naptan_code == raw_id)
-            | (Stop.naptan_code == clean_id)
-            | (Stop.name == raw_id)
-            | (Stop.name == clean_id)
+            (fn.LOWER(Stop.atco_code) == raw_lower)
+            | (fn.LOWER(Stop.atco_code) == clean_lower)
+            | (fn.LOWER(Stop.naptan_code) == raw_lower)
+            | (fn.LOWER(Stop.naptan_code) == clean_lower)
+            | (fn.LOWER(Stop.name) == raw_lower)
+            | (fn.LOWER(Stop.name) == clean_lower)
         )
         .first()
     )
     if stop and stop.latitude is not None and stop.longitude is not None:
         return float(stop.latitude), float(stop.longitude), stop.name
 
-    # 3. General Location fallback by name
+    # 3. General Location fallback by case-insensitive name or ID (even if e_type was walk/bus/etc.)
     fallback_loc = (
         Location.select()
         .where(
-            (Location.id == raw_id)
-            | (Location.id == clean_id)
-            | (Location.name == raw_id)
-            | (Location.name == clean_id)
+            (fn.LOWER(Location.id) == raw_lower)
+            | (fn.LOWER(Location.id) == f"ha:{clean_lower}")
+            | (fn.LOWER(Location.id) == f"custom:{clean_lower}")
+            | (fn.LOWER(Location.id) == clean_lower)
+            | (fn.LOWER(Location.name) == raw_lower)
+            | (fn.LOWER(Location.name) == clean_lower)
         )
         .first()
     )

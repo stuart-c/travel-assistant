@@ -34,6 +34,10 @@ def test_format_progress_notification_stages() -> None:
     assert data["group"] == "travel_assistant_journeys"
     assert data["persistent"] is True
     assert data["sticky"] is True
+    assert data["alert_once"] is False
+    assert data["importance"] == "high"
+    assert data["priority"] == "high"
+    assert data["channel"] == "Travel Assistant"
 
     # PRE_DEPARTURE with announced platform
     active.platform = "4"
