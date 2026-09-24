@@ -59,17 +59,54 @@ class PlatformTransfer(BaseModel):
         cls, location_id: str, from_platform: str, to_platform: str
     ) -> Optional["PlatformTransfer"]:
         """Find platform transfer matching platforms within a station."""
-        loc = location_id.strip()
-        f_plat = from_platform.strip()
-        t_plat = to_platform.strip()
+        loc = (location_id or "").strip()
+        f_plat = (from_platform or "").strip()
+        t_plat = (to_platform or "").strip()
+
+        # Normalise platform strings (e.g. "Platform 7" -> "7")
+        f_clean = f_plat.lower().replace("platform", "").strip()
+        t_clean = t_plat.lower().replace("platform", "").strip()
+
+        # Handle same platform face (0 minute transfer)
+        if f_clean and t_clean and f_clean == t_clean:
+            return cls(
+                location_type="rail",
+                location_id=loc,
+                location_name="",
+                from_platform=f_plat,
+                to_platform=t_plat,
+                transfer_time_minutes=0,
+                bidirectional=True,
+                step_free=True,
+                notes="Same platform face; no walking required.",
+            )
+
+        loc_candidates = {loc, loc.upper(), loc.lower()}
+        if loc.startswith("9100"):
+            bare = loc[4:]
+            loc_candidates.update({bare, bare.upper()})
+        else:
+            loc_candidates.update({f"9100{loc}", f"9100{loc}".upper()})
+
+        try:
+            from app.services.dispatcher.station_resolver import resolve_station_crs
+
+            crs = resolve_station_crs(loc)
+            if crs:
+                loc_candidates.update({crs, crs.upper()})
+        except Exception:
+            pass
+
+        plat_from_candidates = [f_plat, f_clean]
+        plat_to_candidates = [t_plat, t_clean]
 
         # Direct match
         direct = (
             cls.select()
             .where(
-                (cls.location_id == loc)
-                & (cls.from_platform == f_plat)
-                & (cls.to_platform == t_plat)
+                (cls.location_id.in_(list(loc_candidates)))
+                & (cls.from_platform.in_(plat_from_candidates))
+                & (cls.to_platform.in_(plat_to_candidates))
             )
             .first()
         )
@@ -80,9 +117,9 @@ class PlatformTransfer(BaseModel):
         reverse = (
             cls.select()
             .where(
-                (cls.location_id == loc)
-                & (cls.from_platform == t_plat)
-                & (cls.to_platform == f_plat)
+                (cls.location_id.in_(list(loc_candidates)))
+                & (cls.from_platform.in_(plat_to_candidates))
+                & (cls.to_platform.in_(plat_from_candidates))
                 & (cls.bidirectional == True)  # noqa: E712
             )
             .first()

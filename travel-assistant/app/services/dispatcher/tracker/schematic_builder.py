@@ -183,6 +183,7 @@ def _build_schematic_stages(
                 "station_name": s_leg["destination"]["name"],
                 "transfer_from": s_leg.get("line") or s_leg["mode"].title(),
                 "transfer_to": next_l.get("line") or next_l["mode"].title(),
+                "arrival_platform": s_leg["destination"].get("platform"),
                 "next_dep_time": next_l["dep_time"],
                 "next_platform": next_l["origin"]["platform"],
                 "duration_minutes": max(
@@ -210,6 +211,7 @@ def _build_schematic_stages(
                 "name": s_leg["destination"]["name"],
                 "time": s_leg["arr_time"],
                 "type": "destination" if is_last else "interchange",
+                "platform": s_leg["destination"].get("platform"),
                 "is_stuart_here": (
                     is_active
                     and is_last

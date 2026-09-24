@@ -394,6 +394,120 @@ def sync_mcp_registry(database: SqliteDatabase) -> None:
         logger.debug("MCP tools synchronisation deferred: %s", err)
 
 
+def seed_default_platform_transfers(
+    database: SqliteDatabase, force: bool = False
+) -> None:
+    """Seed default platform transfer matrices if not already present."""
+    import json
+    import os
+    import sys
+    from app.models.transfer import PlatformTransfer
+
+    if not force and ("pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")):
+        return
+
+    try:
+        with database.bind_ctx([PlatformTransfer]):
+            existing = (
+                PlatformTransfer.select()
+                .where(PlatformTransfer.location_id == "CBG")
+                .count()
+            )
+            if existing > 0 and not force:
+                return
+
+            candidates = [
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "services",
+                    "planner",
+                    "cambridge_platform_transfers.json",
+                ),
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "data",
+                    "cambridge_platform_transfers.json",
+                ),
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "..",
+                    "data",
+                    "cambridge_platform_transfers.json",
+                ),
+                "/app/app/services/planner/cambridge_platform_transfers.json",
+                "/app/app/data/cambridge_platform_transfers.json",
+                "/app/data/cambridge_platform_transfers.json",
+            ]
+            json_path = None
+            for c in candidates:
+                p = os.path.abspath(c)
+                if os.path.exists(p):
+                    json_path = p
+                    break
+
+            if not json_path:
+                logger.debug("Cambridge platform transfer JSON not found for seeding.")
+                return
+
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            crs = data.get("crs", "CBG")
+            station = data.get("station", "Cambridge")
+            matrix = data.get("transfer_matrix", {})
+
+            rows = []
+            for key, val in matrix.items():
+                parts = key.split("_to_")
+                if len(parts) != 2:
+                    continue
+                f_plat, t_plat = parts[0], parts[1]
+                normal_mins = float(val.get("normal_mins", 2.0))
+                transfer_mins = (
+                    0 if normal_mins <= 0.0 else max(1, int(round(normal_mins)))
+                )
+                trans_type = val.get("type", "")
+                notes = val.get("notes")
+                step_free = trans_type in (
+                    "cross_platform",
+                    "same_platform",
+                    "level_walk",
+                ) or (
+                    val.get("step_free_mins") is not None
+                    and "lift" in (notes or "").lower()
+                )
+
+                rows.append(
+                    {
+                        "location_type": "rail",
+                        "location_id": crs,
+                        "location_name": station,
+                        "from_platform": f_plat,
+                        "to_platform": t_plat,
+                        "transfer_time_minutes": transfer_mins,
+                        "bidirectional": True,
+                        "step_free": step_free,
+                        "notes": notes,
+                    }
+                )
+
+            if rows:
+                with database.atomic():
+                    for r in rows:
+                        PlatformTransfer.create(**r)
+                logger.info(
+                    "Seeded %d platform transfers for station %s (%s).",
+                    len(rows),
+                    station,
+                    crs,
+                )
+    except Exception as err:
+        logger.warning("Failed to seed default platform transfers: %s", err)
+
+
 def run_migrations(database: SqliteDatabase) -> None:
     """Execute schema migrations using SqliteMigrator and ensure all tables are initialised."""
     logger.info("Verifying database tables and applying pending schema migrations...")
@@ -407,5 +521,6 @@ def run_migrations(database: SqliteDatabase) -> None:
     cleanup_sync_metadata_and_data(database)
     migrate_mcp_tools_schema(database, migrator)
     sync_mcp_registry(database)
+    seed_default_platform_transfers(database)
 
     logger.info("Database schema verification and migrations complete.")

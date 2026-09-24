@@ -202,9 +202,11 @@ def _realign_active_journey_timings(
                     active.live_status = None
                     active.delay_minutes = 0
                     active.delay_reason = None
-                    # Bus legs do not use rail platform
-                    if active.platform and not any(
-                        w in active.platform.lower() for w in ("stand", "stop")
+                    # Non-rail legs (bus) do not use rail platform, but preserve bus stand/stop
+                    if leg.origin and leg.origin.platform:
+                        active.platform = leg.origin.platform
+                    elif active.platform and not any(
+                        w in active.platform.lower() for w in ("stand", "stop", "bay")
                     ):
                         active.platform = None
                 _propagate_leg_timings(active, idx)

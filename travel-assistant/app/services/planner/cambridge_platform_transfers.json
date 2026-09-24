@@ -1,0 +1,199 @@
+{
+  "station": "Cambridge",
+  "crs": "CBG",
+  "tiploc": "CAMBDGE",
+  "official_mct_minutes": 5.0,
+  "station_layout": {
+    "west_side": {
+      "main_through_platform": {
+        "north_half": "Platform 1 (Northbound Through)",
+        "south_half": "Platform 4 (Southbound Through)",
+        "description": "Continuous single long platform (~470m total length) running alongside the main ticket hall and station entrance."
+      },
+      "north_bays": {
+        "platforms": ["2", "3"],
+        "description": "Terminal bay platforms situated on the north-west side of Platform 1 for terminating trains from London/Stevenage and Stansted."
+      },
+      "south_bays": {
+        "platforms": ["5", "6"],
+        "description": "Terminal bay platforms situated on the south-west side of Platform 4 for terminating trains from Ipswich, Norwich, and London Liverpool Street."
+      }
+    },
+    "east_side": {
+      "island_platform": {
+        "platforms": ["7", "8"],
+        "description": "Island through platform on the eastern side across the running lines, accessed via the main covered footbridge and lifts."
+      }
+    }
+  },
+  "transfer_matrix": {
+    "7_to_8": { "normal_mins": 0.3, "brisk_mins": 0.2, "step_free_mins": 0.3, "type": "cross_platform", "notes": "Same island platform; walk directly across (10-20 sec)." },
+    "8_to_7": { "normal_mins": 0.3, "brisk_mins": 0.2, "step_free_mins": 0.3, "type": "cross_platform", "notes": "Same island platform; walk directly across (10-20 sec)." },
+    "7_to_7": { "normal_mins": 0.0, "brisk_mins": 0.0, "step_free_mins": 0.0, "type": "same_platform", "notes": "Same platform face; remain where you are." },
+    "8_to_8": { "normal_mins": 0.0, "brisk_mins": 0.0, "step_free_mins": 0.0, "type": "same_platform", "notes": "Same platform face; remain where you are." },
+    "2_to_1": { "normal_mins": 0.7, "brisk_mins": 0.4, "step_free_mins": 0.7, "type": "level_walk", "notes": "Direct level walk from north bay onto main through platform (30-45 sec)." },
+    "1_to_2": { "normal_mins": 0.7, "brisk_mins": 0.4, "step_free_mins": 0.7, "type": "level_walk", "notes": "Direct level walk from main platform into north bay (30-45 sec)." },
+    "3_to_1": { "normal_mins": 0.8, "brisk_mins": 0.5, "step_free_mins": 0.8, "type": "level_walk", "notes": "Level walk from outer north bay onto main through platform (40-50 sec)." },
+    "1_to_3": { "normal_mins": 0.8, "brisk_mins": 0.5, "step_free_mins": 0.8, "type": "level_walk", "notes": "Level walk from main through platform into outer north bay (40-50 sec)." },
+    "2_to_3": { "normal_mins": 0.6, "brisk_mins": 0.3, "step_free_mins": 0.6, "type": "level_walk", "notes": "Walk around the buffer stops between adjacent bays (30 sec)." },
+    "3_to_2": { "normal_mins": 0.6, "brisk_mins": 0.3, "step_free_mins": 0.6, "type": "level_walk", "notes": "Walk around the buffer stops between adjacent bays (30 sec)." },
+    "1_to_4": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 2.0, "type": "level_walk", "notes": "Walk along the length of the continuous main platform (~200m)." },
+    "4_to_1": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 2.0, "type": "level_walk", "notes": "Walk along the length of the continuous main platform (~200m)." },
+    "2_to_4": { "normal_mins": 2.5, "brisk_mins": 1.5, "step_free_mins": 2.5, "type": "level_walk", "notes": "Walk from north bay 2 along Platform 1 to Platform 4 (~200m)." },
+    "4_to_2": { "normal_mins": 2.5, "brisk_mins": 1.5, "step_free_mins": 2.5, "type": "level_walk", "notes": "Walk from Platform 4 along Platform 1 to north bay 2 (~200m)." },
+    "3_to_4": { "normal_mins": 2.5, "brisk_mins": 1.5, "step_free_mins": 2.5, "type": "level_walk", "notes": "Walk from north bay 3 along Platform 1 to Platform 4." },
+    "4_to_3": { "normal_mins": 2.5, "brisk_mins": 1.5, "step_free_mins": 2.5, "type": "level_walk", "notes": "Walk from Platform 4 along Platform 1 to north bay 3." },
+    "1_to_7": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 3.5, "type": "footbridge", "notes": "Take covered footbridge stairs/lift across tracks to island platform 7." },
+    "7_to_1": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 3.5, "type": "footbridge", "notes": "Take covered footbridge stairs/lift across tracks to main platform 1." },
+    "1_to_8": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 3.5, "type": "footbridge", "notes": "Take covered footbridge stairs/lift across tracks to island platform 8." },
+    "8_to_1": { "normal_mins": 2.0, "brisk_mins": 1.2, "step_free_mins": 3.5, "type": "footbridge", "notes": "Take covered footbridge stairs/lift across tracks to main platform 1." },
+    "2_to_7": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.8, "type": "footbridge", "notes": "Walk out of bay 2 onto Platform 1, up footbridge stairs and over to Plat 7." },
+    "7_to_2": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.8, "type": "footbridge", "notes": "Footbridge stairs from Plat 7 over to Plat 1, then into bay 2." },
+    "2_to_8": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.8, "type": "footbridge", "notes": "Walk out of bay 2 onto Platform 1, up footbridge stairs and over to Plat 8." },
+    "8_to_2": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.8, "type": "footbridge", "notes": "Footbridge stairs from Plat 8 over to Plat 1, then into bay 2." },
+    "3_to_7": { "normal_mins": 2.3, "brisk_mins": 1.4, "step_free_mins": 3.8, "type": "footbridge", "notes": "Walk out of bay 3 onto Platform 1, up footbridge stairs and over to Plat 7." },
+    "7_to_3": { "normal_mins": 2.3, "brisk_mins": 1.4, "step_free_mins": 3.8, "type": "footbridge", "notes": "Footbridge stairs from Plat 7 over to Plat 1, then into bay 3." },
+    "3_to_8": { "normal_mins": 2.3, "brisk_mins": 1.4, "step_free_mins": 3.8, "type": "footbridge", "notes": "Walk out of bay 3 onto Platform 1, up footbridge stairs and over to Plat 8." },
+    "8_to_3": { "normal_mins": 2.3, "brisk_mins": 1.4, "step_free_mins": 3.8, "type": "footbridge", "notes": "Footbridge stairs from Plat 8 over to Plat 1, then into bay 3." },
+    "4_to_7": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.5, "type": "footbridge", "notes": "Walk north along Platform 4 to footbridge, cross over to Plat 7." },
+    "7_to_4": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.5, "type": "footbridge", "notes": "Cross footbridge from Plat 7 down to main platform, walk south to Plat 4." },
+    "4_to_8": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.5, "type": "footbridge", "notes": "Walk north along Platform 4 to footbridge, cross over to Plat 8." },
+    "8_to_4": { "normal_mins": 2.2, "brisk_mins": 1.3, "step_free_mins": 3.5, "type": "footbridge", "notes": "Cross footbridge from Plat 8 down to main platform, walk south to Plat 4." },
+    "5_to_1": { "normal_mins": 3.5, "brisk_mins": 2.2, "step_free_mins": 3.5, "type": "level_walk", "notes": "Walk out of south bay 5 along Platform 4 to Platform 1 (~350m)." },
+    "1_to_5": { "normal_mins": 3.5, "brisk_mins": 2.2, "step_free_mins": 3.5, "type": "level_walk", "notes": "Walk south along Platform 1 and 4 into south bay 5 (~350m)." },
+    "5_to_2": { "normal_mins": 4.0, "brisk_mins": 2.5, "step_free_mins": 4.0, "type": "level_walk", "notes": "Full station length: south bay 5 along Plat 4/1 to north bay 2 (~450m)." },
+    "2_to_5": { "normal_mins": 4.0, "brisk_mins": 2.5, "step_free_mins": 4.0, "type": "level_walk", "notes": "Full station length: north bay 2 along Plat 1/4 to south bay 5 (~450m)." },
+    "5_to_7": { "normal_mins": 3.0, "brisk_mins": 1.8, "step_free_mins": 4.5, "type": "footbridge", "notes": "Walk out of south bay 5 along Platform 4 to footbridge, cross to Plat 7." },
+    "7_to_5": { "normal_mins": 3.0, "brisk_mins": 1.8, "step_free_mins": 4.5, "type": "footbridge", "notes": "Footbridge from Plat 7 down to main platform, walk south to bay 5." }
+  },
+  "weekday_commute_situations": {
+    "morning_outbound": [
+      {
+        "id": "MORN_SITUATION_A",
+        "name": "Situation A: North Bay 2 to Main Platform 1 (Level Walk)",
+        "from_platform": "2",
+        "to_platform": "1",
+        "walking_normal_mins": 0.7,
+        "walking_brisk_mins": 0.4,
+        "route_type": "level_walk",
+        "description": "Step off Great Northern train in Bay 2, walk 30m straight onto adjacent main Platform 1 (no stairs/bridge).",
+        "services": [
+          { "stevenage_dep": "07:50", "cambridge_arr": "08:36", "connecting_dep": "08:45", "buffer_mins": 9, "feasibility": "🟢 Very Comfortable" },
+          { "stevenage_dep": "08:50", "cambridge_arr": "09:35", "connecting_dep": "09:45", "buffer_mins": 10, "feasibility": "🟢 Very Comfortable" }
+        ]
+      },
+      {
+        "id": "MORN_SITUATION_B",
+        "name": "Situation B: North Bay 2 to South Platform 4 (Main Platform Walk)",
+        "from_platform": "2",
+        "to_platform": "4",
+        "walking_normal_mins": 2.5,
+        "walking_brisk_mins": 1.5,
+        "route_type": "level_walk",
+        "description": "Walk out of Bay 2 south along the continuous main platform ~200m to Platform 4.",
+        "services": [
+          { "stevenage_dep": "06:48", "cambridge_arr": "07:35", "connecting_dep": "07:45", "buffer_mins": 10, "feasibility": "🟢 Very Comfortable" },
+          { "stevenage_dep": "07:20", "cambridge_arr": "08:06", "connecting_dep": "08:10", "buffer_mins": 4, "feasibility": "🟡 Tight / Brisk Walk Required" },
+          { "stevenage_dep": "08:20", "cambridge_arr": "09:05", "connecting_dep": "09:10", "buffer_mins": 5, "feasibility": "🟡 Brisk Walk" },
+          { "stevenage_dep": "09:20", "cambridge_arr": "10:10", "connecting_dep": "10:17", "buffer_mins": 7, "feasibility": "🟢 Comfortable" }
+        ]
+      },
+      {
+        "id": "MORN_SITUATION_C",
+        "name": "Situation C: Island Platform 7 to Main Platform 1 (Footbridge)",
+        "from_platform": "7",
+        "to_platform": "1",
+        "walking_normal_mins": 2.0,
+        "walking_brisk_mins": 1.2,
+        "route_type": "footbridge",
+        "description": "Alight Thameslink on Island 7, take covered footbridge stairs over tracks to Platform 1.",
+        "services": [
+          { "stevenage_dep": "07:59", "cambridge_arr": "08:39", "connecting_dep": "08:45", "buffer_mins": 6, "feasibility": "🟢 Comfortable" },
+          { "stevenage_dep": "08:59", "cambridge_arr": "09:39", "connecting_dep": "09:45", "buffer_mins": 6, "feasibility": "🟢 Comfortable" }
+        ]
+      },
+      {
+        "id": "MORN_SITUATION_D",
+        "name": "Situation D: Island Platform 7 to South Platform 4 (Footbridge + Walk)",
+        "from_platform": "7",
+        "to_platform": "4",
+        "walking_normal_mins": 2.2,
+        "walking_brisk_mins": 1.3,
+        "route_type": "footbridge",
+        "description": "Alight Thameslink on Island 7, cross footbridge down to main platform, walk south to Platform 4.",
+        "services": [
+          { "stevenage_dep": "07:29", "cambridge_arr": "08:09", "connecting_dep": "08:15", "buffer_mins": 6, "feasibility": "🟢 Comfortable" },
+          { "stevenage_dep": "08:29", "cambridge_arr": "09:09", "connecting_dep": "09:15", "buffer_mins": 6, "feasibility": "🟢 Comfortable" },
+          { "stevenage_dep": "09:29", "cambridge_arr": "10:09", "connecting_dep": "10:17", "buffer_mins": 8, "feasibility": "🟢 Comfortable" }
+        ]
+      },
+      {
+        "id": "MORN_SITUATION_E",
+        "name": "Situation E: Main Platform 1 to Platform 4 (Level Walk)",
+        "from_platform": "1",
+        "to_platform": "4",
+        "walking_normal_mins": 2.0,
+        "walking_brisk_mins": 1.2,
+        "route_type": "level_walk",
+        "description": "Alight Thameslink on Platform 1, walk south along the continuous platform to Platform 4.",
+        "services": [
+          { "stevenage_dep": "06:59", "cambridge_arr": "07:39", "connecting_dep": "07:45", "buffer_mins": 6, "feasibility": "🟢 Comfortable" }
+        ]
+      }
+    ],
+    "evening_inbound": [
+      {
+        "id": "EVEN_SITUATION_1",
+        "name": "Situation 1: Island Platform 8 to Island Platform 7 (Instant Cross-Platform)",
+        "from_platform": "8",
+        "to_platform": "7",
+        "walking_normal_mins": 0.3,
+        "walking_brisk_mins": 0.2,
+        "route_type": "cross_platform",
+        "description": "Step off Cambridge North train on Plat 8, turn around on the same island platform to board Thameslink on Plat 7 (< 20s).",
+        "services_count": 15,
+        "buffer_range_mins": "5 - 15 mins",
+        "feasibility": "🟢 Effortless (Best evening connection)"
+      },
+      {
+        "id": "EVEN_SITUATION_2",
+        "name": "Situation 2: Island Platform 8/7 to West North Bay 2 (Footbridge)",
+        "from_platform": "8",
+        "to_platform": "2",
+        "walking_normal_mins": 2.2,
+        "walking_brisk_mins": 1.3,
+        "route_type": "footbridge",
+        "description": "Cross footbridge from Island 8/7 over to main side and into North Bay 2 for Great Northern departures.",
+        "services_count": 26,
+        "buffer_range_mins": "8 - 18 mins",
+        "feasibility": "🟢 Very Comfortable"
+      },
+      {
+        "id": "EVEN_SITUATION_3",
+        "name": "Situation 3: Main Platform 1 to North Bay 2 (Level Walk)",
+        "from_platform": "1",
+        "to_platform": "2",
+        "walking_normal_mins": 0.7,
+        "walking_brisk_mins": 0.4,
+        "route_type": "level_walk",
+        "description": "Direct level walk from Platform 1 into adjacent Bay 2.",
+        "services_count": 1,
+        "buffer_range_mins": "7 mins",
+        "feasibility": "🟢 Comfortable"
+      },
+      {
+        "id": "EVEN_SITUATION_4",
+        "name": "Situation 4: South Bay 5 to North Bay 2 (Full Station Walk)",
+        "from_platform": "5",
+        "to_platform": "2",
+        "walking_normal_mins": 4.0,
+        "walking_brisk_mins": 2.5,
+        "route_type": "level_walk",
+        "description": "Walk north along the full ~450m length of the main platform from South Bay 5 to North Bay 2.",
+        "services_count": 2,
+        "buffer_range_mins": "25 - 27 mins",
+        "feasibility": "🟢 Ample Time"
+      }
+    ]
+  }
+}

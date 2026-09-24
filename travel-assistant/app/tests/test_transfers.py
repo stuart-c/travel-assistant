@@ -54,6 +54,20 @@ def test_platform_transfer_model_crud(app: Flask) -> None:
         assert pt_reverse is not None
         assert pt_reverse.transfer_time_minutes == 2
 
+        # Normalised platform string match (e.g. "Platform 1" -> "1")
+        pt_norm = PlatformTransfer.find_transfer("PAD", "Platform 1", "Platform 2")
+        assert pt_norm is not None
+        assert pt_norm.transfer_time_minutes == 2
+
+        # Same platform face (0 minutes)
+        pt_same = PlatformTransfer.find_transfer("PAD", "1", "1")
+        assert pt_same is not None
+        assert pt_same.transfer_time_minutes == 0
+
+        pt_same_str = PlatformTransfer.find_transfer("PAD", "Platform 3", "Platform 3")
+        assert pt_same_str is not None
+        assert pt_same_str.transfer_time_minutes == 0
+
         assert PlatformTransfer.find_transfer("PAD", "1", "9") is None
 
         # Update
@@ -64,6 +78,30 @@ def test_platform_transfer_model_crud(app: Flask) -> None:
         # Delete
         retrieved.delete_instance()
         assert PlatformTransfer.select().count() == 0
+
+
+def test_seed_default_platform_transfers(app: Flask) -> None:
+    """Test seeding default platform transfers for Cambridge."""
+    from app.db.migrations import seed_default_platform_transfers
+
+    with app.app_context():
+        PlatformTransfer.delete().execute()
+        assert PlatformTransfer.select().count() == 0
+
+        seed_default_platform_transfers(PlatformTransfer._meta.database, force=True)
+        assert PlatformTransfer.select().count() >= 30
+
+        # Verify specific transfer lookup
+        cbg_transfer = PlatformTransfer.find_transfer("CBG", "7", "8")
+        assert cbg_transfer is not None
+        assert cbg_transfer.transfer_time_minutes == 1
+
+        # Same platform lookup
+        cbg_same = PlatformTransfer.find_transfer("CBG", "7", "7")
+        assert cbg_same is not None
+        assert cbg_same.transfer_time_minutes == 0
+
+        PlatformTransfer.delete().execute()
 
 
 def test_transfers_get_view(client: FlaskClient) -> None:

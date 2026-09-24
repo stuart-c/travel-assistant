@@ -193,6 +193,25 @@ def _build_waypoints_and_legs(
         if idx == current_leg_index and platform:
             leg_plat = platform
 
+        if not leg_plat and leg.mode == "bus":
+            try:
+                from app.models.transit import Stop
+
+                s = Stop.get_by_code(leg.origin.id)
+                if s and s.indicator:
+                    ind = s.indicator.strip()
+                    if (
+                        any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                        or len(ind) <= 3
+                    ):
+                        leg_plat = (
+                            ind
+                            if any(w in ind.lower() for w in ("stop", "stand", "bay"))
+                            else f"Stop {ind}"
+                        )
+            except Exception:
+                pass
+
         is_completed = (idx < current_leg_index) if is_active else False
         is_current = (idx == current_leg_index) if is_active else (idx == 0)
         is_upcoming = (idx > current_leg_index) if is_active else (idx > 0)
@@ -216,6 +235,7 @@ def _build_waypoints_and_legs(
             "destination": {
                 "id": leg.destination.id,
                 "name": leg.destination.name,
+                "platform": getattr(leg.destination, "platform", None),
                 "latitude": d_lat,
                 "longitude": d_lon,
             },
