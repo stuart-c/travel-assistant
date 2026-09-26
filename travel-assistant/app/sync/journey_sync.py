@@ -128,6 +128,26 @@ def sync_journey_routes(
         calculated_count = 0
         for journey in pending_journeys:
             try:
+                # 1. Attempt automated corridor discovery via Google Routes API
+                from app.services.corridor_learner import CorridorLearner
+
+                learner = CorridorLearner()
+                google_routes = learner.discover_and_persist_corridors(
+                    journey,
+                    query_type="initial_discovery",
+                    trigger_reason="automated_journey_sync",
+                )
+                if google_routes:
+                    calculated_count += 1
+                    logger.info(
+                        "Successfully discovered %d Google Routes corridor(s) for journey %d ('%s').",
+                        len(google_routes),
+                        journey.id,
+                        journey.name,
+                    )
+                    continue
+
+                # 2. Fall back to local topological route calculation if Google API unavailable
                 routes = calculate_routes_for_journey(journey)
                 if routes:
                     serialized_routes = [r.model_dump() for r in routes]

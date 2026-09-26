@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Google Routes API v2 Transit Discovery, Local Route Learning & Disruption Rerouting** (`app/datasources/google_maps.py`, `app/services/corridor_learner.py`, `app/services/reroute_engine.py`, `app/models/journey_route.py`, `app/models/route_query_log.py`):
+  - Added `compute_transit_routes` method to `GoogleMapsClient` utilizing Google Routes API v2 (`directions/v2:computeRoutes`) with transit field masks (`routes.duration`, `routes.legs.steps`, `transitDetails`).
+  - Implemented automated initial discovery via `CorridorLearner` triggered during background journey synchronization (`sync_journey_routes`) and manual configuration endpoints, resolving/creating new intermediate stops, auto-creating walking access/egress links, and persisting multi-modal corridors into local SQLite tables (`journey_routes`).
+  - Added comprehensive audit logging of all routing calls (`RouteQueryLog` in `journey_route_queries` table), storing trigger reasons, query coordinates, departure times, raw API payloads, and parsed candidate options for evaluation.
+  - Implemented disruption detection and a two-tier rerouting engine (`RerouteEngine`) triggered by cancellations or live delays $\ge 10$ minutes (`DELAY_REROUTE_THRESHOLD_MINUTES = 10`), first attempting failover to alternate locally learnt route corridors (Tier 1) before querying Google Routes API with immediate departure (`departure_time=now`) for active detour calculation (Tier 2).
+  - Integrated dynamic rerouting seamlessly into the journey evaluation engine (`evaluator.py`) to update active session tracking and mobile push notification itineraries.
+  - Extended journeys configuration UI (`config_journeys.html`, `journeys.js`) with an interactive "Discover Corridors" action, discovered route summary cards, and collapsible audit history log.
+  - Added MCP tools `journey_discover_corridors` and `journey_get_queries` to inspect and manage route learning from AI agents.
 - **BODS SIRI-VM Live Bus Telemetry Client (`BodsLiveClient`)** (`app/datasources/bus_live.py`, `app/tests/datasources/test_bus_live.py`):
   - Implemented `BodsLiveClient` connecting to DfT Bus Open Data Service (BODS) SIRI-VM real-time vehicle monitoring XML feeds (`/api/v1/datafeed/`).
   - Added structured `LiveBusStatus` dataclass and parsing with `defusedxml`, extracting vehicle coordinates (`latitude`, `longitude`), bearing, operator code, line reference, vehicle ID, aim/scheduled departure timings, and freshness timestamps.

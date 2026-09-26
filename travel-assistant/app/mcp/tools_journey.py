@@ -179,3 +179,57 @@ def journey_delete(journey_id: int) -> Dict[str, Any]:
         return {"success": True, "deleted_id": journey_id}
     except Journey.DoesNotExist:
         return {"error": f"Journey with ID {journey_id} not found."}
+
+
+@register_tool(
+    name="journey_discover_corridors",
+    domain="journey",
+    description="Trigger on-demand transit corridor discovery and persistence for a journey via Google Routes API.",
+    is_mutating=True,
+)
+def journey_discover_corridors(journey_id: int) -> Dict[str, Any]:
+    """Trigger transit corridor discovery for a journey."""
+    try:
+        journey = Journey.get_by_id(journey_id)
+    except Journey.DoesNotExist:
+        return {"error": f"Journey with ID {journey_id} not found."}
+
+    from app.services.corridor_learner import CorridorLearner
+
+    learner = CorridorLearner()
+    routes = learner.discover_and_persist_corridors(
+        journey=journey,
+        query_type="manual_refresh",
+        trigger_reason="mcp_tool_trigger",
+        replace_existing=True,
+    )
+    return {
+        "success": True,
+        "journey_id": journey_id,
+        "count": len(routes),
+        "routes": [r.to_dict() for r in routes],
+    }
+
+
+@register_tool(
+    name="journey_get_queries",
+    domain="journey",
+    description="Retrieve the historical audit log of routing queries and responses for a journey.",
+    is_mutating=False,
+)
+def journey_get_queries(journey_id: int, limit: int = 10) -> Dict[str, Any]:
+    """Retrieve audit history of routing API queries for a journey."""
+    from app.models.route_query_log import RouteQueryLog
+
+    queries = list(
+        RouteQueryLog.select()
+        .where(RouteQueryLog.journey_id == journey_id)
+        .order_by(RouteQueryLog.created_at.desc())
+        .limit(limit)
+    )
+    return {
+        "success": True,
+        "journey_id": journey_id,
+        "count": len(queries),
+        "queries": [q.to_dict() for q in queries],
+    }
