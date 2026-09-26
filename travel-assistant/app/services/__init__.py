@@ -15,17 +15,13 @@ from app.services.planner import (
     RouteLeg,
     RouteTemplate,
     ScheduledItinerary,
-    find_routes,
     format_minutes_to_time,
     get_access_edges,
     get_active_timetables,
-    get_leg_mode,
     is_timetable_active,
-    is_valid_leg_sequence,
     normalise_id,
     parse_time_to_minutes,
     plan_journey,
-    prune_route_templates,
     resolve_active_days_and_date,
     resolve_endpoint_name,
     resolve_transfer_duration,
@@ -33,11 +29,7 @@ from app.services.planner import (
 
 __all__ = [
     # Solvers
-    "find_routes",
     "plan_journey",
-    "prune_route_templates",
-    "is_valid_leg_sequence",
-    "get_leg_mode",
     # Models
     "RouteTemplate",
     "RouteLeg",
