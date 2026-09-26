@@ -6,6 +6,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 import pytest
 
+from app.datasources.google_maps import GoogleMapsClient
 from app.models import (
     Journey,
     Location,
@@ -18,12 +19,12 @@ from app.models import (
     TimetableTrip,
     Walking,
 )
+from app.services.corridor_learner import CorridorLearner
 from app.sync import (
     SYNC_REGISTRY,
     sync_journey_routes,
     sync_table,
 )
-from app.sync.journey_sync import calculate_routes_for_journey
 
 
 @pytest.fixture
@@ -222,10 +223,67 @@ def test_sync_registry_contains_journey_routes() -> None:
     assert entry.sync_fn == sync_journey_routes
 
 
-def test_calculate_routes_for_journey_direct_walk(
-    seeded_transit_network: None, app: Flask
-) -> None:
-    """Test calculate_routes_for_journey finds direct walking route."""
+MOCK_TRANSIT_RESPONSE = {
+    "routes": [
+        {
+            "duration": "2400s",
+            "description": "Bus 73 + Train",
+            "legs": [
+                {
+                    "steps": [
+                        {
+                            "travelMode": "WALK",
+                            "staticDuration": "240s",
+                            "distanceMeters": 300,
+                        },
+                        {
+                            "travelMode": "TRANSIT",
+                            "staticDuration": "720s",
+                            "distanceMeters": 2100,
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "departureStop": {
+                                        "name": "King's Cross Station",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": 51.5308,
+                                                "longitude": -0.1238,
+                                            }
+                                        },
+                                    },
+                                    "arrivalStop": {
+                                        "name": "Euston Station",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": 51.5284,
+                                                "longitude": -0.1331,
+                                            }
+                                        },
+                                    },
+                                },
+                                "transitLine": {
+                                    "nameShort": "73",
+                                    "transitAgency": {"name": "Arriva London"},
+                                    "vehicle": {"type": "BUS"},
+                                },
+                                "stopCount": 5,
+                            },
+                        },
+                        {
+                            "travelMode": "WALK",
+                            "staticDuration": "360s",
+                            "distanceMeters": 250,
+                        },
+                    ]
+                }
+            ],
+        }
+    ]
+}
+
+
+def test_corridor_learner_direct_walk(seeded_transit_network: None, app: Flask) -> None:
+    """Test CorridorLearner discovers and persists direct walking route."""
     with app.app_context():
         journey = Journey.create(
             name="Walk to Parents",
@@ -239,70 +297,12 @@ def test_calculate_routes_for_journey_direct_walk(
             calculated_routes=None,
         )
 
-        routes = calculate_routes_for_journey(journey)
+        learner = CorridorLearner()
+        routes = learner.discover_and_persist_corridors(journey)
         assert routes is not None
         assert len(routes) >= 1
         assert routes[0].primary_mode == "walk"
         assert routes[0].total_duration_est_minutes == 12
-
-
-def test_calculate_routes_for_journey_multi_modal_with_windows(
-    seeded_transit_network: None, app: Flask
-) -> None:
-    """Test calculate_routes_for_journey with multiple configured time settings."""
-    with app.app_context():
-        journey = Journey.create(
-            name="Commute to Work",
-            from_type="ha",
-            from_id="ha:home",
-            from_name="Home",
-            to_type="ha",
-            to_id="ha:work",
-            to_name="Work",
-            time_settings=[
-                {
-                    "days": ["mon", "tue", "wed"],
-                    "mode": "depart",
-                    "start_time": "07:00",
-                    "end_time": "09:00",
-                },
-                {
-                    "days": ["sat", "sun"],
-                    "mode": "depart",
-                    "start_time": "10:00",
-                    "end_time": "12:00",
-                },
-            ],
-            calculated_routes=None,
-        )
-
-        routes = calculate_routes_for_journey(journey)
-        assert routes is not None
-        assert len(routes) >= 1
-        corridor = routes[0]
-        assert corridor.transfer_count >= 1
-        assert len(corridor.legs) >= 3
-
-
-def test_calculate_routes_for_journey_unreachable(
-    seeded_transit_network: None, app: Flask
-) -> None:
-    """Test calculate_routes_for_journey returns None for unreachable endpoints."""
-    with app.app_context():
-        journey = Journey.create(
-            name="Trip to Island",
-            from_type="ha",
-            from_id="ha:home",
-            from_name="Home",
-            to_type="custom",
-            to_id="custom:isolated_spot",
-            to_name="Isolated Island",
-            time_settings=[],
-            calculated_routes=None,
-        )
-
-        routes = calculate_routes_for_journey(journey)
-        assert routes is None
 
 
 def test_sync_journey_routes_end_to_end(
@@ -358,7 +358,15 @@ def test_sync_journey_routes_end_to_end(
             calculated_routes=[{"corridor_id": "existing"}],
         )
 
-        result = sync_journey_routes(app=app)
+        def _mock_compute(origin=None, destination=None, **kwargs):
+            if destination == (51.5200, -0.0800):
+                return MOCK_TRANSIT_RESPONSE
+            return {"routes": []}
+
+        with patch.object(
+            GoogleMapsClient, "compute_transit_routes", side_effect=_mock_compute
+        ):
+            result = sync_journey_routes(app=app)
         assert result["status"] == "success"
         assert result["records"] == 2
         assert result["table"] == "journey_routes"
@@ -548,16 +556,21 @@ def test_sync_journey_routes_force_recalculation(
         assert j_fresh.get_calculated_routes() == [{"corridor_id": "stale_id"}]
 
         # Force sync recalculates routes for all journeys
-        res_forced = sync_journey_routes(app=app, force=True)
-        assert res_forced["records"] >= 1
-        j_fresh2 = Journey.get_by_id(j.id)
-        assert j_fresh2.get_calculated_routes() != [{"corridor_id": "stale_id"}]
+        with patch.object(
+            GoogleMapsClient,
+            "compute_transit_routes",
+            return_value=MOCK_TRANSIT_RESPONSE,
+        ):
+            res_forced = sync_journey_routes(app=app, force=True)
+            assert res_forced["records"] >= 1
+            j_fresh2 = Journey.get_by_id(j.id)
+            assert j_fresh2.get_calculated_routes() != [{"corridor_id": "stale_id"}]
 
 
-def test_calculate_routes_for_journey_passes_time_window(app: Flask) -> None:
-    """Test that calculate_routes_for_journey forwards start_time, end_time, and mode to find_routes."""
+def test_sync_journey_routes_triggers_corridor_learner(app: Flask) -> None:
+    """Test that sync_journey_routes triggers CorridorLearner for pending journeys."""
     with app.app_context():
-        j = Journey.create(
+        Journey.create(
             name="Morning Commute",
             from_type="ha",
             from_id="ha:home",
@@ -576,16 +589,9 @@ def test_calculate_routes_for_journey_passes_time_window(app: Flask) -> None:
             calculated_routes=None,
         )
 
-        with patch("app.sync.journey_sync.find_routes") as mock_find_routes:
-            mock_find_routes.return_value = []
-            calculate_routes_for_journey(j)
-            mock_find_routes.assert_called_once_with(
-                from_type="ha",
-                from_id="ha:home",
-                to_type="ha",
-                to_id="ha:work",
-                days_of_week=["mon", "tue"],
-                start_time="08:30",
-                end_time="10:00",
-                timing_mode="arrive",
-            )
+        with patch(
+            "app.services.corridor_learner.CorridorLearner.discover_and_persist_corridors"
+        ) as mock_disc:
+            mock_disc.return_value = []
+            sync_journey_routes(app=app)
+            assert mock_disc.call_count == 1

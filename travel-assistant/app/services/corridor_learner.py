@@ -167,13 +167,82 @@ class CorridorLearner:
             journey.to_type, journey.to_id
         )
 
+        if replace_existing:
+            JourneyRoute.delete().where(
+                (JourneyRoute.journey_id == journey.id)
+                & (JourneyRoute.auto_generated == True)  # noqa: E712
+            ).execute()
+
+        persisted_routes: List[JourneyRoute] = []
+        parsed_summary: List[Dict[str, Any]] = []
+
+        active_days = ["mon", "tue", "wed", "thu", "fri"]
+        time_windows = journey.get_time_settings()
+        if time_windows and time_windows[0].get("days"):
+            active_days = time_windows[0]["days"]
+
+        # Check for direct walking link between endpoints
+        direct_walk = Walking.find_walking_route(
+            journey.from_type, journey.from_id, journey.to_type, journey.to_id
+        )
+        if direct_walk:
+            walk_min = direct_walk.time_needed_minutes
+            route_name = f"Direct Walk ({walk_min}m)"
+            legs_data = [
+                {
+                    "stage_index": 1,
+                    "step_index": 1,
+                    "leg_type": "walk",
+                    "from_type": journey.from_type,
+                    "from_id": journey.from_id,
+                    "from_name": journey.from_name,
+                    "to_type": journey.to_type,
+                    "to_id": journey.to_id,
+                    "to_name": journey.to_name,
+                    "duration_minutes": walk_min,
+                    "distance_m": 0,
+                }
+            ]
+            saved_walk = JourneyRoute.create(
+                journey_id=journey.id,
+                name=route_name,
+                is_preferred=True,
+                is_enabled=True,
+                auto_generated=True,
+                total_duration_est_minutes=walk_min,
+                transfer_count=0,
+                stages_count=1,
+                primary_mode="walk",
+                legs=legs_data,
+                active_days=active_days,
+                summary_text=f"Walk ({walk_min}m)",
+            )
+            persisted_routes.append(saved_walk)
+            parsed_summary.append(
+                {
+                    "route_id": saved_walk.id,
+                    "name": route_name,
+                    "duration_minutes": walk_min,
+                    "primary_mode": "walk",
+                    "transfer_count": 0,
+                }
+            )
+
         if origin_lat is None or origin_lng is None:
+            if persisted_routes:
+                journey.set_calculated_routes([r.to_dict() for r in persisted_routes])
+                journey.save()
+                return persisted_routes
             logger.warning(
                 "Cannot compute routes for journey %d: origin coordinates unresolved.",
                 journey.id,
             )
             return []
         if dest_lat is None or dest_lng is None:
+            if persisted_routes:
+                journey.set_calculated_routes([r.to_dict() for r in persisted_routes])
+                journey.save()
+                return persisted_routes
             logger.warning(
                 "Cannot compute routes for journey %d: destination coordinates unresolved.",
                 journey.id,
@@ -192,6 +261,10 @@ class CorridorLearner:
             logger.info(
                 "Google Maps API key not configured. Skipping corridor discovery."
             )
+            if persisted_routes:
+                journey.set_calculated_routes([r.to_dict() for r in persisted_routes])
+                journey.save()
+                return persisted_routes
             return []
         except Exception as exc:
             logger.warning(
@@ -199,6 +272,10 @@ class CorridorLearner:
                 journey.id,
                 exc,
             )
+            if persisted_routes:
+                journey.set_calculated_routes([r.to_dict() for r in persisted_routes])
+                journey.save()
+                return persisted_routes
             return []
 
         routes = raw_response.get("routes", [])
@@ -217,8 +294,13 @@ class CorridorLearner:
                 dest_lng=dest_lng,
                 departure_time=str(departure_time) if departure_time else None,
                 raw_response=raw_response,
-                parsed_summary=[],
+                parsed_summary=parsed_summary,
+                selected_route_id=persisted_routes[0].id if persisted_routes else None,
             )
+            if persisted_routes:
+                journey.set_calculated_routes([r.to_dict() for r in persisted_routes])
+                journey.save()
+                return persisted_routes
             return []
 
         # Audit log creation
@@ -235,19 +317,10 @@ class CorridorLearner:
             parsed_summary=[],
         )
 
-        if replace_existing:
-            JourneyRoute.delete().where(
-                (JourneyRoute.journey_id == journey.id)
-                & (JourneyRoute.auto_generated == True)  # noqa: E712
-            ).execute()
-
-        persisted_routes: List[JourneyRoute] = []
-        parsed_summary: List[Dict[str, Any]] = []
-
-        active_days = ["mon", "tue", "wed", "thu", "fri"]
-        time_windows = journey.get_time_settings()
-        if time_windows and time_windows[0].get("days"):
-            active_days = time_windows[0]["days"]
+        if routes and persisted_routes:
+            for r in persisted_routes:
+                r.is_preferred = False
+                r.save()
 
         for route_idx, route in enumerate(routes):
             total_duration_sec = parse_duration_seconds(route.get("duration"))

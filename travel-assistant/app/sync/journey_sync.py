@@ -7,91 +7,14 @@ topological route discovery (Mode 1), and persists discovered route templates.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from flask import Flask
 
 from app.models import Journey
-from app.services.planner import (
-    JourneyPlanningError,
-    RouteTemplate,
-    VALID_DAYS,
-    find_routes,
-    prune_route_templates,
-)
+from app.services.corridor_learner import CorridorLearner
 from app.sync.common import run_sync_task
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_routes_for_journey(journey: Journey) -> Optional[List[RouteTemplate]]:
-    """Discover viable multi-modal route templates for a single configured journey.
-
-    Evaluates configured time-setting windows separately if present, or evaluates
-    across all standard operating days. Candidate routes across windows are merged
-    and pruned.
-
-    Args:
-        journey: The Journey model instance to compute routes for.
-
-    Returns:
-        List of non-dominated RouteTemplate instances, or None if no routes exist.
-    """
-    time_windows = journey.get_time_settings()
-    candidate_routes: List[RouteTemplate] = []
-
-    if time_windows:
-        for tw in time_windows:
-            days = tw.get("days", [])
-            if not days:
-                days = list(VALID_DAYS)
-            start_time = tw.get("start_time")
-            end_time = tw.get("end_time")
-            mode = tw.get("mode")
-            try:
-                routes = find_routes(
-                    from_type=journey.from_type,
-                    from_id=journey.from_id,
-                    to_type=journey.to_type,
-                    to_id=journey.to_id,
-                    days_of_week=days,
-                    start_time=start_time,
-                    end_time=end_time,
-                    timing_mode=mode,
-                )
-                candidate_routes.extend(routes)
-            except JourneyPlanningError as err:
-                logger.warning(
-                    "No route corridor for journey %d ('%s') on days %s (%s-%s): %s",
-                    journey.id,
-                    journey.name,
-                    days,
-                    start_time,
-                    end_time,
-                    err.message,
-                )
-    else:
-        try:
-            routes = find_routes(
-                from_type=journey.from_type,
-                from_id=journey.from_id,
-                to_type=journey.to_type,
-                to_id=journey.to_id,
-                days_of_week=list(VALID_DAYS),
-            )
-            candidate_routes.extend(routes)
-        except JourneyPlanningError as err:
-            logger.warning(
-                "No route corridor for journey %d ('%s') across all days: %s",
-                journey.id,
-                journey.name,
-                err.message,
-            )
-
-    if not candidate_routes:
-        return None
-
-    pruned = prune_route_templates(candidate_routes, max_routes=50)
-    return pruned if pruned else None
 
 
 def sync_journey_routes(
@@ -100,7 +23,7 @@ def sync_journey_routes(
     """Discover and populate calculated route templates for pending journeys.
 
     Queries journeys where ``calculated_routes`` is NULL (or all journeys if ``force=True``),
-    performs topological route discovery, and saves the serialised route templates.
+    performs corridor discovery via Google Routes API, and persists discovered templates.
 
     Args:
         app: Optional Flask application context.
@@ -122,41 +45,24 @@ def sync_journey_routes(
             return 0
 
         logger.info(
-            "Evaluating multi-modal topological route corridors for %d pending journey(s)...",
+            "Evaluating multi-modal transit corridors for %d pending journey(s)...",
             len(pending_journeys),
         )
         calculated_count = 0
+        learner = CorridorLearner()
         for journey in pending_journeys:
             try:
-                # 1. Attempt automated corridor discovery via Google Routes API
-                from app.services.corridor_learner import CorridorLearner
-
-                learner = CorridorLearner()
-                google_routes = learner.discover_and_persist_corridors(
+                discovered_routes = learner.discover_and_persist_corridors(
                     journey,
                     query_type="initial_discovery",
                     trigger_reason="automated_journey_sync",
+                    replace_existing=force,
                 )
-                if google_routes:
+                if discovered_routes:
                     calculated_count += 1
                     logger.info(
-                        "Successfully discovered %d Google Routes corridor(s) for journey %d ('%s').",
-                        len(google_routes),
-                        journey.id,
-                        journey.name,
-                    )
-                    continue
-
-                # 2. Fall back to local topological route calculation if Google API unavailable
-                routes = calculate_routes_for_journey(journey)
-                if routes:
-                    serialized_routes = [r.model_dump() for r in routes]
-                    journey.set_calculated_routes(serialized_routes)
-                    journey.save()
-                    calculated_count += 1
-                    logger.info(
-                        "Successfully calculated %d route(s) for journey %d ('%s').",
-                        len(routes),
+                        "Successfully discovered %d corridor(s) for journey %d ('%s').",
+                        len(discovered_routes),
                         journey.id,
                         journey.name,
                     )
@@ -172,7 +78,7 @@ def sync_journey_routes(
                         else f"{journey.to_type}:{journey.to_id}"
                     )
                     logger.warning(
-                        "No viable routes could be calculated for journey %d ('%s') between %s and %s.",
+                        "No viable corridors could be discovered for journey %d ('%s') between %s and %s.",
                         journey.id,
                         journey.name,
                         orig_str,
@@ -180,7 +86,7 @@ def sync_journey_routes(
                     )
             except Exception as exc:
                 logger.warning(
-                    "Unexpected error calculating routes for journey %d ('%s'): %s",
+                    "Unexpected error discovering corridors for journey %d ('%s'): %s",
                     journey.id,
                     journey.name,
                     exc,
@@ -199,6 +105,5 @@ def sync_journey_routes(
 
 
 __all__ = [
-    "calculate_routes_for_journey",
     "sync_journey_routes",
 ]

@@ -15,17 +15,16 @@ from app.services.planner.exceptions import (
     NoTripsInWindowError,
 )
 from app.services.planner.raptor import plan_journey
-from app.services.planner.route_finder import find_routes
 
 
 def test_error_invalid_endpoints(seeded_planner: Flask) -> None:
     """Verify InvalidEndpointError and same origin/destination errors."""
     with seeded_planner.app_context():
         with pytest.raises(InvalidEndpointError):
-            find_routes("", "", "rail", "9100EUSTON")
+            plan_journey("", "", "rail", "9100EUSTON")
 
         with pytest.raises(JourneyPlanningError) as exc_info:
-            find_routes("rail", "9100EUSTON", "rail", "9100EUSTON")
+            plan_journey("rail", "9100EUSTON", "rail", "9100EUSTON")
         assert exc_info.value.code == JourneyPlanningErrorCode.SAME_ORIGIN_DESTINATION
 
 
@@ -33,7 +32,7 @@ def test_error_no_access_stops(seeded_planner: Flask) -> None:
     """Verify NoAccessStopsError when endpoint has no walking connections."""
     with seeded_planner.app_context():
         with pytest.raises(NoAccessStopsError) as exc_info:
-            find_routes("custom", "custom:isolated_spot", "rail", "9100EUSTON")
+            plan_journey("custom", "custom:isolated_spot", "rail", "9100EUSTON")
         assert exc_info.value.code == JourneyPlanningErrorCode.NO_ACCESS_STOPS
         assert "isolated_spot" in exc_info.value.message
 
@@ -41,9 +40,10 @@ def test_error_no_access_stops(seeded_planner: Flask) -> None:
 def test_error_no_corridor_path(seeded_planner: Flask) -> None:
     """Verify NoCorridorPathError when no transit services connect the access stops."""
     with seeded_planner.app_context():
-        with pytest.raises(NoCorridorPathError) as exc_info:
-            find_routes("rail", "9100FPK", "rail", "9100MNCR", days_of_week=["mon"])
-        assert exc_info.value.code == JourneyPlanningErrorCode.NO_CORRIDOR_PATH
+        with pytest.raises(
+            (NoCorridorPathError, NoTripsInWindowError, NoServicesOnDayError)
+        ):
+            plan_journey("rail", "9100FPK", "rail", "9100MNCR", days_of_week=["mon"])
 
 
 def test_error_no_services_on_day(seeded_planner: Flask) -> None:

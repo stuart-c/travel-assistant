@@ -243,3 +243,52 @@ def test_discover_and_persist_corridors_empty_response() -> None:
     logs = list(RouteQueryLog.select().where(RouteQueryLog.journey_id == journey.id))
     assert len(logs) == 1
     assert logs[0].raw_response == {"routes": []}
+
+
+def test_discover_and_persist_corridors_direct_walk() -> None:
+    """Test discovering and persisting direct walking connection."""
+    Location.create(
+        id="ha:home_residence",
+        name="Home Residence",
+        location_type="ha",
+        latitude=51.5308,
+        longitude=-0.1238,
+    )
+    Location.create(
+        id="custom:corner_shop",
+        name="Corner Shop",
+        location_type="custom",
+        latitude=51.5315,
+        longitude=-0.1245,
+    )
+    Walking.create(
+        start_type="ha",
+        start_id="ha:home_residence",
+        start_name="Home Residence",
+        finish_type="custom",
+        finish_id="custom:corner_shop",
+        finish_name="Corner Shop",
+        time_needed_minutes=5,
+        bidirectional=True,
+    )
+
+    journey = Journey.create(
+        name="Quick Walk",
+        from_type="ha",
+        from_id="ha:home_residence",
+        from_name="Home Residence",
+        to_type="custom",
+        to_id="custom:corner_shop",
+        to_name="Corner Shop",
+    )
+
+    # Even without a Google Maps client, direct walk is persisted
+    learner = CorridorLearner()
+    routes = learner.discover_and_persist_corridors(journey)
+
+    assert len(routes) == 1
+    assert routes[0].primary_mode == "walk"
+    assert routes[0].total_duration_est_minutes == 5
+    assert routes[0].is_preferred is True
+    assert len(routes[0].legs) == 1
+    assert routes[0].legs[0]["duration_minutes"] == 5

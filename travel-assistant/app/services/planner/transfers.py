@@ -29,6 +29,43 @@ def normalise_id(raw_id: str) -> str:
     return s
 
 
+def extract_route_base_name(line_name: Optional[str]) -> str:
+    """Extract normalised base route identifier from a line or service name.
+
+    Examples:
+        "Bus SB1: Woodcock Road to Bus Station" -> "sb1"
+        "Bus 37X: The Crown Inn to Bus Station" -> "37x"
+        "Route 73" -> "73"
+        "Bus 73" -> "73"
+        "Rail: London to Cambridge" -> "london to cambridge"
+    """
+    if not line_name:
+        return ""
+    name = str(line_name).strip()
+    for mode_prefix in ("rail:", "train:", "bus:", "coach:"):
+        if name.lower().startswith(mode_prefix):
+            name = name[len(mode_prefix) :].strip()
+
+    if ":" in name:
+        prefix_part = name.split(":", 1)[0].strip()
+        for p in ("bus ", "route ", "line "):
+            if prefix_part.lower().startswith(p):
+                prefix_part = prefix_part[len(p) :].strip()
+        if (
+            prefix_part
+            and len(prefix_part) <= 20
+            and prefix_part.lower() not in ("rail", "train")
+            and " to " not in prefix_part.lower()
+        ):
+            return prefix_part.lower()
+        name = name.split(":", 1)[1].strip()
+
+    for prefix in ("bus ", "route ", "line "):
+        if name.lower().startswith(prefix):
+            name = name[len(prefix) :].strip()
+    return name.lower()
+
+
 def resolve_endpoint_name(endpoint_type: str, endpoint_id: str) -> str:
     """Resolve human-readable name for a location, stop, or station endpoint."""
     t = str(endpoint_type).strip().lower()

@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.services.planner.raptor.models import _ParsedTrip
-from app.services.planner.route_finder import extract_route_base_name
-from app.services.planner.transfers import normalise_id
+from app.services.planner.transfers import extract_route_base_name, normalise_id
 
 
 def _is_invalid_transfer(
