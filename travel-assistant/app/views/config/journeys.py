@@ -1,9 +1,13 @@
 """Journeys configuration endpoints."""
 
 from typing import Any, Dict, Optional
+from flask import jsonify
 
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
+from app.models.journey_route import JourneyRoute
+from app.models.route_query_log import RouteQueryLog
+from app.services.corridor_learner import CorridorLearner
 from app.sync.worker import request_sync
 from app.views.config import config_bp
 from app.views.config.common import (
@@ -117,3 +121,70 @@ register_config_page(
         post_save_hook=_trigger_syncs_if_changed,
     ),
 )
+
+
+@config_bp.route("/journeys/<int:journey_id>/discover", methods=["POST"])
+def discover_journey_corridors(journey_id: int) -> Any:
+    """Trigger on-demand transit corridor discovery for a specific journey."""
+    journey = Journey.get_or_none(Journey.id == journey_id)
+    if not journey:
+        return jsonify({"error": f"Journey {journey_id} not found."}), 404
+
+    learner = CorridorLearner()
+    routes = learner.discover_and_persist_corridors(
+        journey=journey,
+        query_type="manual_refresh",
+        trigger_reason="manual_ui_trigger",
+        replace_existing=True,
+    )
+    return jsonify(
+        {
+            "success": True,
+            "journey_id": journey_id,
+            "count": len(routes),
+            "routes": [r.to_dict() for r in routes],
+        }
+    )
+
+
+@config_bp.route("/journeys/<int:journey_id>/routes", methods=["GET"])
+def get_journey_routes(journey_id: int) -> Any:
+    """Retrieve persisted JourneyRoute templates for a journey."""
+    routes = list(
+        JourneyRoute.select()
+        .where(
+            (JourneyRoute.journey_id == journey_id)
+            & (JourneyRoute.is_enabled == True)  # noqa: E712
+        )
+        .order_by(
+            JourneyRoute.is_preferred.desc(),
+            JourneyRoute.total_duration_est_minutes.asc(),
+        )
+    )
+    return jsonify(
+        {
+            "success": True,
+            "journey_id": journey_id,
+            "count": len(routes),
+            "routes": [r.to_dict() for r in routes],
+        }
+    )
+
+
+@config_bp.route("/journeys/<int:journey_id>/queries", methods=["GET"])
+def get_journey_queries(journey_id: int) -> Any:
+    """Retrieve audit history of routing API queries for a journey."""
+    queries = list(
+        RouteQueryLog.select()
+        .where(RouteQueryLog.journey_id == journey_id)
+        .order_by(RouteQueryLog.created_at.desc())
+        .limit(20)
+    )
+    return jsonify(
+        {
+            "success": True,
+            "journey_id": journey_id,
+            "count": len(queries),
+            "queries": [q.to_dict() for q in queries],
+        }
+    )

@@ -1,8 +1,8 @@
-"""Client library for Google Maps Platform APIs (Geocoding, Distance Matrix, Directions)."""
-
+import datetime
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 import googlemaps
+import requests
 from googlemaps.exceptions import (
     ApiError as GoogleMapsApiError,
     HTTPError as GoogleMapsHTTPError,
@@ -335,6 +335,124 @@ class GoogleMapsClient(BaseDataSource):
             raise DataSourceConnectionError(
                 f"Google Maps directions connection error: {e}",
                 provider=self.provider_name,
+            ) from e
+
+    def compute_transit_routes(
+        self,
+        origin: Tuple[float, float],
+        destination: Tuple[float, float],
+        departure_time: Optional[Union[datetime.datetime, str]] = None,
+        arrival_time: Optional[Union[datetime.datetime, str]] = None,
+        compute_alternative_routes: bool = True,
+    ) -> Dict[str, Any]:
+        """Compute transit routes between coordinates using Google Routes API v2.
+
+        Args:
+            origin: (latitude, longitude) coordinate tuple of departure point.
+            destination: (latitude, longitude) coordinate tuple of arrival point.
+            departure_time: Optional departure datetime or RFC3339 string.
+            arrival_time: Optional arrival datetime or RFC3339 string.
+            compute_alternative_routes: Whether to request alternative routes.
+
+        Returns:
+            Dict containing raw Google Routes API response JSON.
+
+        Raises:
+            DataSourceConfigError: If API key is missing.
+            DataSourceAuthError: If authentication/quota is denied.
+            DataSourceRateLimitError: If rate limit exceeded.
+            DataSourceConnectionError: If network request times out or fails.
+            DataSourceError: For any other API error.
+        """
+        if not self.api_key:
+            raise DataSourceConfigError(
+                "Google Maps API key is not configured.", provider=self.provider_name
+            )
+
+        url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": (
+                "routes.duration,"
+                "routes.distanceMeters,"
+                "routes.description,"
+                "routes.legs.duration,"
+                "routes.legs.distanceMeters,"
+                "routes.legs.polyline,"
+                "routes.legs.steps"
+            ),
+        }
+
+        body: Dict[str, Any] = {
+            "origin": {
+                "location": {
+                    "latLng": {
+                        "latitude": float(origin[0]),
+                        "longitude": float(origin[1]),
+                    }
+                }
+            },
+            "destination": {
+                "location": {
+                    "latLng": {
+                        "latitude": float(destination[0]),
+                        "longitude": float(destination[1]),
+                    }
+                }
+            },
+            "travelMode": "TRANSIT",
+            "computeAlternativeRoutes": bool(compute_alternative_routes),
+        }
+
+        if departure_time:
+            if isinstance(departure_time, datetime.datetime):
+                body["departureTime"] = departure_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                body["departureTime"] = str(departure_time)
+        elif arrival_time:
+            if isinstance(arrival_time, datetime.datetime):
+                body["arrivalTime"] = arrival_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                body["arrivalTime"] = str(arrival_time)
+        else:
+            body["departureTime"] = datetime.datetime.utcnow().strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+
+        try:
+            resp = requests.post(url, json=body, headers=headers, timeout=self.timeout)
+            if resp.status_code == 200:
+                return resp.json()
+
+            data: Dict[str, Any] = {}
+            try:
+                data = resp.json()
+            except Exception:
+                pass
+            msg = data.get("error", {}).get("message", resp.text)
+
+            if resp.status_code in (401, 403):
+                raise DataSourceAuthError(
+                    f"Google Routes API authentication error: {msg}",
+                    provider=self.provider_name,
+                )
+            if resp.status_code == 429:
+                raise DataSourceRateLimitError(
+                    f"Google Routes API rate limit exceeded: {msg}",
+                    provider=self.provider_name,
+                )
+            raise DataSourceError(
+                f"Google Routes API error ({resp.status_code}): {msg}",
+                provider=self.provider_name,
+            )
+        except requests.Timeout as e:
+            raise DataSourceConnectionError(
+                f"Google Routes API timeout: {e}", provider=self.provider_name
+            ) from e
+        except requests.RequestException as e:
+            raise DataSourceConnectionError(
+                f"Google Routes API connection error: {e}", provider=self.provider_name
             ) from e
 
     def _handle_api_error(self, err: GoogleMapsApiError) -> None:

@@ -77,6 +77,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const routesSummaryText = document.getElementById('journey-routes-summary-text');
   const routesEmptyState = document.getElementById('journey-routes-empty-state');
   const routesFitBtn = document.getElementById('journey-routes-fit-btn');
+  const journeyDiscoverBtn = document.getElementById('journey-discover-btn');
+  const routeCardsContainer = document.getElementById('journey-routes-cards-container');
+  const queriesDetails = document.getElementById('journey-queries-details');
+  const queriesCount = document.getElementById('journey-queries-count');
+  const queriesList = document.getElementById('journey-queries-list');
 
   const escapeHtml = (window.TransitUI && window.TransitUI.escapeHtml) || ((str) => (str ? String(str) : ''));
   const getLocationBadge = (window.TransitUI && window.TransitUI.getTransportBadge) || ((type) => type);
@@ -149,30 +154,23 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `),
         gridjs.html(scheduleHtml),
-        gridjs.html(
-          window.TransitUI && window.TransitUI.renderActionButtons
-            ? window.TransitUI.renderActionButtons({
-                index,
-                editClass: 'edit-journey-btn',
-                deleteClass: 'delete-journey-btn',
-                editTitle: 'Edit journey',
-                deleteTitle: 'Delete journey',
-              })
-            : `<div class="flex items-center gap-1.5">
-                <button type="button" class="edit-journey-btn w-7 h-7 rounded-lg bg-sky-50 text-sky-600 cursor-pointer" data-index="${index}"><span class="material-symbols-outlined text-[17px]">edit</span></button>
-                <button type="button" class="delete-journey-btn w-7 h-7 rounded-lg bg-rose-50 text-rose-600 cursor-pointer" data-index="${index}"><span class="material-symbols-outlined text-[17px]">delete</span></button>
-              </div>`
-        ),
+        gridjs.html(`
+          <div class="flex items-center gap-1.5">
+            <button type="button" class="discover-journey-btn w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 cursor-pointer" data-index="${index}" title="Discover corridors via Google"><span class="material-symbols-outlined text-[17px]">auto_awesome</span></button>
+            <button type="button" class="edit-journey-btn w-7 h-7 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 cursor-pointer" data-index="${index}" title="Edit journey"><span class="material-symbols-outlined text-[17px]">edit</span></button>
+            <button type="button" class="delete-journey-btn w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer" data-index="${index}" title="Delete journey"><span class="material-symbols-outlined text-[17px]">delete</span></button>
+          </div>
+        `),
       ];
     });
   }
 
   const columnsConfig = [
-    { name: 'Journey', width: '26%', sort: true },
-    { name: 'Start Location', width: '23%', sort: true },
-    { name: 'End Location', width: '23%', sort: true },
-    { name: 'Schedule', width: '20%', sort: false },
-    { name: 'Actions', width: '90px', sort: false },
+    { name: 'Journey', width: '25%', sort: true },
+    { name: 'Start Location', width: '22%', sort: true },
+    { name: 'End Location', width: '22%', sort: true },
+    { name: 'Schedule', width: '19%', sort: false },
+    { name: 'Actions', width: '120px', sort: false },
   ];
 
   const columnSortMap = {
@@ -520,6 +518,189 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function renderJourneyRouteCards(routes) {
+    if (!routeCardsContainer) return;
+    if (!routes || !routes.length) {
+      routeCardsContainer.innerHTML = '';
+      return;
+    }
+
+    routeCardsContainer.innerHTML = routes
+      .map((r, idx) => {
+        const preferredBadge = r.is_preferred
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+               <span class="material-symbols-outlined text-xs">star</span> Primary Route
+             </span>`
+          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+               Alternative ${idx}
+             </span>`;
+
+        const modeIcon =
+          r.primary_mode === 'train' || r.primary_mode === 'rail'
+            ? 'train'
+            : r.primary_mode === 'bus'
+            ? 'directions_bus'
+            : 'alt_route';
+
+        const legsHtml = Array.isArray(r.legs)
+          ? r.legs
+              .map((l) => {
+                const legMode = escapeHtml(l.mode || 'transit');
+                const lineName = l.line
+                  ? `<span class="font-bold ml-1">${escapeHtml(l.line)}</span>`
+                  : '';
+                return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-300">
+                  ${legMode}${lineName}
+                </span>`;
+              })
+              .join('<span class="text-slate-400 text-xs">→</span>')
+          : '';
+
+        return `
+          <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 shadow-xs flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-slate-500 text-base">${modeIcon}</span>
+                <span class="font-semibold text-xs text-slate-800 dark:text-slate-200">${escapeHtml(r.name || 'Route Option')}</span>
+                ${preferredBadge}
+              </div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                ~${r.total_duration_est_minutes || 0} mins · ${r.transfer_count || 0} transfers
+              </div>
+            </div>
+            ${legsHtml ? `<div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">${legsHtml}</div>` : ''}
+            ${r.summary_text ? `<p class="text-[11px] text-slate-500 dark:text-slate-400">${escapeHtml(r.summary_text)}</p>` : ''}
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderQueryAuditHistory(queries) {
+    if (queriesCount) {
+      queriesCount.textContent = String(queries ? queries.length : 0);
+    }
+    if (!queriesList) return;
+
+    if (!queries || !queries.length) {
+      queriesList.innerHTML =
+        '<p class="text-xs text-slate-400 dark:text-slate-500 py-1">No routing API queries recorded for this journey yet.</p>';
+      return;
+    }
+
+    queriesList.innerHTML = queries
+      .map((q) => {
+        const typeBadge =
+          q.query_type === 'live_disruption_reroute'
+            ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">Live Reroute</span>'
+            : q.query_type === 'manual_refresh'
+            ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300">Manual Refresh</span>'
+            : '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Initial Discovery</span>';
+
+        const dateStr = q.created_at
+          ? new Date(q.created_at).toLocaleString('en-GB')
+          : 'Unknown date';
+        const parsedCount = Array.isArray(q.parsed_summary)
+          ? q.parsed_summary.length
+          : 0;
+
+        return `
+          <div class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-xs">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                ${typeBadge}
+                <span class="text-slate-500 dark:text-slate-400 font-mono text-[11px]">${escapeHtml(dateStr)}</span>
+              </div>
+              <span class="text-slate-500 dark:text-slate-400 text-[11px]">${parsedCount} route option(s) discovered</span>
+            </div>
+            ${q.trigger_reason ? `<div class="mt-1 text-[11px] text-slate-600 dark:text-slate-300">Reason: ${escapeHtml(q.trigger_reason)}</div>` : ''}
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  async function loadJourneyRouteCardsAndQueries(journeyId) {
+    if (!journeyId || journeyId <= 0) {
+      if (routeCardsContainer) routeCardsContainer.innerHTML = '';
+      if (queriesCount) queriesCount.textContent = '0';
+      if (queriesList) {
+        queriesList.innerHTML =
+          '<p class="text-xs text-slate-400 dark:text-slate-500 py-1">Save this journey to view routes and query history.</p>';
+      }
+      return;
+    }
+
+    try {
+      const [routesRes, queriesRes] = await Promise.all([
+        fetch(`/config/journeys/${journeyId}/routes`),
+        fetch(`/config/journeys/${journeyId}/queries`),
+      ]);
+
+      if (routesRes.ok) {
+        const routesData = await routesRes.json();
+        renderJourneyRouteCards(routesData.routes || []);
+      }
+      if (queriesRes.ok) {
+        const queriesData = await queriesRes.json();
+        renderQueryAuditHistory(queriesData.queries || []);
+      }
+    } catch (err) {
+      console.error('Error fetching journey routes and audit logs:', err);
+    }
+  }
+
+  if (journeyDiscoverBtn) {
+    journeyDiscoverBtn.addEventListener('click', async () => {
+      const editIndex = parseInt(editIndexInput.value, 10);
+      let journeyId = null;
+      let journeyItem = null;
+      if (editIndex >= 0 && editIndex < currentPageItems.length) {
+        journeyItem = currentPageItems[editIndex];
+        journeyId = journeyItem?.id;
+      }
+
+      if (!journeyId || journeyId <= 0) {
+        alert('Please save the journey first before discovering corridors.');
+        return;
+      }
+
+      const origHtml = journeyDiscoverBtn.innerHTML;
+      journeyDiscoverBtn.disabled = true;
+      journeyDiscoverBtn.innerHTML = `
+        <span class="material-symbols-outlined text-sm animate-spin">refresh</span>
+        <span>Discovering...</span>
+      `;
+
+      try {
+        const res = await fetch(`/config/journeys/${journeyId}/discover`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to discover routes');
+        }
+
+        const data = await res.json();
+        if (journeyItem) {
+          journeyItem.calculated_routes = data.routes || [];
+        }
+
+        setRoutesTabState(true, data.routes || [], journeyItem);
+        await loadJourneyRouteCardsAndQueries(journeyId);
+        gridInstance.forceRender();
+      } catch (err) {
+        console.error('Error discovering journey corridors:', err);
+        alert('Corridor discovery failed: ' + (err.message || 'Unknown error'));
+      } finally {
+        journeyDiscoverBtn.disabled = false;
+        journeyDiscoverBtn.innerHTML = origHtml;
+      }
+    });
+  }
+
   if (tabDetails) tabDetails.addEventListener('click', () => switchTab('details'));
   if (tabRoutes) tabRoutes.addEventListener('click', () => switchTab('routes'));
 
@@ -535,6 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modalError.classList.add('hidden');
     switchTab('details');
     setRoutesTabState(false);
+    loadJourneyRouteCardsAndQueries(null);
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -595,6 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
       hasRoutesContent ? item.calculated_routes : null,
       item
     );
+    loadJourneyRouteCardsAndQueries(item.id);
 
     if (modal && typeof modal.showModal === 'function') {
       modal.showModal();
@@ -672,6 +855,45 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.addEventListener('click', (e) => {
+    const discBtn = e.target.closest('.discover-journey-btn');
+    if (discBtn) {
+      const idx = parseInt(discBtn.getAttribute('data-index'), 10);
+      if (!isNaN(idx) && idx >= 0 && idx < currentPageItems.length) {
+        const item = currentPageItems[idx];
+        if (!item || !item.id || item.id <= 0) {
+          alert('Please save changes first before discovering corridors.');
+          return;
+        }
+
+        const origHtml = discBtn.innerHTML;
+        discBtn.disabled = true;
+        discBtn.innerHTML =
+          '<span class="material-symbols-outlined text-[17px] animate-spin">refresh</span>';
+
+        fetch(`/config/journeys/${item.id}/discover`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error('Corridor discovery failed');
+            return res.json();
+          })
+          .then((data) => {
+            item.calculated_routes = data.routes || [];
+            gridInstance.forceRender();
+          })
+          .catch((err) => {
+            console.error('Error during corridor discovery:', err);
+            alert('Failed to discover corridors: ' + err.message);
+          })
+          .finally(() => {
+            discBtn.disabled = false;
+            discBtn.innerHTML = origHtml;
+          });
+      }
+      return;
+    }
+
     const editBtn = e.target.closest('.edit-journey-btn');
     if (editBtn) {
       const idx = parseInt(editBtn.getAttribute('data-index'), 10);

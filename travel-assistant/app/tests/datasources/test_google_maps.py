@@ -1,5 +1,6 @@
 """Unit tests for GoogleMapsClient."""
 
+import datetime
 from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
@@ -386,3 +387,118 @@ def test_google_maps_directions_success_and_errors() -> None:
     mock_sdk.directions.side_effect = GoogleMapsTransportError("Transport error")
     with pytest.raises(DataSourceConnectionError):
         client.directions((51.5, -0.1), (51.7, -1.2))
+
+
+def test_google_maps_compute_transit_routes_missing_key() -> None:
+    """Test compute_transit_routes raises DataSourceConfigError when API key is missing."""
+    client = GoogleMapsClient(api_key="")
+    with pytest.raises(DataSourceConfigError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))
+
+
+@patch("requests.post")
+def test_google_maps_compute_transit_routes_success(mock_post: MagicMock) -> None:
+    """Test compute_transit_routes successfully invokes Google Routes API v2."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "routes": [
+            {
+                "duration": "1200s",
+                "legs": [
+                    {
+                        "steps": [
+                            {"travelMode": "WALK"},
+                            {"travelMode": "TRANSIT"},
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    mock_post.return_value = mock_resp
+
+    client = GoogleMapsClient(api_key="test-key")
+    dep_dt = datetime.datetime(2026, 9, 26, 8, 30, 0)
+    res = client.compute_transit_routes(
+        origin=(51.5308, -0.1238),
+        destination=(51.5284, -0.1331),
+        departure_time=dep_dt,
+        compute_alternative_routes=True,
+    )
+
+    assert "routes" in res
+    assert len(res["routes"]) == 1
+    mock_post.assert_called_once()
+    _, kwargs = mock_post.call_args
+    assert kwargs["headers"]["X-Goog-Api-Key"] == "test-key"
+    assert kwargs["json"]["travelMode"] == "TRANSIT"
+    assert kwargs["json"]["departureTime"] == "2026-09-26T08:30:00Z"
+    assert kwargs["json"]["origin"]["location"]["latLng"]["latitude"] == 51.5308
+
+
+@patch("requests.post")
+def test_google_maps_compute_transit_routes_arrival_and_default_time(
+    mock_post: MagicMock,
+) -> None:
+    """Test compute_transit_routes handles arrival_time and default time."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"routes": []}
+    mock_post.return_value = mock_resp
+
+    client = GoogleMapsClient(api_key="test-key")
+    arr_dt = datetime.datetime(2026, 9, 26, 9, 0, 0)
+    client.compute_transit_routes(
+        origin=(51.53, -0.12),
+        destination=(51.52, -0.13),
+        arrival_time=arr_dt,
+    )
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["arrivalTime"] == "2026-09-26T09:00:00Z"
+
+    # Default time when neither specified
+    client.compute_transit_routes(
+        origin=(51.53, -0.12),
+        destination=(51.52, -0.13),
+    )
+    _, kwargs2 = mock_post.call_args
+    assert "departureTime" in kwargs2["json"]
+
+
+@patch("requests.post")
+def test_google_maps_compute_transit_routes_errors(mock_post: MagicMock) -> None:
+    """Test compute_transit_routes error responses."""
+    import requests
+
+    client = GoogleMapsClient(api_key="test-key")
+
+    # 401 / 403 Auth error
+    mock_resp = MagicMock()
+    mock_resp.status_code = 403
+    mock_resp.json.return_value = {"error": {"message": "Invalid API Key"}}
+    mock_post.return_value = mock_resp
+    with pytest.raises(DataSourceAuthError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))
+
+    # 429 Rate limit
+    mock_resp.status_code = 429
+    mock_resp.json.return_value = {"error": {"message": "Rate limit exceeded"}}
+    with pytest.raises(DataSourceRateLimitError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))
+
+    # 500 Generic API error
+    mock_resp.status_code = 500
+    mock_resp.json.return_value = {"error": {"message": "Internal error"}}
+    with pytest.raises(DataSourceError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))
+
+    # Timeout
+    mock_post.side_effect = requests.Timeout("Connection timed out")
+    with pytest.raises(DataSourceConnectionError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))
+
+    # RequestException
+    mock_post.side_effect = requests.RequestException("DNS lookup failed")
+    with pytest.raises(DataSourceConnectionError):
+        client.compute_transit_routes((51.53, -0.12), (51.52, -0.13))

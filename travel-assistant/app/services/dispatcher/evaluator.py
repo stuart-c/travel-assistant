@@ -49,6 +49,10 @@ class DepartureCandidate:
     original_dep_time: Optional[str] = None
     delay_reason: Optional[str] = None
     itinerary: Optional[Any] = None
+    is_cancelled: bool = False
+    cancel_reason: Optional[str] = None
+    requires_reroute: bool = False
+    reroute_reason: Optional[str] = None
 
 
 def get_journey_estimated_duration_minutes(
@@ -290,6 +294,22 @@ def apply_live_departure_adjustments(
 
                 candidate.delay_reason = _clean_delay_reason(str(raw_delay_reason))
 
+            if etd in ("Cancelled", "Delayed") or target_dep.get("isCancelled"):
+                if etd == "Cancelled" or target_dep.get("isCancelled"):
+                    candidate.is_cancelled = True
+                    raw_cancel_reason = target_dep.get("cancelReason")
+                    if raw_cancel_reason:
+                        from app.services.dispatcher.tracker import _clean_delay_reason
+
+                        candidate.cancel_reason = _clean_delay_reason(
+                            str(raw_cancel_reason)
+                        )
+                    candidate.requires_reroute = True
+                    candidate.reroute_reason = (
+                        f"Cancelled: {candidate.cancel_reason or 'Service cancelled'}"
+                    )
+                    candidate.is_live = True
+
             if std == candidate.transit_dep_time and etd and etd != "On time":
                 live_min = parse_time_to_minutes(etd)
                 if live_min is not None:
@@ -306,6 +326,11 @@ def apply_live_departure_adjustments(
                         candidate.leave_minutes - 15
                     )
                     candidate.is_live = True
+                    if delay >= 10:
+                        candidate.requires_reroute = True
+                        candidate.reroute_reason = (
+                            f"Delay of {delay}m exceeds 10m threshold"
+                        )
     except Exception as exc:
         logger.debug("Live departure probe skipped for %s: %s", crs, exc)
 
@@ -409,6 +434,44 @@ def find_next_departure_candidate(
 
         # Adjust for live feeds if available
         adjusted = apply_live_departure_adjustments(candidate, live_client)
+
+        if adjusted.is_cancelled:
+            try:
+                from app.services.reroute_engine import RerouteEngine
+
+                RerouteEngine(live_client=live_client).evaluate_and_reroute(
+                    journey=journey,
+                    trigger_reason=adjusted.reroute_reason or "Cancelled service",
+                    departure_time=dt,
+                )
+            except Exception as reroute_err:
+                logger.warning(
+                    "Reroute evaluation error on cancellation: %s", reroute_err
+                )
+            continue
+
+        if adjusted.delay_minutes >= 10 and adjusted.requires_reroute:
+            try:
+                from app.services.reroute_engine import RerouteEngine
+
+                rerouted, strategy = RerouteEngine(
+                    live_client=live_client
+                ).evaluate_and_reroute(
+                    journey=journey,
+                    trigger_reason=adjusted.reroute_reason or "Delay >= 10m",
+                    departure_time=dt,
+                )
+                if rerouted:
+                    logger.info(
+                        "Rerouted journey %d via %s due to %s",
+                        journey.id,
+                        strategy,
+                        adjusted.reroute_reason,
+                    )
+            except Exception as reroute_err:
+                logger.warning(
+                    "Reroute evaluation error on delay >= 10m: %s", reroute_err
+                )
 
         # Re-verify leave time after live adjustments
         if adjusted.leave_minutes < current_minutes + min_notice_minutes:

@@ -23,6 +23,8 @@ from app.models.transit import (
     SyncMetadata,
 )
 from app.models.mcp import MCPTool
+from app.models.journey_route import JourneyRoute
+from app.models.route_query_log import RouteQueryLog
 from app.models.walking import Walking
 
 ALL_MODELS = [
@@ -35,6 +37,8 @@ ALL_MODELS = [
     PlatformTransfer,
     Location,
     Journey,
+    JourneyRoute,
+    RouteQueryLog,
     Walking,
     MCPTool,
 ]
@@ -50,6 +54,8 @@ __all__ = [
     "TimetableContent",
     "Location",
     "Journey",
+    "JourneyRoute",
+    "RouteQueryLog",
     "JourneyTimeSetting",
     "Walking",
     "BusRoute",
