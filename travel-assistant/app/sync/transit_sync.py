@@ -177,6 +177,12 @@ def sync_train_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
             clear_raptor_cache()
             Journey.update(calculated_routes=None).execute()
 
+            from app.models.journey_route import JourneyRoute
+
+            JourneyRoute.delete().where(
+                JourneyRoute.auto_generated == True  # noqa: E712
+            ).execute()
+
             from app.sync.worker import request_sync
 
             logger.info(
@@ -343,6 +349,12 @@ def sync_bus_timetables(app: Optional[Flask] = None) -> Dict[str, Any]:
 
             clear_raptor_cache()
             Journey.update(calculated_routes=None).execute()
+
+            from app.models.journey_route import JourneyRoute
+
+            JourneyRoute.delete().where(
+                JourneyRoute.auto_generated == True  # noqa: E712
+            ).execute()
 
             from app.sync.worker import request_sync
 

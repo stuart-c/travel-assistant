@@ -61,11 +61,20 @@ def get_journey_estimated_duration_minutes(
 ) -> int:
     """Estimate journey duration in minutes from calculated routes or fallback default."""
     try:
-        routes = journey.get_calculated_routes()
-        if routes and isinstance(routes, list):
+        routes = journey.get_routes(enabled_only=True)
+        if routes:
+            durations = [
+                int(r.total_duration_est_minutes)
+                for r in routes
+                if r.total_duration_est_minutes is not None
+            ]
+            if durations:
+                return max(max(durations), 60)
+        calc_routes = journey.get_calculated_routes()
+        if calc_routes and isinstance(calc_routes, list):
             durations = [
                 int(r.get("total_duration_est_minutes"))
-                for r in routes
+                for r in calc_routes
                 if isinstance(r, dict)
                 and r.get("total_duration_est_minutes") is not None
             ]

@@ -4,47 +4,6 @@ from typing import List, Optional
 from pydantic import BaseModel as PydanticBaseModel, ConfigDict, Field
 
 
-class RouteLeg(PydanticBaseModel):
-    """A single leg or transit step within a topological RouteTemplate."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    stage_index: int
-    step_index: int
-    leg_type: str  # "walk", "transit", "interchange", "platform_transfer"
-    from_type: str
-    from_id: str
-    from_name: str
-    to_type: str
-    to_id: str
-    to_name: str
-    duration_minutes: int
-    distance_m: Optional[int] = None
-    transport_mode: Optional[str] = (
-        None  # "bus", "rail", "metro", "tram", "ferry", "walk"
-    )
-    line_name: Optional[str] = None
-    operator_name: Optional[str] = None
-    stops_count: Optional[int] = None
-    timetable_id: Optional[int] = None
-
-
-class RouteTemplate(PydanticBaseModel):
-    """Topological route corridor template discovered connecting origin to destination."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    corridor_id: str
-    name: str
-    summary_text: str
-    primary_mode: str = "bus"
-    total_duration_est_minutes: int = 0
-    transfer_count: int = 0
-    stages_count: int = 1
-    active_days: List[str] = Field(default_factory=list)
-    legs: List[RouteLeg] = Field(default_factory=list)
-
-
 class ItineraryEndpoint(PydanticBaseModel):
     """Origin or destination node within a scheduled itinerary leg."""
 
@@ -88,8 +47,6 @@ class ScheduledItinerary(PydanticBaseModel):
 
 
 __all__ = [
-    "RouteLeg",
-    "RouteTemplate",
     "ItineraryEndpoint",
     "ItineraryLeg",
     "ScheduledItinerary",

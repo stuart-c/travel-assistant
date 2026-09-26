@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import time
-from typing import List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from app.models.walking import Walking
 from app.services.planner.exceptions import (
@@ -32,7 +33,9 @@ from app.services.planner.raptor.trips import (
     _build_stop_to_trips,
     _extract_parsed_trips,
 )
+from app.services.planner.raptor.models import _ParsedTrip
 from app.services.planner.transfers import (
+    extract_route_base_name,
     format_minutes_to_time,
     get_access_edges,
     get_active_timetables,
@@ -41,6 +44,119 @@ from app.services.planner.transfers import (
     resolve_active_days_and_date,
     resolve_endpoint_name,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _evaluate_corridor_itinerary(
+    legs_data: List[Dict[str, Any]],
+    dep_time_min: int,
+    stop_to_trips: Dict[str, List[_ParsedTrip]],
+    min_transfer_min: int = 3,
+) -> Optional[ScheduledItinerary]:
+    """Directly evaluate scheduled timetable departures along a known route corridor."""
+    if not legs_data:
+        return None
+
+    current_time = dep_time_min
+    itinerary_legs: List[ItineraryLeg] = []
+    transit_count = 0
+
+    for leg_idx, leg in enumerate(legs_data):
+        leg_type = leg.get("leg_type", "walk")
+        from_id = str(leg.get("from_id", ""))
+        from_name = str(leg.get("from_name", from_id))
+        to_id = str(leg.get("to_id", ""))
+        to_name = str(leg.get("to_name", to_id))
+
+        if leg_type == "walk":
+            walk_dur = int(leg.get("duration_minutes", 1) or 1)
+            arr_t = current_time + walk_dur
+            itinerary_legs.append(
+                ItineraryLeg(
+                    leg_index=leg_idx + 1,
+                    mode="walk",
+                    origin=ItineraryEndpoint(id=from_id, name=from_name),
+                    destination=ItineraryEndpoint(id=to_id, name=to_name),
+                    dep_time=format_minutes_to_time(current_time),
+                    arr_time=format_minutes_to_time(arr_t),
+                    duration_minutes=walk_dur,
+                )
+            )
+            current_time = arr_t
+        else:
+            transit_count += 1
+            norm_from = normalise_id(from_id)
+            norm_to = normalise_id(to_id)
+            candidate_trips = stop_to_trips.get(norm_from, [])
+            line_base = extract_route_base_name(leg.get("line_name", ""))
+
+            matching_trip: Optional[_ParsedTrip] = None
+            best_dep: Optional[int] = None
+            best_arr: Optional[int] = None
+
+            for tr in candidate_trips:
+                if line_base:
+                    tr_line_base = extract_route_base_name(tr.line_name)
+                    if line_base not in tr_line_base and tr_line_base not in line_base:
+                        continue
+
+                i_from = tr.stop_indices.get(from_id)
+                if i_from is None:
+                    i_from = tr.stop_indices.get(norm_from)
+                i_to = tr.stop_indices.get(to_id)
+                if i_to is None:
+                    i_to = tr.stop_indices.get(norm_to)
+
+                if i_from is None or i_to is None or i_from >= i_to:
+                    continue
+
+                tr_dep = tr.dep_times[i_from]
+                tr_arr = tr.arr_times[i_to]
+                if tr_dep is None or tr_arr is None:
+                    continue
+
+                if tr_dep >= current_time:
+                    if best_dep is None or tr_dep < best_dep:
+                        best_dep = tr_dep
+                        best_arr = tr_arr
+                        matching_trip = tr
+
+            if not matching_trip or best_dep is None or best_arr is None:
+                return None
+
+            dur = max(1, best_arr - best_dep)
+            itinerary_legs.append(
+                ItineraryLeg(
+                    leg_index=leg_idx + 1,
+                    mode=matching_trip.transport_mode,
+                    origin=ItineraryEndpoint(id=from_id, name=from_name),
+                    destination=ItineraryEndpoint(id=to_id, name=to_name),
+                    dep_time=format_minutes_to_time(best_dep),
+                    arr_time=format_minutes_to_time(best_arr),
+                    duration_minutes=dur,
+                    line=matching_trip.line_name,
+                    operator=matching_trip.operator,
+                    headsign=matching_trip.headsign,
+                )
+            )
+            current_time = best_arr + min_transfer_min
+
+    if not itinerary_legs:
+        return None
+
+    first_dep_m = parse_time_to_minutes(itinerary_legs[0].dep_time) or dep_time_min
+    last_arr_m = parse_time_to_minutes(itinerary_legs[-1].arr_time) or current_time
+    total_dur = max(1, last_arr_m - first_dep_m)
+
+    return ScheduledItinerary(
+        departure_time=itinerary_legs[0].dep_time,
+        arrival_time=itinerary_legs[-1].arr_time,
+        total_duration_minutes=total_dur,
+        transfers_count=max(0, transit_count - 1),
+        robustness_score="Optimal (Corridor Evaluated)",
+        legs=itinerary_legs,
+    )
 
 
 def plan_journey(
@@ -223,36 +339,89 @@ def plan_journey(
     relevant_stops = set(stop_to_trips.keys()) | origin_access_stops
     interchanges_by_stop = _load_interchanges_for_stops(relevant_stops)
 
-    for dep_t in eval_departures:
-        itinerary = _run_raptor_forward(
-            dep_time_min=dep_t,
-            origin_walks=origin_walks,
-            dest_walks=dest_walks,
-            trips=trips,
-            f_type=f_type,
-            f_id=f_id,
-            t_type=t_type,
-            t_id=t_id,
-            min_transfer_min=min_transfer_minutes,
-            max_rounds=max_transfers + 1,
-            stop_to_trips=stop_to_trips,
-            interchanges_by_stop=interchanges_by_stop,
+    # Check for stored route corridors
+    corridor_itineraries: List[ScheduledItinerary] = []
+    try:
+        from app.models.journey import Journey
+        from app.models.journey_route import JourneyRoute
+
+        matching_j = list(
+            Journey.select().where(
+                (Journey.from_type == f_type)
+                & ((Journey.from_id == f_id) | (Journey.from_id == normalise_id(f_id)))
+                & (Journey.to_type == t_type)
+                & ((Journey.to_id == t_id) | (Journey.to_id == normalise_id(t_id)))
+            )
         )
-        if itinerary:
-            if t_mode == "arrive":
-                arr_m = parse_time_to_minutes(itinerary.arrival_time)
-                if arr_m is not None and arr_m <= t_start_min:
+        if matching_j:
+            j_ids = [j.id for j in matching_j]
+            known_corridors = list(
+                JourneyRoute.select()
+                .where(
+                    (JourneyRoute.journey_id.in_(j_ids))
+                    & (JourneyRoute.is_enabled == True)  # noqa: E712
+                )
+                .order_by(JourneyRoute.is_preferred.desc())
+            )
+            for corridor in known_corridors:
+                for dep_t in eval_departures:
+                    itin = _evaluate_corridor_itinerary(
+                        legs_data=corridor.legs or [],
+                        dep_time_min=dep_t,
+                        stop_to_trips=stop_to_trips,
+                        min_transfer_min=min_transfer_minutes,
+                    )
+                    if itin:
+                        if t_mode == "arrive":
+                            arr_m = parse_time_to_minutes(itin.arrival_time)
+                            if arr_m is not None and arr_m <= t_start_min:
+                                corridor_itineraries.append(itin)
+                        elif t_mode == "window":
+                            dep_m = parse_time_to_minutes(itin.departure_time)
+                            if (
+                                dep_m is not None
+                                and dep_m >= t_start_min
+                                and dep_m <= (t_end_min or t_start_min)
+                            ):
+                                corridor_itineraries.append(itin)
+                        else:
+                            corridor_itineraries.append(itin)
+    except Exception as exc:
+        logger.debug("Could not evaluate stored corridors: %s", exc)
+
+    if corridor_itineraries:
+        candidate_itineraries.extend(corridor_itineraries)
+    else:
+        for dep_t in eval_departures:
+            itinerary = _run_raptor_forward(
+                dep_time_min=dep_t,
+                origin_walks=origin_walks,
+                dest_walks=dest_walks,
+                trips=trips,
+                f_type=f_type,
+                f_id=f_id,
+                t_type=t_type,
+                t_id=t_id,
+                min_transfer_min=min_transfer_minutes,
+                max_rounds=max_transfers + 1,
+                stop_to_trips=stop_to_trips,
+                interchanges_by_stop=interchanges_by_stop,
+            )
+            if itinerary:
+                if t_mode == "arrive":
+                    arr_m = parse_time_to_minutes(itinerary.arrival_time)
+                    if arr_m is not None and arr_m <= t_start_min:
+                        candidate_itineraries.append(itinerary)
+                elif t_mode == "window":
+                    dep_m = parse_time_to_minutes(itinerary.departure_time)
+                    if (
+                        dep_m is not None
+                        and dep_m >= t_start_min
+                        and dep_m <= (t_end_min or t_start_min)
+                    ):
+                        candidate_itineraries.append(itinerary)
+                else:
                     candidate_itineraries.append(itinerary)
-            elif t_mode == "window":
-                dep_m = parse_time_to_minutes(itinerary.departure_time)
-                if (
-                    dep_m is not None
-                    and dep_m >= t_start_min
-                    and dep_m <= (t_end_min or t_start_min)
-                ):
-                    candidate_itineraries.append(itinerary)
-            else:
-                candidate_itineraries.append(itinerary)
 
     if not candidate_itineraries:
         if _check_corridor_connectivity(origin_walks, dest_walks, trips):

@@ -17,7 +17,6 @@ from app.models.timetable import (
 from app.models.transfer import PlatformTransfer
 from app.models.transit import Stop, StopInterchange
 from app.models.walking import Walking
-from app.services.planner.models import RouteLeg
 
 
 @pytest.fixture
@@ -279,32 +278,3 @@ def seeded_planner(app: Flask):
         tt_intercity.save()
 
         yield app
-
-
-@pytest.fixture
-def make_test_leg():
-    """Fixture providing helper to construct lightweight RouteLeg instances for testing."""
-
-    def _factory(
-        leg_type: str = "transit",
-        transport_mode: str = "bus",
-        stage_index: int = 1,
-        step_index: int = 1,
-        from_id: str = "A",
-        to_id: str = "B",
-    ) -> RouteLeg:
-        return RouteLeg(
-            stage_index=stage_index,
-            step_index=step_index,
-            leg_type=leg_type,
-            from_type="bus" if transport_mode == "bus" else "rail",
-            from_id=from_id,
-            from_name=f"Stop {from_id}",
-            to_type="bus" if transport_mode == "bus" else "rail",
-            to_id=to_id,
-            to_name=f"Stop {to_id}",
-            duration_minutes=5,
-            transport_mode=transport_mode,
-        )
-
-    return _factory
