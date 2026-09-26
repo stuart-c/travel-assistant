@@ -13,7 +13,6 @@ class JourneyPlanningErrorCode(str, Enum):
     NO_CORRIDOR_PATH = "NO_CORRIDOR_PATH"
     NO_SERVICES_ON_DAY = "NO_SERVICES_ON_DAY"
     NO_TRIPS_IN_WINDOW = "NO_TRIPS_IN_WINDOW"
-    UNSATISFIED_ARRIVE_BY = "UNSATISFIED_ARRIVE_BY"
 
 
 class JourneyPlanningError(Exception):

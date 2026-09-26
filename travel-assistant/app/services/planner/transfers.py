@@ -215,30 +215,6 @@ def resolve_active_days_and_date(
     return active_days, date_obj
 
 
-def is_timetable_active(
-    timetable: Timetable,
-    active_days: List[str],
-    target_date: Optional[datetime.date] = None,
-) -> bool:
-    """Check if a timetable operates on the specified days and date validity range."""
-    # Check date validity
-    if target_date:
-        if timetable.start_date and target_date < timetable.start_date:
-            return False
-        if timetable.end_date and target_date > timetable.end_date:
-            return False
-
-    # Check day masks
-    operates_on_day = False
-    for code in active_days:
-        attr_name = CODE_TO_TIMETABLE_ATTR.get(code)
-        if attr_name and getattr(timetable, attr_name, False):
-            operates_on_day = True
-            break
-
-    return operates_on_day
-
-
 def get_active_timetables(
     active_days: List[str],
     target_date: Optional[datetime.date] = None,
@@ -349,7 +325,6 @@ __all__ = [
     "resolve_endpoint_name",
     "resolve_transfer_duration",
     "resolve_active_days_and_date",
-    "is_timetable_active",
     "get_active_timetables",
     "get_access_edges",
 ]

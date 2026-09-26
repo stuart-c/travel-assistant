@@ -37,8 +37,13 @@ def sync_journey_routes(
         if force:
             pending_journeys = list(Journey.select())
         else:
+            from app.models.journey_route import JourneyRoute
+
+            subq = JourneyRoute.select(JourneyRoute.journey_id).distinct()
             pending_journeys = list(
-                Journey.select().where(Journey.calculated_routes.is_null())
+                Journey.select().where(
+                    Journey.calculated_routes.is_null() & Journey.id.not_in(subq)
+                )
             )
         if not pending_journeys:
             logger.info("No pending journeys requiring route calculation.")

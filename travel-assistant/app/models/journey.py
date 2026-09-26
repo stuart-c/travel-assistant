@@ -90,26 +90,51 @@ class Journey(BaseModel):
                     continue
         self.time_settings = parsed
 
-    def get_calculated_routes(self) -> Optional[Union[List[Any], Dict[str, Any], Any]]:
-        """Deserialise and return calculated routes data."""
+    def get_routes(self, enabled_only: bool = True) -> List[Any]:
+        """Retrieve persisted JourneyRoute instances for this journey."""
+        from app.models.journey_route import JourneyRoute
+
+        query = JourneyRoute.select().where(JourneyRoute.journey_id == self.id)
+        if enabled_only:
+            query = query.where(JourneyRoute.is_enabled == True)  # noqa: E712
+        return list(
+            query.order_by(
+                JourneyRoute.is_preferred.desc(),
+                JourneyRoute.total_duration_est_minutes.asc(),
+            )
+        )
+
+    def get_calculated_routes(self) -> Optional[List[Dict[str, Any]]]:
+        """Deserialise and return calculated routes data, preferring JourneyRoute records."""
+        routes = self.get_routes(enabled_only=True)
+        if routes:
+            return [r.to_dict() for r in routes]
         val = self.calculated_routes
-        if isinstance(val, (dict, list)):
+        if isinstance(val, list):
             return val
         if isinstance(val, str):
             try:
                 import json
 
-                return json.loads(val)
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    return parsed
             except Exception:
-                return val
-        return val
+                pass
+        return None
 
     def set_calculated_routes(
         self, routes: Optional[Union[List[Any], Dict[str, Any], str]]
     ) -> None:
-        """Serialise and store calculated routes data."""
+        """Serialise and store calculated routes data, keeping JourneyRoute in sync."""
+        from app.models.journey_route import JourneyRoute
+
         if routes is None:
             self.calculated_routes = None
+            if self.id:
+                JourneyRoute.delete().where(
+                    JourneyRoute.journey_id == self.id
+                ).execute()
             return
         if isinstance(routes, str):
             try:

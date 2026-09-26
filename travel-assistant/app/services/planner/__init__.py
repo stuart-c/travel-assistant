@@ -16,8 +16,6 @@ from app.services.planner.exceptions import (
 from app.services.planner.models import (
     ItineraryEndpoint,
     ItineraryLeg,
-    RouteLeg,
-    RouteTemplate,
     ScheduledItinerary,
 )
 from app.services.planner.raptor import plan_journey
@@ -28,7 +26,6 @@ from app.services.planner.transfers import (
     format_minutes_to_time,
     get_access_edges,
     get_active_timetables,
-    is_timetable_active,
     normalise_id,
     parse_time_to_minutes,
     resolve_active_days_and_date,
@@ -41,8 +38,6 @@ __all__ = [
     "plan_journey",
     "extract_route_base_name",
     # Models
-    "RouteTemplate",
-    "RouteLeg",
     "ScheduledItinerary",
     "ItineraryLeg",
     "ItineraryEndpoint",
@@ -61,7 +56,6 @@ __all__ = [
     "resolve_endpoint_name",
     "resolve_transfer_duration",
     "resolve_active_days_and_date",
-    "is_timetable_active",
     "get_active_timetables",
     "get_access_edges",
     "VALID_DAYS",
