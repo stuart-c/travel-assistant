@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Dependency Upgrades** (`requirements.txt`, `requirements_test.txt`):
+  - Updated production dependencies to their latest PyPI versions: `requests>=2.34.2`, `boto3>=1.43.103`, `openai>=3.19.2`, and `uvicorn>=0.54.0`.
+  - Updated test and linting dependency `ruff>=0.16.9`.
+
 ### Added
 - **Dependency Modernisation, Native HTTP Client & Polyline Geometry** (`requirements.txt`, `app/datasources/train_live.py`, `app/utils/transit_time.py`, `app/services/dispatcher/tracker/view_model.py`):
   - Replaced legacy `bravado` OpenAPI wrapper and Swagger 2.0 schema parsing with direct `httpx` HTTP requests in `TrainLiveClient` (`app/datasources/train_live.py`), eliminating 58 `jsonschema.RefResolver` deprecation warnings across test suites.
