@@ -407,6 +407,11 @@ class CorridorLearner:
                             "distance_m": step_dist_m,
                             "stops_count": int(transit_details.get("stopCount", 0)),
                         }
+                        step_poly = step.get("polyline", {}).get("encodedPolyline")
+                        if not step_poly and isinstance(r_leg.get("polyline"), dict):
+                            step_poly = r_leg["polyline"].get("encodedPolyline")
+                        if step_poly:
+                            leg_dict["polyline"] = step_poly
                         legs_data.append(leg_dict)
                         prev_endpoint_type = arr_type
                         prev_endpoint_id = arr_id
@@ -458,6 +463,9 @@ class CorridorLearner:
                             "duration_minutes": step_dur_mins,
                             "distance_m": step_dist_m,
                         }
+                        step_poly = step.get("polyline", {}).get("encodedPolyline")
+                        if step_poly:
+                            leg_dict["polyline"] = step_poly
                         legs_data.append(leg_dict)
                         ensure_walking_connection(
                             prev_endpoint_type,
