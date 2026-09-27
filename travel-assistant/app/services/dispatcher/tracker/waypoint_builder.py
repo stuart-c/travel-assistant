@@ -225,6 +225,7 @@ def _build_waypoints_and_legs(
             "dep_time": leg.dep_time,
             "arr_time": leg.arr_time,
             "duration_minutes": leg.duration_minutes,
+            "polyline": getattr(leg, "polyline", None),
             "origin": {
                 "id": leg.origin.id,
                 "name": leg.origin.name,

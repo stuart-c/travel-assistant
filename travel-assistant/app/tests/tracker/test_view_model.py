@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 from flask import Flask
+import pytest
 
 from app.datasources.train_live import TrainLiveClient
 from app.services.dispatcher.tracker.view_model import (
@@ -49,3 +50,28 @@ def test_get_journey_live_tracking_data_no_active_journey(app: Flask) -> None:
         assert data["selected_journey"] is None
         assert data["active"] is False
         assert "pre_departure" in STATUS_METADATA
+
+
+def test_get_journey_live_tracking_data_decoded_polyline(app: Flask) -> None:
+    """Test get_journey_live_tracking_data decodes leg polylines into GPS coordinates."""
+    import polyline
+
+    with app.app_context():
+        clear_tracking_cache()
+        active = create_sample_active_journey(journey_id=2, with_rail=False)
+        coords = [(51.5308, -0.1238), (51.5284, -0.1331)]
+        encoded = polyline.encode(coords)
+        active.legs[0].polyline = encoded
+
+        data = get_journey_live_tracking_data(
+            journey_id=2,
+            live_client=None,
+            active_journeys={2: active},
+        )
+        assert data["selected_journey"] is not None
+        route_poly = data["selected_journey"]["route_polyline"]
+        assert len(route_poly) == 2
+        assert pytest.approx(route_poly[0][0], rel=1e-4) == 51.5308
+        assert pytest.approx(route_poly[0][1], rel=1e-4) == -0.1238
+        assert pytest.approx(route_poly[1][0], rel=1e-4) == 51.5284
+        assert pytest.approx(route_poly[1][1], rel=1e-4) == -0.1331

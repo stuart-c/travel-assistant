@@ -31,6 +31,7 @@ class ItineraryLeg(PydanticBaseModel):
     headsign: Optional[str] = None
     stops_count: Optional[int] = None
     timetable_id: Optional[int] = None
+    polyline: Optional[str] = None
 
 
 class ScheduledItinerary(PydanticBaseModel):

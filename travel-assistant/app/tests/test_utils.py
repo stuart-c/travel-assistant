@@ -133,6 +133,8 @@ def test_parse_duration_seconds() -> None:
     assert parse_duration_seconds("1680s") == 1680
     assert parse_duration_seconds("60s") == 60
     assert parse_duration_seconds("120") == 120
+    assert parse_duration_seconds("1h 30m") == 5400
+    assert parse_duration_seconds("25 mins") == 1500
     assert parse_duration_seconds("") == 0
     assert parse_duration_seconds(None) == 0
     assert parse_duration_seconds("abc") == 0

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dependency Modernisation, Native HTTP Client & Polyline Geometry** (`requirements.txt`, `app/datasources/train_live.py`, `app/utils/transit_time.py`, `app/services/dispatcher/tracker/view_model.py`):
+  - Replaced legacy `bravado` OpenAPI wrapper and Swagger 2.0 schema parsing with direct `httpx` HTTP requests in `TrainLiveClient` (`app/datasources/train_live.py`), eliminating 58 `jsonschema.RefResolver` deprecation warnings across test suites.
+  - Pruned obsolete `networkx` dependency following migration to in-memory RAPTOR routing.
+  - Integrated `polyline` to decode turn-by-turn route geometry from Google Routes transit and walking legs into GPS coordinates (`route_polyline`) for interactive Leaflet maps in live journey tracking (`view_model.py`).
+  - Integrated `pytimeparse2` into `parse_duration_seconds()` (`app/utils/transit_time.py`) to provide resilient fallback parsing across natural language, Google Routes format, and ISO 8601 duration strings.
 - **Google Routes API v2 Transit Discovery, Local Route Learning & Disruption Rerouting** (`app/datasources/google_maps.py`, `app/services/corridor_learner.py`, `app/services/reroute_engine.py`, `app/models/journey_route.py`, `app/models/route_query_log.py`):
   - Added `compute_transit_routes` method to `GoogleMapsClient` utilizing Google Routes API v2 (`directions/v2:computeRoutes`) with transit field masks (`routes.duration`, `routes.legs.steps`, `transitDetails`).
   - Implemented automated initial discovery via `CorridorLearner` triggered during background journey synchronization (`sync_journey_routes`) and manual configuration endpoints, resolving/creating new intermediate stops, auto-creating walking access/egress links, and persisting multi-modal corridors into local SQLite tables (`journey_routes`).

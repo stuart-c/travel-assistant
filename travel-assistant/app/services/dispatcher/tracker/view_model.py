@@ -1,7 +1,7 @@
 """Live tracking telemetry compilation, geographic waypoints, and schematic diagrams."""
 
 import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
@@ -345,6 +345,26 @@ def get_journey_live_tracking_data(
         "is_stuart_here": (is_active and current_status == JourneyStepStatus.ARRIVED),
     }
 
+    decoded_coords: List[List[float]] = []
+    for leg in serialized_legs or []:
+        if isinstance(leg, dict):
+            poly_str = leg.get("polyline")
+            if poly_str:
+                try:
+                    import polyline
+
+                    pts = polyline.decode(poly_str)
+                    decoded_coords.extend([[float(p[0]), float(p[1])] for p in pts])
+                except Exception:
+                    pass
+
+    if not decoded_coords:
+        decoded_coords = [
+            [wp["lat"], wp["lon"]]
+            for wp in waypoints
+            if wp.get("lat") is not None and wp.get("lon") is not None
+        ]
+
     return {
         "journeys": journeys_list,
         "selected_journey": {
@@ -383,11 +403,7 @@ def get_journey_live_tracking_data(
                 "current_stage_index": current_leg_index,
             },
             "waypoints": waypoints,
-            "route_polyline": [
-                [wp["lat"], wp["lon"]]
-                for wp in waypoints
-                if wp.get("lat") is not None and wp.get("lon") is not None
-            ],
+            "route_polyline": decoded_coords,
         },
         "person": {
             "name": "Stuart",

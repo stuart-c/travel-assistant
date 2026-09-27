@@ -3,7 +3,11 @@
 import datetime
 import re
 from typing import Optional, Union
-import isoduration
+
+try:
+    import isoduration
+except ImportError:  # pragma: no cover
+    isoduration = None  # type: ignore[assignment]
 
 # Canonical transport days
 VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun", "bank_holiday")
@@ -62,10 +66,19 @@ def format_minutes_to_time(minutes: int) -> str:
 
 
 def parse_duration_seconds(duration_str: Optional[str]) -> int:
-    """Parse duration string with seconds suffix (e.g. '1680s') into integer seconds."""
+    """Parse duration string with seconds suffix or natural language (e.g. '1680s', '1h 30m') into integer seconds."""
     if not duration_str:
         return 0
-    digits = re.sub(r"[^\d]", "", str(duration_str))
+    s = str(duration_str).strip()
+    try:
+        import pytimeparse2
+
+        parsed = pytimeparse2.parse(s)
+        if parsed is not None:
+            return int(parsed)
+    except Exception:
+        pass
+    digits = re.sub(r"[^\d]", "", s)
     try:
         return int(digits)
     except ValueError:
@@ -79,27 +92,30 @@ def parse_iso_duration_seconds(dur_str: Optional[str]) -> int:
     s = str(dur_str).strip().upper()
     if not s.startswith("P"):
         return 0
-    try:
-        parsed = isoduration.parse_duration(s)
-        total_seconds = 0
-        if parsed.date:
-            total_seconds += int(parsed.date.days or 0) * 86400
-        if parsed.time:
-            total_seconds += int(parsed.time.hours or 0) * 3600
-            total_seconds += int(parsed.time.minutes or 0) * 60
-            total_seconds += int(parsed.time.seconds or 0)
-        return total_seconds
-    except Exception:
-        match = re.search(
-            r"PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?",
-            s,
-        )
-        if not match:
-            return 0
-        hours = int(match.group("hours") or 0)
-        minutes = int(match.group("minutes") or 0)
-        seconds = int(match.group("seconds") or 0)
-        return hours * 3600 + minutes * 60 + seconds
+    if isoduration is not None:
+        try:
+            parsed = isoduration.parse_duration(s)
+            total_seconds = 0
+            if parsed.date:
+                total_seconds += int(parsed.date.days or 0) * 86400
+            if parsed.time:
+                total_seconds += int(parsed.time.hours or 0) * 3600
+                total_seconds += int(parsed.time.minutes or 0) * 60
+                total_seconds += int(parsed.time.seconds or 0)
+            return total_seconds
+        except Exception:
+            pass
+
+    match = re.search(
+        r"PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?",
+        s,
+    )
+    if not match:
+        return 0
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes") or 0)
+    seconds = int(match.group("seconds") or 0)
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def parse_time_str_to_seconds(time_str: Optional[str]) -> Optional[int]:

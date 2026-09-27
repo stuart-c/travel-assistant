@@ -5,9 +5,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
-from bravado.client import SwaggerClient
-from bravado.requests_client import RequestsClient
-import requests
+import httpx
 
 from app.datasources.base import BaseDataSource
 from app.datasources.exceptions import (
@@ -18,9 +16,68 @@ from app.datasources.exceptions import (
 )
 
 DEFAULT_USER_AGENT = "TravelAssistant/1.0 (HomeAssistant; Linux)"
+DEFAULT_BASE_URL = "https://realtime.nationalrail.co.uk/LDBWS"
 DEFAULT_SWAGGER_SCHEMA_URL = (
     "https://realtime.nationalrail.co.uk/LDBWS/static/ldbws.json"
 )
+
+OPERATION_ROUTES: Dict[str, Tuple[str, List[str], List[str]]] = {
+    "GetDepartureBoard": (
+        "/api/20220120/GetDepartureBoard/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetDepBoardWithDetails": (
+        "/api/20220120/GetDepBoardWithDetails/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetArrivalBoard": (
+        "/api/20220120/GetArrivalBoard/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetArrBoardWithDetails": (
+        "/api/20220120/GetArrBoardWithDetails/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetArrivalDepartureBoard": (
+        "/api/20220120/GetArrivalDepartureBoard/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetArrDepBoardWithDetails": (
+        "/api/20220120/GetArrDepBoardWithDetails/{crs}",
+        ["crs"],
+        ["numRows", "filterCrs", "filterType", "timeOffset", "timeWindow"],
+    ),
+    "GetFastestDepartures": (
+        "/api/20220120/GetFastestDepartures/{crs}/{filterList}",
+        ["crs", "filterList"],
+        ["timeOffset", "timeWindow"],
+    ),
+    "GetFastestDeparturesWithDetails": (
+        "/api/20220120/GetFastestDeparturesWithDetails/{crs}/{filterList}",
+        ["crs", "filterList"],
+        ["timeOffset", "timeWindow"],
+    ),
+    "GetNextDepartures": (
+        "/api/20220120/GetNextDepartures/{crs}/{filterList}",
+        ["crs", "filterList"],
+        ["timeOffset", "timeWindow"],
+    ),
+    "GetNextDeparturesWithDetails": (
+        "/api/20220120/GetNextDeparturesWithDetails/{crs}/{filterList}",
+        ["crs", "filterList"],
+        ["timeOffset", "timeWindow"],
+    ),
+    "GetServiceDetails": (
+        "/api/20220120/GetServiceDetails/{serviceId}",
+        ["serviceId"],
+        [],
+    ),
+}
 
 
 def get_schema_path(filename: str = "ldbws_swagger.json") -> str:
@@ -53,20 +110,23 @@ def sync_swagger_schema(
     """
     target_path = schema_path or get_schema_path()
     try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"},
-            timeout=timeout,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, dict) and "paths" in data and "swagger" in data:
-                parent_dir = os.path.dirname(target_path)
-                if parent_dir:
-                    os.makedirs(parent_dir, exist_ok=True)
-                with open(target_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                return True
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(
+                url,
+                headers={
+                    "User-Agent": DEFAULT_USER_AGENT,
+                    "Accept": "application/json",
+                },
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict) and "paths" in data and "swagger" in data:
+                    parent_dir = os.path.dirname(target_path)
+                    if parent_dir:
+                        os.makedirs(parent_dir, exist_ok=True)
+                    with open(target_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    return True
     except Exception:
         pass
     return False
@@ -123,7 +183,6 @@ class TrainLiveClient(BaseDataSource):
         self.api_key = (api_key or "").strip()
         self.endpoint = (endpoint or "").strip()
         self.timeout = float(timeout)
-        self._swagger_client: Optional[SwaggerClient] = None
 
     @classmethod
     def from_settings(cls, settings: Optional[Any] = None) -> "TrainLiveClient":
@@ -167,111 +226,58 @@ class TrainLiveClient(BaseDataSource):
 
         return scheme, host, base_path
 
-    def get_swagger_client(self) -> SwaggerClient:
-        """Build and cache a Bravado SwaggerClient configured with host/basePath overrides."""
-        if self._swagger_client is not None:
-            return self._swagger_client
-
+    def get_base_url(self) -> str:
+        """Return base URL for Darwin OpenAPI requests."""
         scheme, host, base_path = self._parse_endpoint(self.endpoint)
-        schema_file = get_schema_path()
-
-        if not os.path.exists(schema_file):
-            sync_swagger_schema(schema_file)
-
-        if not os.path.exists(schema_file):
-            raise DataSourceConfigError(
-                f"Swagger schema file not found at {schema_file}",
-                provider=self.provider_name,
-            )
-
-        with open(schema_file, "r", encoding="utf-8") as f:
-            spec_dict = json.load(f)
-
-        if host:
-            spec_dict["host"] = host
-        if base_path:
-            spec_dict["basePath"] = base_path
-        if scheme:
-            spec_dict["schemes"] = [scheme]
-
-        http_client = RequestsClient()
-        http_client.session.headers.update(
-            {
-                "x-apikey": self.api_key,
-                "User-Agent": DEFAULT_USER_AGENT,
-                "Accept": "application/json",
-            }
-        )
-
-        self._swagger_client = SwaggerClient.from_spec(
-            spec_dict,
-            http_client=http_client,
-            config={
-                "validate_responses": False,
-                "use_models": False,
-                "validate_requests": False,
-            },
-        )
-        return self._swagger_client
+        if scheme and host:
+            return f"{scheme}://{host}{base_path}"
+        return DEFAULT_BASE_URL
 
     def _call_operation(self, op_name: str, **kwargs: Any) -> Any:
-        """Dynamically invoke a Swagger operation on the client."""
-        client = self.get_swagger_client()
-        clean_kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-        operation = None
-        # Check direct attribute or method on client
-        if hasattr(client, op_name):
-            candidate = getattr(client, op_name)
-            if callable(candidate):
-                operation = candidate
-
-        # Check resource namespaces (e.g. client._20220120 or client.ldbws)
-        if operation is None:
-            for attr in dir(client):
-                if attr.startswith("__") or attr in (
-                    "swagger_spec",
-                    "get_model",
-                    "get_operation",
-                ):
-                    continue
-                try:
-                    namespace = getattr(client, attr)
-                    if hasattr(namespace, op_name):
-                        candidate = getattr(namespace, op_name)
-                        if callable(candidate):
-                            operation = candidate
-                            break
-                except Exception:
-                    continue
-
-        if operation is None:
+        """Dynamically invoke an OpenAPI operation using direct HTTP requests."""
+        route_spec = OPERATION_ROUTES.get(op_name)
+        if route_spec is None:
             raise DataSourceConfigError(
-                f"Swagger operation '{op_name}' not found in LDBWS spec.",
+                f"Operation '{op_name}' not found in LDBWS spec.",
                 provider=self.provider_name,
             )
 
+        path_template, path_keys, query_keys = route_spec
+
+        kw_map = {k.lower(): v for k, v in kwargs.items() if v is not None}
+        path_kwargs = {}
+        for pk in path_keys:
+            val = kw_map.get(pk.lower())
+            if val is not None:
+                path_kwargs[pk] = val
+            else:
+                path_kwargs[pk] = ""
+
+        query_params = {}
+        for qk in query_keys:
+            val = kw_map.get(qk.lower())
+            if val is not None:
+                query_params[qk] = val
+
+        base_url = self.get_base_url().rstrip("/")
+        path = path_template.format(**path_kwargs)
+        url = f"{base_url}{path}"
+
+        headers = {
+            "x-apikey": self.api_key,
+            "User-Agent": DEFAULT_USER_AGENT,
+            "Accept": "application/json",
+        }
+
         try:
-            future = operation(**clean_kwargs)
-            response = future.response(timeout=self.timeout)
-            return response.result
-        except requests.exceptions.Timeout as e:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(url, params=query_params, headers=headers)
+        except httpx.TimeoutException as e:
             raise DataSourceConnectionError(
                 f"National Rail Darwin LDBWS request timed out after {self.timeout}s.",
                 provider=self.provider_name,
             ) from e
-        except requests.exceptions.RequestException as e:
-            resp = getattr(e, "response", None)
-            if resp is not None:
-                if resp.status_code in (401, 403):
-                    raise DataSourceAuthError(
-                        f"Unauthorised access ({resp.status_code}): Invalid token.",
-                        provider=self.provider_name,
-                    ) from e
-                raise DataSourceError(
-                    f"National Rail LDBWS returned HTTP {resp.status_code}: {resp.text}",
-                    provider=self.provider_name,
-                ) from e
+        except httpx.RequestError as e:
             raise DataSourceConnectionError(
                 f"Network error connecting to Darwin LDBWS: {str(e)}",
                 provider=self.provider_name,
@@ -290,6 +296,25 @@ class TrainLiveClient(BaseDataSource):
                 ) from e
             raise DataSourceError(
                 f"Darwin LDBWS error: {err_str}",
+                provider=self.provider_name,
+            ) from e
+
+        if response.status_code in (401, 403):
+            raise DataSourceAuthError(
+                f"Unauthorised access ({response.status_code}): Invalid token.",
+                provider=self.provider_name,
+            )
+        if response.status_code >= 400:
+            raise DataSourceError(
+                f"National Rail LDBWS returned HTTP {response.status_code}: {response.text}",
+                provider=self.provider_name,
+            )
+
+        try:
+            return response.json()
+        except Exception as e:
+            raise DataSourceError(
+                f"Failed to parse Darwin LDBWS JSON response: {str(e)}",
                 provider=self.provider_name,
             ) from e
 

@@ -1,8 +1,7 @@
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
+import httpx
 import pytest
-import requests
 from flask import Flask
 
 from app.datasources.train_live import (
@@ -59,46 +58,15 @@ def test_train_live_parse_endpoint() -> None:
     assert base_path == "/custom-live-board/LDBWS"
 
 
-@patch("app.datasources.train_live.os.path.exists", return_value=True)
-@patch("app.datasources.train_live.open")
-@patch("app.datasources.train_live.SwaggerClient.from_spec")
-def test_train_live_swagger_client_initialisation(
-    mock_from_spec: MagicMock, mock_open_file: MagicMock, mock_exists: MagicMock
-) -> None:
-    """Test SwaggerClient initialisation with host and basePath overrides."""
-    mock_swagger_inst = MagicMock()
-    mock_from_spec.return_value = mock_swagger_inst
-    mock_open_file.return_value.__enter__.return_value.read.return_value = (
-        '{"swagger": "2.0", "paths": {}}'
+def test_train_live_base_url_resolution() -> None:
+    """Test get_base_url resolves custom endpoint or falls back to default."""
+    client_custom = TrainLiveClient(
+        endpoint="https://example.com/custom-live-board/LDBWS"
     )
+    assert client_custom.get_base_url() == "https://example.com/custom-live-board/LDBWS"
 
-    # Test with custom endpoint override
-    client = TrainLiveClient(
-        api_key="test-api-key",
-        endpoint="https://example.com/custom-live-board/LDBWS",
-    )
-    swagger = client.get_swagger_client()
-    assert swagger is mock_swagger_inst
-    mock_from_spec.assert_called_once()
-    assert client.get_swagger_client() is swagger
-
-    # Test with default schema endpoint (no override)
-    mock_from_spec.reset_mock()
-    client_default = TrainLiveClient(api_key="test-api-key")
-    swagger_def = client_default.get_swagger_client()
-    assert swagger_def is mock_swagger_inst
-    mock_from_spec.assert_called_once()
-
-
-@patch("app.datasources.train_live.os.path.exists", return_value=False)
-@patch("app.datasources.train_live.sync_swagger_schema", return_value=False)
-def test_train_live_swagger_client_missing_schema_raises_config_error(
-    mock_sync: MagicMock, mock_exists: MagicMock
-) -> None:
-    """Test get_swagger_client raises error if schema cannot be found or downloaded."""
-    client = TrainLiveClient()
-    with pytest.raises(DataSourceConfigError):
-        client.get_swagger_client()
+    client_default = TrainLiveClient()
+    assert client_default.get_base_url() == "https://realtime.nationalrail.co.uk/LDBWS"
 
 
 def test_train_live_validate_credentials_empty() -> None:
@@ -222,115 +190,144 @@ def test_train_live_fetch_departures_errors(mock_get_board: MagicMock) -> None:
         client.fetch_departures("PAD")
 
 
-@patch.object(TrainLiveClient, "get_swagger_client")
-def test_train_live_operations_execution(mock_get_swagger: MagicMock) -> None:
+@patch.object(TrainLiveClient, "_call_operation")
+def test_train_live_operations_execution(mock_call_op: MagicMock) -> None:
     """Test OpenAPI operation wrappers pass correct parameters."""
-    mock_op = MagicMock()
-    mock_response = MagicMock()
-    mock_response.result = {"success": True}
-    mock_op.return_value.response.return_value = mock_response
-
-    class FakeNamespace:
-        def __init__(self, op: Any) -> None:
-            self.GetDepartureBoard = op
-            self.GetDepBoardWithDetails = op
-            self.GetArrivalBoard = op
-            self.GetServiceDetails = op
-            self.GetFastestDepartures = op
-
-    class FakeClient:
-        def __init__(self, op: Any) -> None:
-            self._20220120 = FakeNamespace(op)
-
-    mock_get_swagger.return_value = FakeClient(mock_op)
-
+    mock_call_op.return_value = {"success": True}
     client = TrainLiveClient(api_key="key")
 
     # get_departure_board
     client.get_departure_board(crs="CBG", num_rows=5, filter_crs="KGX")
-    mock_op.assert_called_with(crs="CBG", numRows=5, filterCrs="KGX")
+    mock_call_op.assert_called_with(
+        "GetDepartureBoard",
+        crs="CBG",
+        numRows=5,
+        filterCrs="KGX",
+        filterType=None,
+        timeOffset=None,
+        timeWindow=None,
+    )
 
     # get_dep_board_with_details
     client.get_dep_board_with_details(crs="SVG", num_rows=10)
-    mock_op.assert_called_with(crs="SVG", numRows=10)
+    mock_call_op.assert_called_with(
+        "GetDepBoardWithDetails",
+        crs="SVG",
+        numRows=10,
+        filterCrs=None,
+        filterType=None,
+        timeOffset=None,
+        timeWindow=None,
+    )
 
     # get_arrival_board
     client.get_arrival_board(crs="LST", num_rows=3)
-    mock_op.assert_called_with(crs="LST", numRows=3)
+    mock_call_op.assert_called_with(
+        "GetArrivalBoard",
+        crs="LST",
+        numRows=3,
+        filterCrs=None,
+        filterType=None,
+        timeOffset=None,
+        timeWindow=None,
+    )
 
     # get_service_details
     client.get_service_details(service_id="service-123")
-    mock_op.assert_called_with(serviceid="service-123")
+    mock_call_op.assert_called_with(
+        "GetServiceDetails",
+        serviceid="service-123",
+    )
 
     # get_fastest_departures
     client.get_fastest_departures(crs="CBG", filter_list="KGX")
-    mock_op.assert_called_with(crs="CBG", filterList="KGX")
+    mock_call_op.assert_called_with(
+        "GetFastestDepartures",
+        crs="CBG",
+        filterList="KGX",
+    )
 
 
-@patch.object(TrainLiveClient, "get_swagger_client")
-def test_train_live_call_operation_errors(mock_get_swagger: MagicMock) -> None:
+@patch("httpx.Client")
+def test_train_live_call_operation_errors(mock_client_cls: MagicMock) -> None:
     """Test error handling in _call_operation across HTTP, timeout, and network errors."""
-
-    class FakeClient:
-        pass
-
-    fake_client = FakeClient()
-    mock_get_swagger.return_value = fake_client
     client = TrainLiveClient(api_key="key")
 
     # Missing operation
     with pytest.raises(DataSourceConfigError):
         client._call_operation("NonExistentOperation")
 
-    # Mock operation raising errors
-    mock_op = MagicMock()
-    fake_client.TestOp = mock_op
+    mock_client = MagicMock()
+    mock_client_cls.return_value.__enter__.return_value = mock_client
 
     # Timeout
-    mock_op.return_value.response.side_effect = requests.exceptions.Timeout("Timeout")
+    mock_client.get.side_effect = httpx.TimeoutException("Timeout")
     with pytest.raises(DataSourceConnectionError):
-        client._call_operation("TestOp")
-
-    # HTTP 401
-    resp_401 = MagicMock(status_code=401, text="Unauthorised")
-    req_err_401 = requests.exceptions.RequestException(response=resp_401)
-    mock_op.return_value.response.side_effect = req_err_401
-    with pytest.raises(DataSourceAuthError):
-        client._call_operation("TestOp")
-
-    # HTTP 500
-    resp_500 = MagicMock(status_code=500, text="Server Error")
-    req_err_500 = requests.exceptions.RequestException(response=resp_500)
-    mock_op.return_value.response.side_effect = req_err_500
-    with pytest.raises(DataSourceError):
-        client._call_operation("TestOp")
+        client._call_operation("GetDepartureBoard", crs="CBG")
 
     # Network Error
-    req_err_net = requests.exceptions.RequestException(response=None)
-    mock_op.return_value.response.side_effect = req_err_net
+    mock_client.get.side_effect = httpx.RequestError("Network error")
     with pytest.raises(DataSourceConnectionError):
-        client._call_operation("TestOp")
+        client._call_operation("GetDepartureBoard", crs="CBG")
 
-    # Generic 403 in message
-    mock_op.return_value.response.side_effect = RuntimeError("HTTP 403 Forbidden")
+    # HTTP 401
+    mock_resp_401 = MagicMock(status_code=401, text="Unauthorised")
+    mock_client.get.side_effect = None
+    mock_client.get.return_value = mock_resp_401
     with pytest.raises(DataSourceAuthError):
-        client._call_operation("TestOp")
+        client._call_operation("GetDepartureBoard", crs="CBG")
+
+    # HTTP 403
+    mock_resp_403 = MagicMock(status_code=403, text="Forbidden")
+    mock_client.get.return_value = mock_resp_403
+    with pytest.raises(DataSourceAuthError):
+        client._call_operation("GetDepartureBoard", crs="CBG")
+
+    # HTTP 500
+    mock_resp_500 = MagicMock(status_code=500, text="Server Error")
+    mock_client.get.return_value = mock_resp_500
+    with pytest.raises(DataSourceError):
+        client._call_operation("GetDepartureBoard", crs="CBG")
+
+    # Invalid JSON
+    mock_resp_bad_json = MagicMock(status_code=200)
+    mock_resp_bad_json.json.side_effect = ValueError("Invalid JSON")
+    mock_client.get.return_value = mock_resp_bad_json
+    with pytest.raises(DataSourceError):
+        client._call_operation("GetDepartureBoard", crs="CBG")
 
     # Generic Timeout in message
-    mock_op.return_value.response.side_effect = RuntimeError("timed out")
+    mock_client.get.side_effect = RuntimeError("timed out")
     with pytest.raises(DataSourceConnectionError):
-        client._call_operation("TestOp")
+        client._call_operation("GetDepartureBoard", crs="CBG")
+
+    # Generic 401 in message
+    mock_client.get.side_effect = RuntimeError("HTTP 401 Unauthorised")
+    with pytest.raises(DataSourceAuthError):
+        client._call_operation("GetDepartureBoard", crs="CBG")
 
     # Generic Other Exception
-    mock_op.return_value.response.side_effect = RuntimeError("Unknown error")
+    mock_client.get.side_effect = RuntimeError("Unknown error")
     with pytest.raises(DataSourceError):
-        client._call_operation("TestOp")
+        client._call_operation("GetDepartureBoard", crs="CBG")
+
+    # Success
+    mock_client.get.side_effect = None
+    mock_resp_ok = MagicMock(status_code=200)
+    mock_resp_ok.json.return_value = {"trainServices": []}
+    mock_client.get.return_value = mock_resp_ok
+    result = client._call_operation("GetDepartureBoard", crs="CBG", numRows=5)
+    assert result == {"trainServices": []}
 
 
-@patch("app.datasources.train_live.requests.get")
-def test_sync_swagger_schema_success(mock_get: MagicMock, tmp_path: Path) -> None:
+@patch("httpx.Client")
+def test_sync_swagger_schema_success(
+    mock_client_cls: MagicMock, tmp_path: Path
+) -> None:
     """Test sync_swagger_schema downloads and persists schema locally."""
-    mock_get.return_value = MagicMock(
+    mock_client = MagicMock()
+    mock_client_cls.return_value.__enter__.return_value = mock_client
+    mock_client.get.return_value = MagicMock(
         status_code=200,
         json=lambda: {"swagger": "2.0", "paths": {}},
     )
@@ -339,16 +336,20 @@ def test_sync_swagger_schema_success(mock_get: MagicMock, tmp_path: Path) -> Non
     assert result is True
 
 
-@patch("app.datasources.train_live.requests.get")
-def test_sync_swagger_schema_failure(mock_get: MagicMock, tmp_path: Path) -> None:
+@patch("httpx.Client")
+def test_sync_swagger_schema_failure(
+    mock_client_cls: MagicMock, tmp_path: Path
+) -> None:
     """Test sync_swagger_schema handles HTTP failure and exceptions gracefully."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value.__enter__.return_value = mock_client
     # HTTP error
-    mock_get.return_value = MagicMock(status_code=500)
+    mock_client.get.return_value = MagicMock(status_code=500)
     dest = str(tmp_path / "fail.json")
     assert sync_swagger_schema(schema_path=dest) is False
 
     # Exception
-    mock_get.side_effect = requests.exceptions.ConnectionError("Refused")
+    mock_client.get.side_effect = httpx.RequestError("Refused")
     assert sync_swagger_schema(schema_path=dest) is False
 
 
