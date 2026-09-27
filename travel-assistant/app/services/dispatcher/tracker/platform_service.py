@@ -12,7 +12,7 @@ from app.utils.transit_time import parse_time_to_minutes
 logger = logging.getLogger(__name__)
 
 
-def _clean_delay_reason(reason: Optional[str]) -> Optional[str]:
+def clean_delay_reason(reason: Optional[str]) -> Optional[str]:
     """Clean and standardise National Rail Darwin delay/cancellation reason phrases."""
     if not reason:
         return None
@@ -149,8 +149,8 @@ def resolve_live_rail_platform(
                     if std_m is not None and etd_m is not None:
                         delay_mins = max(0, etd_m - std_m)
 
-                cleaned_delay_reason = _clean_delay_reason(raw_delay_reason)
-                cleaned_cancel_reason = _clean_delay_reason(raw_cancel_reason)
+                cleaned_delay_reason = clean_delay_reason(raw_delay_reason)
+                cleaned_cancel_reason = clean_delay_reason(raw_cancel_reason)
 
                 return LiveRailStatus(
                     platform=str(platform).strip() if platform else None,
@@ -218,7 +218,7 @@ def resolve_live_rail_arrival_platform(
 
 
 __all__ = [
-    "_clean_delay_reason",
+    "clean_delay_reason",
     "resolve_live_rail_arrival_platform",
     "resolve_live_rail_platform",
 ]

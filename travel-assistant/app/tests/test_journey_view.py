@@ -668,7 +668,9 @@ def test_get_journey_live_tracking_data_selects_active_or_nearest_window(
 
 def test_timetable_and_journey_config_cache_clearing(app: Flask) -> None:
     """Test cache invalidation when saving timetables or journeys."""
-    from app.services.dispatcher.tracker import _UPCOMING_ITINERARY_CACHE
+    from app.services.dispatcher.tracker.waypoint_builder import (
+        _UPCOMING_ITINERARY_CACHE,
+    )
     from app.services.planner.raptor import _TRIPS_CACHE
     from app.views.config.timetables import _clear_planner_caches
 

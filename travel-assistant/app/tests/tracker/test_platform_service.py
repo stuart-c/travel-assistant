@@ -5,18 +5,18 @@ from unittest.mock import MagicMock
 from app.datasources.train_live import TrainLiveClient
 from app.services.dispatcher.tracker.models import LiveRailStatus
 from app.services.dispatcher.tracker.platform_service import (
-    _clean_delay_reason,
+    clean_delay_reason,
     resolve_live_rail_arrival_platform,
     resolve_live_rail_platform,
 )
 
 
 def test_clean_delay_reason() -> None:
-    """Test _clean_delay_reason strips boilerplate prefix."""
+    """Test clean_delay_reason strips boilerplate prefix."""
     raw = "This service has been delayed by a signalling fault"
-    assert _clean_delay_reason(raw) == "a signalling fault"
-    assert _clean_delay_reason("Minor delays") == "Minor delays"
-    assert _clean_delay_reason(None) is None
+    assert clean_delay_reason(raw) == "a signalling fault"
+    assert clean_delay_reason("Minor delays") == "Minor delays"
+    assert clean_delay_reason(None) is None
 
 
 def test_resolve_live_rail_platform_no_client() -> None:

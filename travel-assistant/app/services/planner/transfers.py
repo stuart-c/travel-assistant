@@ -7,16 +7,13 @@ from typing import List, Optional, Tuple, Union
 
 from app.models.location import Location
 from app.models.timetable import Timetable
-from app.models.transfer import PlatformTransfer
-from app.models.transit import Stop, StopInterchange
+from app.models.transit import Stop
 from app.models.walking import Walking
 
 from app.utils.transit_time import (
     CODE_TO_TIMETABLE_ATTR,
     DAY_NAME_TO_CODE,
     VALID_DAYS,
-    format_minutes_to_time,
-    parse_time_to_minutes,
 )
 
 
@@ -100,82 +97,6 @@ def resolve_endpoint_name(endpoint_type: str, endpoint_id: str) -> str:
         pass
 
     return raw_id
-
-
-def resolve_transfer_duration(
-    from_type: str,
-    from_id: str,
-    to_type: str,
-    to_id: str,
-    from_platform: Optional[str] = None,
-    to_platform: Optional[str] = None,
-    default_platform_minutes: int = 5,
-) -> Optional[Tuple[int, str, Optional[int]]]:
-    """Determine transfer time using strict 3-tier precedence hierarchy.
-
-    Hierarchy:
-      1. Explicit match in `walking` or `platform_transfers` table.
-      2. Nearby stop interchange in `stop_interchanges` table.
-      3. Default fallback of 5 minutes for intra-station platform interchanges.
-
-    Returns:
-        Tuple of (duration_minutes, transfer_kind, distance_metres) or None.
-    """
-    f_type = str(from_type).strip().lower()
-    f_id = str(from_id).strip()
-    t_type = str(to_type).strip().lower()
-    t_id = str(to_id).strip()
-
-    f_norm = normalise_id(f_id)
-    t_norm = normalise_id(t_id)
-
-    # Rule 1a: Check PlatformTransfer table if platforms are specified or station match
-    if (
-        f_type == "rail" and t_type == "rail" and (f_id == t_id or f_norm == t_norm)
-    ) or (from_platform is not None and to_platform is not None):
-        station_id = f_norm
-        if from_platform and to_platform:
-            pt = PlatformTransfer.find_transfer(station_id, from_platform, to_platform)
-            if pt:
-                return (pt.transfer_time_minutes, "platform_transfer", None)
-
-        # Rule 3 Fallback: Platform interchange default buffer
-        return (default_platform_minutes, "platform_transfer", None)
-
-    # Rule 1b: Check Walking table for explicit configured connection
-    walk_entry = Walking.find_walking_route(f_type, f_id, t_type, t_id)
-    if not walk_entry:
-        walk_entry = Walking.find_walking_route(f_type, f_norm, t_type, t_norm)
-    if walk_entry:
-        return (walk_entry.time_needed_minutes, "walk", None)
-
-    # Rule 2: Check StopInterchange table (nearby stops within walking distance)
-    interchange = (
-        StopInterchange.select()
-        .where(
-            (
-                (StopInterchange.from_stop_atco == f_id)
-                | (StopInterchange.from_stop_atco == f_norm)
-            )
-            & (
-                (StopInterchange.to_stop_atco == t_id)
-                | (StopInterchange.to_stop_atco == t_norm)
-            )
-        )
-        .first()
-    )
-    if interchange:
-        return (
-            interchange.estimated_walk_minutes,
-            "interchange",
-            interchange.distance_metres,
-        )
-
-    # If same transit stop ID
-    if (f_id == t_id or f_norm == t_norm) and f_type == t_type:
-        return (0, "interchange", 0)
-
-    return None
 
 
 def resolve_active_days_and_date(
@@ -316,14 +237,9 @@ def get_access_edges(
 
 
 __all__ = [
-    "VALID_DAYS",
-    "DAY_NAME_TO_CODE",
-    "CODE_TO_TIMETABLE_ATTR",
-    "parse_time_to_minutes",
-    "format_minutes_to_time",
     "normalise_id",
+    "extract_route_base_name",
     "resolve_endpoint_name",
-    "resolve_transfer_duration",
     "resolve_active_days_and_date",
     "get_active_timetables",
     "get_access_edges",

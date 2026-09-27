@@ -13,13 +13,8 @@ from app.services.planner.raptor.connectivity import _load_interchanges_for_stop
 from app.services.planner.raptor.models import _ParsedTrip
 from app.services.planner.raptor.transfer_rules import _is_invalid_transfer
 from app.services.planner.raptor.trips import _build_stop_to_trips
-from app.services.planner.transfers import (
-    format_minutes_to_time,
-    normalise_id,
-    parse_time_to_minutes,
-    resolve_endpoint_name,
-    resolve_transfer_duration,
-)
+from app.services.planner.transfers import normalise_id, resolve_endpoint_name
+from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 
 def _run_raptor_forward(
@@ -155,14 +150,6 @@ def _run_raptor_forward(
                         "duration": walk_min,
                     }
                     marked_stops.add(target_norm)
-
-            trans_info = resolve_transfer_duration("rail", stop_norm, "rail", stop_norm)
-            if trans_info:
-                dur, kind, _ = trans_info
-                plat_arr = curr_arr + dur
-                if plat_arr < tau_star.get(stop_norm, infinity):
-                    tau[k][stop_norm] = plat_arr
-                    tau_star[stop_norm] = plat_arr
 
         if not marked_stops:
             break

@@ -61,6 +61,17 @@ def format_minutes_to_time(minutes: int) -> str:
     return f"{hours:02d}:{mins:02d}"
 
 
+def parse_duration_seconds(duration_str: Optional[str]) -> int:
+    """Parse duration string with seconds suffix (e.g. '1680s') into integer seconds."""
+    if not duration_str:
+        return 0
+    digits = re.sub(r"[^\d]", "", str(duration_str))
+    try:
+        return int(digits)
+    except ValueError:
+        return 0
+
+
 def parse_iso_duration_seconds(dur_str: Optional[str]) -> int:
     """Parse ISO 8601 duration string (e.g. PT10M, PT1H30M, PT45S, PT1M30S) into seconds."""
     if not dur_str:

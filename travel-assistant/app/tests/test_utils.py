@@ -13,6 +13,7 @@ from app.utils.transit_time import (
     format_minutes_to_time,
     format_seconds_to_hh_mm,
     get_day_code,
+    parse_duration_seconds,
     parse_iso_duration_seconds,
     parse_time_str_to_seconds,
     parse_time_to_minutes,
@@ -125,6 +126,16 @@ def test_time_to_minutes_and_format() -> None:
     assert format_minutes_to_time(0) == "00:00"
     assert format_minutes_to_time(510) == "08:30"
     assert format_minutes_to_time(1440) == "00:00"
+
+
+def test_parse_duration_seconds() -> None:
+    """Test duration string parsing with suffix to seconds."""
+    assert parse_duration_seconds("1680s") == 1680
+    assert parse_duration_seconds("60s") == 60
+    assert parse_duration_seconds("120") == 120
+    assert parse_duration_seconds("") == 0
+    assert parse_duration_seconds(None) == 0
+    assert parse_duration_seconds("abc") == 0
 
 
 def test_iso_duration_parsing() -> None:

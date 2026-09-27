@@ -12,6 +12,7 @@ from app.models.route_query_log import RouteQueryLog
 from app.models.transit import Stop
 from app.models.walking import Walking
 from app.utils.geo import resolve_endpoint_coordinates
+from app.utils.transit_time import parse_duration_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +33,6 @@ VEHICLE_TYPE_MAP = {
     "light_rail": "tram",
     "ferry": "ferry",
 }
-
-
-def parse_duration_seconds(duration_str: Optional[str]) -> int:
-    """Parse Google API duration string (e.g. '1680s') into integer seconds."""
-    if not duration_str:
-        return 0
-    digits = re.sub(r"[^\d]", "", str(duration_str))
-    try:
-        return int(digits)
-    except ValueError:
-        return 0
 
 
 def map_vehicle_type(google_vehicle_type: Optional[str]) -> str:
