@@ -8,6 +8,7 @@ from app.utils.transit_time import (
     format_minutes_to_time,
     format_seconds_to_hh_mm,
     get_day_code,
+    parse_duration_seconds,
     parse_iso_duration_seconds,
     parse_time_str_to_seconds,
     parse_time_to_minutes,
@@ -16,6 +17,7 @@ from app.utils.transit_time import (
 __all__ = [
     "haversine_distance_m",
     "resolve_endpoint_coordinates",
+    "parse_duration_seconds",
     "parse_time_to_minutes",
     "format_minutes_to_time",
     "parse_iso_duration_seconds",

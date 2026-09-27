@@ -20,17 +20,12 @@ from app.services.planner.models import (
 )
 from app.services.planner.raptor import plan_journey
 from app.services.planner.transfers import (
-    DAY_NAME_TO_CODE,
-    VALID_DAYS,
     extract_route_base_name,
-    format_minutes_to_time,
     get_access_edges,
     get_active_timetables,
     normalise_id,
-    parse_time_to_minutes,
     resolve_active_days_and_date,
     resolve_endpoint_name,
-    resolve_transfer_duration,
 )
 
 __all__ = [
@@ -50,14 +45,9 @@ __all__ = [
     "NoServicesOnDayError",
     "NoTripsInWindowError",
     # Transfer & Date utilities
-    "parse_time_to_minutes",
-    "format_minutes_to_time",
     "normalise_id",
     "resolve_endpoint_name",
-    "resolve_transfer_duration",
     "resolve_active_days_and_date",
     "get_active_timetables",
     "get_access_edges",
-    "VALID_DAYS",
-    "DAY_NAME_TO_CODE",
 ]

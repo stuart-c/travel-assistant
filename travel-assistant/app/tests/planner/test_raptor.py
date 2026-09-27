@@ -18,7 +18,7 @@ from app.services.planner.raptor import (
     _load_interchanges_for_stops,
     plan_journey,
 )
-from app.services.planner.transfers import parse_time_to_minutes
+from app.utils.transit_time import parse_time_to_minutes
 
 
 def test_plan_journey_depart_mode(seeded_planner: Flask) -> None:

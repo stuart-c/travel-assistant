@@ -6,7 +6,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from app.models.timetable import Timetable
 from app.services.planner.raptor.models import _ParsedTrip
-from app.services.planner.transfers import normalise_id, parse_time_to_minutes
+from app.services.planner.transfers import normalise_id
+from app.utils.transit_time import parse_time_to_minutes
 
 _TRIPS_CACHE: Dict[
     Tuple[Tuple[str, ...], Optional[str]],

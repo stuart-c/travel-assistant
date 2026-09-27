@@ -299,18 +299,22 @@ def apply_live_departure_adjustments(
 
             raw_delay_reason = target_dep.get("delayReason")
             if raw_delay_reason:
-                from app.services.dispatcher.tracker import _clean_delay_reason
+                from app.services.dispatcher.tracker.platform_service import (
+                    clean_delay_reason,
+                )
 
-                candidate.delay_reason = _clean_delay_reason(str(raw_delay_reason))
+                candidate.delay_reason = clean_delay_reason(str(raw_delay_reason))
 
             if etd in ("Cancelled", "Delayed") or target_dep.get("isCancelled"):
                 if etd == "Cancelled" or target_dep.get("isCancelled"):
                     candidate.is_cancelled = True
                     raw_cancel_reason = target_dep.get("cancelReason")
                     if raw_cancel_reason:
-                        from app.services.dispatcher.tracker import _clean_delay_reason
+                        from app.services.dispatcher.tracker.platform_service import (
+                            clean_delay_reason,
+                        )
 
-                        candidate.cancel_reason = _clean_delay_reason(
+                        candidate.cancel_reason = clean_delay_reason(
                             str(raw_cancel_reason)
                         )
                     candidate.requires_reroute = True

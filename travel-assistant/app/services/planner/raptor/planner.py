@@ -36,14 +36,13 @@ from app.services.planner.raptor.trips import (
 from app.services.planner.raptor.models import _ParsedTrip
 from app.services.planner.transfers import (
     extract_route_base_name,
-    format_minutes_to_time,
     get_access_edges,
     get_active_timetables,
     normalise_id,
-    parse_time_to_minutes,
     resolve_active_days_and_date,
     resolve_endpoint_name,
 )
+from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
 
