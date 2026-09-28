@@ -292,3 +292,149 @@ def test_discover_and_persist_corridors_direct_walk() -> None:
     assert routes[0].is_preferred is True
     assert len(routes[0].legs) == 1
     assert routes[0].legs[0]["duration_minutes"] == 5
+
+
+def test_discover_and_persist_corridors_multi_step_walking_lookahead() -> None:
+    """Test multi-step turn-by-turn walking steps are consolidated without erroneous destination links."""
+    Location.create(
+        id="ha:kings_cross_home",
+        name="King's Cross Home",
+        location_type="ha",
+        latitude=51.5308,
+        longitude=-0.1238,
+    )
+    Location.create(
+        id="custom:london_bridge_office",
+        name="London Bridge Office",
+        location_type="custom",
+        latitude=51.5045,
+        longitude=-0.0865,
+    )
+
+    journey = Journey.create(
+        name="London Commute",
+        from_type="ha",
+        from_id="ha:kings_cross_home",
+        from_name="King's Cross Home",
+        to_type="custom",
+        to_id="custom:london_bridge_office",
+        to_name="London Bridge Office",
+    )
+
+    mock_client = MagicMock()
+    mock_client.compute_transit_routes.return_value = {
+        "routes": [
+            {
+                "duration": "1800s",
+                "description": "Northern line",
+                "legs": [
+                    {
+                        "steps": [
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "120s",
+                                "distanceMeters": 100,
+                            },
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "180s",
+                                "distanceMeters": 150,
+                            },
+                            {
+                                "travelMode": "TRANSIT",
+                                "staticDuration": "1200s",
+                                "distanceMeters": 4500,
+                                "transitDetails": {
+                                    "stopDetails": {
+                                        "departureStop": {
+                                            "name": "King's Cross St. Pancras Underground Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5308,
+                                                    "longitude": -0.1238,
+                                                }
+                                            },
+                                        },
+                                        "arrivalStop": {
+                                            "name": "London Bridge Underground Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5045,
+                                                    "longitude": -0.0865,
+                                                }
+                                            },
+                                        },
+                                    },
+                                    "transitLine": {
+                                        "name": "Northern line",
+                                        "transitAgency": {"name": "London Underground"},
+                                        "vehicle": {"type": "SUBWAY"},
+                                    },
+                                    "stopCount": 6,
+                                },
+                            },
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "60s",
+                                "distanceMeters": 50,
+                            },
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "240s",
+                                "distanceMeters": 200,
+                            },
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    learner = CorridorLearner(client=mock_client)
+    routes = learner.discover_and_persist_corridors(journey)
+
+    assert len(routes) == 1
+    r = routes[0]
+    # Consecutive walking turns should be consolidated into exactly 3 legs
+    assert len(r.legs) == 3
+
+    # Leg 1: Consolidated access walk from origin to departure transit stop
+    leg1 = r.legs[0]
+    assert leg1["leg_type"] == "walk"
+    assert leg1["from_id"] == "ha:kings_cross_home"
+    assert leg1["to_id"] != "custom:london_bridge_office"
+    assert "king_s_cross" in leg1["to_id"]
+    assert leg1["duration_minutes"] == 5
+    assert leg1["distance_m"] == 250
+
+    # Leg 2: Transit leg
+    leg2 = r.legs[1]
+    assert leg2["leg_type"] == "transit"
+    assert leg2["line_name"] == "Northern line"
+
+    # Leg 3: Consolidated egress walk from alight transit stop to final destination
+    leg3 = r.legs[2]
+    assert leg3["leg_type"] == "walk"
+    assert "london_bridge" in leg3["from_id"]
+    assert leg3["to_id"] == "custom:london_bridge_office"
+    assert leg3["duration_minutes"] == 5
+    assert leg3["distance_m"] == 250
+
+    # Verify that NO direct walking connection between origin and destination was created
+    spurious_direct = Walking.find_walking_route(
+        "ha", "ha:kings_cross_home", "custom", "custom:london_bridge_office"
+    )
+    assert spurious_direct is None
+
+    # Verify that valid walking legs were registered in the Walking model
+    access_walk = Walking.find_walking_route(
+        "ha", "ha:kings_cross_home", leg1["to_type"], leg1["to_id"]
+    )
+    assert access_walk is not None
+    assert access_walk.time_needed_minutes == 5
+
+    egress_walk = Walking.find_walking_route(
+        leg3["from_type"], leg3["from_id"], "custom", "custom:london_bridge_office"
+    )
+    assert egress_walk is not None
+    assert egress_walk.time_needed_minutes == 5

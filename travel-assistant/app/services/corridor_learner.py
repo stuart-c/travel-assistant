@@ -11,6 +11,7 @@ from app.models.journey_route import JourneyRoute
 from app.models.route_query_log import RouteQueryLog
 from app.models.transit import Stop
 from app.models.walking import Walking
+from app.services.planner.transfers import normalise_id
 from app.utils.geo import resolve_endpoint_coordinates
 from app.utils.transit_time import parse_duration_seconds
 
@@ -88,6 +89,26 @@ def resolve_or_create_stop(
         return norm_type, atco_code, clean_name
 
 
+def _combine_polylines(polylines: List[Optional[str]]) -> Optional[str]:
+    """Combine multiple encoded polylines into a single continuous polyline."""
+    valid = [p for p in polylines if p]
+    if not valid:
+        return None
+    if len(valid) == 1:
+        return valid[0]
+    try:
+        import polyline
+
+        all_pts: List[Tuple[float, float]] = []
+        for p in valid:
+            all_pts.extend(polyline.decode(p))
+        if all_pts:
+            return polyline.encode(all_pts)
+    except Exception:
+        pass
+    return valid[0]
+
+
 def ensure_walking_connection(
     from_type: str,
     from_id: str,
@@ -100,6 +121,12 @@ def ensure_walking_connection(
 ) -> None:
     """Ensure walking connection exists in the walking table."""
     try:
+        if not from_id or not to_id:
+            return
+        if from_type == to_type and normalise_id(from_id) == normalise_id(to_id):
+            return
+        if distance_m > 5000:
+            return
         existing = Walking.find_walking_route(from_type, from_id, to_type, to_id)
         if not existing:
             Walking.create(
@@ -325,162 +352,209 @@ class CorridorLearner:
             stage_idx = 1
             step_idx = 1
 
-            prev_endpoint_type = journey.from_type
-            prev_endpoint_id = journey.from_id
-            prev_endpoint_name = origin_name or journey.from_name
-
+            raw_steps: List[Dict[str, Any]] = []
             for r_leg in route_legs:
-                for step in r_leg.get("steps", []):
-                    travel_mode = str(step.get("travelMode", "")).upper()
+                raw_steps.extend(r_leg.get("steps", []))
+
+            segments: List[Dict[str, Any]] = []
+            walk_accumulator: List[Dict[str, Any]] = []
+
+            for step in raw_steps:
+                travel_mode = str(step.get("travelMode", "")).upper()
+                if travel_mode == "TRANSIT":
+                    if walk_accumulator:
+                        segments.append({"type": "walk", "steps": walk_accumulator})
+                        walk_accumulator = []
+                    segments.append({"type": "transit", "step": step})
+                else:
+                    walk_accumulator.append(step)
+
+            if walk_accumulator:
+                segments.append({"type": "walk", "steps": walk_accumulator})
+
+            current_endpoint_type = journey.from_type
+            current_endpoint_id = journey.from_id
+            current_endpoint_name = origin_name or journey.from_name
+
+            for seg_idx, seg in enumerate(segments):
+                if seg["type"] == "transit":
+                    transit_count += 1
+                    step = seg["step"]
                     step_dur_sec = parse_duration_seconds(step.get("staticDuration"))
                     step_dur_mins = (
                         max(1, round(step_dur_sec / 60)) if step_dur_sec else 1
                     )
                     step_dist_m = int(step.get("distanceMeters", 0))
 
-                    if travel_mode == "TRANSIT":
-                        transit_count += 1
-                        transit_details = step.get("transitDetails", {})
-                        stop_details = transit_details.get("stopDetails", {})
-                        dep_stop_raw = stop_details.get("departureStop", {})
-                        arr_stop_raw = stop_details.get("arrivalStop", {})
+                    transit_details = step.get("transitDetails", {})
+                    stop_details = transit_details.get("stopDetails", {})
+                    dep_stop_raw = stop_details.get("departureStop", {})
+                    arr_stop_raw = stop_details.get("arrivalStop", {})
 
-                        line_info = transit_details.get("transitLine", {})
-                        line_name = (
-                            line_info.get("nameShort")
-                            or line_info.get("name")
-                            or "Transit"
-                        )
-                        agency = line_info.get("transitAgency", {}).get("name")
-                        vehicle_type = line_info.get("vehicle", {}).get("type")
-                        canonical_mode = map_vehicle_type(vehicle_type)
-                        transit_modes_used.append(canonical_mode)
+                    line_info = transit_details.get("transitLine", {})
+                    line_name = (
+                        line_info.get("nameShort") or line_info.get("name") or "Transit"
+                    )
+                    agency = line_info.get("transitAgency", {}).get("name")
+                    vehicle_type = line_info.get("vehicle", {}).get("type")
+                    canonical_mode = map_vehicle_type(vehicle_type)
+                    transit_modes_used.append(canonical_mode)
 
-                        dep_lat = (
-                            dep_stop_raw.get("location", {})
-                            .get("latLng", {})
-                            .get("latitude")
-                        )
-                        dep_lng = (
-                            dep_stop_raw.get("location", {})
-                            .get("latLng", {})
-                            .get("longitude")
-                        )
-                        arr_lat = (
-                            arr_stop_raw.get("location", {})
-                            .get("latLng", {})
-                            .get("latitude")
-                        )
-                        arr_lng = (
-                            arr_stop_raw.get("location", {})
-                            .get("latLng", {})
-                            .get("longitude")
-                        )
+                    dep_lat = (
+                        dep_stop_raw.get("location", {})
+                        .get("latLng", {})
+                        .get("latitude")
+                    )
+                    dep_lng = (
+                        dep_stop_raw.get("location", {})
+                        .get("latLng", {})
+                        .get("longitude")
+                    )
+                    arr_lat = (
+                        arr_stop_raw.get("location", {})
+                        .get("latLng", {})
+                        .get("latitude")
+                    )
+                    arr_lng = (
+                        arr_stop_raw.get("location", {})
+                        .get("latLng", {})
+                        .get("longitude")
+                    )
 
-                        dep_type, dep_id, dep_name = resolve_or_create_stop(
-                            dep_stop_raw.get("name", "Boarding Stop"),
-                            dep_lat,
-                            dep_lng,
-                            stop_type=canonical_mode,
-                        )
-                        arr_type, arr_id, arr_name = resolve_or_create_stop(
-                            arr_stop_raw.get("name", "Alight Stop"),
-                            arr_lat,
-                            arr_lng,
-                            stop_type=canonical_mode,
-                        )
+                    dep_type, dep_id, dep_name = resolve_or_create_stop(
+                        dep_stop_raw.get("name", "Boarding Stop"),
+                        dep_lat,
+                        dep_lng,
+                        stop_type=canonical_mode,
+                    )
+                    arr_type, arr_id, arr_name = resolve_or_create_stop(
+                        arr_stop_raw.get("name", "Alight Stop"),
+                        arr_lat,
+                        arr_lng,
+                        stop_type=canonical_mode,
+                    )
 
-                        leg_dict = {
-                            "stage_index": stage_idx,
-                            "step_index": step_idx,
-                            "leg_type": "transit",
-                            "transport_mode": canonical_mode,
-                            "line_name": line_name,
-                            "operator_name": agency,
-                            "from_type": dep_type,
-                            "from_id": dep_id,
-                            "from_name": dep_name,
-                            "to_type": arr_type,
-                            "to_id": arr_id,
-                            "to_name": arr_name,
-                            "duration_minutes": step_dur_mins,
-                            "distance_m": step_dist_m,
-                            "stops_count": int(transit_details.get("stopCount", 0)),
-                        }
-                        step_poly = step.get("polyline", {}).get("encodedPolyline")
-                        if not step_poly and isinstance(r_leg.get("polyline"), dict):
-                            step_poly = r_leg["polyline"].get("encodedPolyline")
-                        if step_poly:
-                            leg_dict["polyline"] = step_poly
-                        legs_data.append(leg_dict)
-                        prev_endpoint_type = arr_type
-                        prev_endpoint_id = arr_id
-                        prev_endpoint_name = arr_name
+                    leg_dict = {
+                        "stage_index": stage_idx,
+                        "step_index": step_idx,
+                        "leg_type": "transit",
+                        "transport_mode": canonical_mode,
+                        "line_name": line_name,
+                        "operator_name": agency,
+                        "from_type": dep_type,
+                        "from_id": dep_id,
+                        "from_name": dep_name,
+                        "to_type": arr_type,
+                        "to_id": arr_id,
+                        "to_name": arr_name,
+                        "duration_minutes": step_dur_mins,
+                        "distance_m": step_dist_m,
+                        "stops_count": int(transit_details.get("stopCount", 0)),
+                    }
+                    step_poly = step.get("polyline", {}).get("encodedPolyline")
+                    if not step_poly and isinstance(route.get("polyline"), dict):
+                        step_poly = route["polyline"].get("encodedPolyline")
+                    if step_poly:
+                        leg_dict["polyline"] = step_poly
+                    legs_data.append(leg_dict)
 
+                    current_endpoint_type = arr_type
+                    current_endpoint_id = arr_id
+                    current_endpoint_name = arr_name
+                    stage_idx += 1
+                    step_idx += 1
+
+                else:
+                    walk_steps = seg["steps"]
+                    total_dur_sec = sum(
+                        parse_duration_seconds(st.get("staticDuration"))
+                        for st in walk_steps
+                    )
+                    total_dur_mins = (
+                        max(1, round(total_dur_sec / 60)) if total_dur_sec else 1
+                    )
+                    total_dist_m = sum(
+                        int(st.get("distanceMeters", 0)) for st in walk_steps
+                    )
+
+                    next_transit = next(
+                        (s for s in segments[seg_idx + 1 :] if s["type"] == "transit"),
+                        None,
+                    )
+
+                    if next_transit:
+                        n_dep = (
+                            next_transit["step"]
+                            .get("transitDetails", {})
+                            .get("stopDetails", {})
+                            .get("departureStop", {})
+                        )
+                        n_lat = (
+                            n_dep.get("location", {}).get("latLng", {}).get("latitude")
+                        )
+                        n_lng = (
+                            n_dep.get("location", {}).get("latLng", {}).get("longitude")
+                        )
+                        n_vehicle = (
+                            next_transit["step"]
+                            .get("transitDetails", {})
+                            .get("transitLine", {})
+                            .get("vehicle", {})
+                            .get("type")
+                        )
+                        next_type, next_id, next_name = resolve_or_create_stop(
+                            n_dep.get("name", "Transit Stop"),
+                            n_lat,
+                            n_lng,
+                            stop_type=map_vehicle_type(n_vehicle),
+                        )
                     else:
-                        # Walking or other movement step
                         next_type = journey.to_type
                         next_id = journey.to_id
                         next_name = dest_name or journey.to_name
 
-                        # If next step is transit, peek ahead for next boarding stop
-                        step_idx_in_leg = r_leg.get("steps", []).index(step)
-                        if step_idx_in_leg + 1 < len(r_leg.get("steps", [])):
-                            next_step = r_leg.get("steps", [])[step_idx_in_leg + 1]
-                            if (
-                                str(next_step.get("travelMode", "")).upper()
-                                == "TRANSIT"
-                            ):
-                                n_dep = (
-                                    next_step.get("transitDetails", {})
-                                    .get("stopDetails", {})
-                                    .get("departureStop", {})
-                                )
-                                n_lat = (
-                                    n_dep.get("location", {})
-                                    .get("latLng", {})
-                                    .get("latitude")
-                                )
-                                n_lng = (
-                                    n_dep.get("location", {})
-                                    .get("latLng", {})
-                                    .get("longitude")
-                                )
-                                next_type, next_id, next_name = resolve_or_create_stop(
-                                    n_dep.get("name", "Transit Stop"), n_lat, n_lng
-                                )
+                    if current_endpoint_type == next_type and normalise_id(
+                        current_endpoint_id
+                    ) == normalise_id(next_id):
+                        continue
 
-                        leg_dict = {
-                            "stage_index": stage_idx,
-                            "step_index": step_idx,
-                            "leg_type": "walk",
-                            "from_type": prev_endpoint_type,
-                            "from_id": prev_endpoint_id,
-                            "from_name": prev_endpoint_name,
-                            "to_type": next_type,
-                            "to_id": next_id,
-                            "to_name": next_name,
-                            "duration_minutes": step_dur_mins,
-                            "distance_m": step_dist_m,
-                        }
-                        step_poly = step.get("polyline", {}).get("encodedPolyline")
-                        if step_poly:
-                            leg_dict["polyline"] = step_poly
-                        legs_data.append(leg_dict)
-                        ensure_walking_connection(
-                            prev_endpoint_type,
-                            prev_endpoint_id,
-                            prev_endpoint_name,
-                            next_type,
-                            next_id,
-                            next_name,
-                            step_dur_mins,
-                            step_dist_m,
-                        )
-                        prev_endpoint_type = next_type
-                        prev_endpoint_id = next_id
-                        prev_endpoint_name = next_name
+                    step_polys = [
+                        st.get("polyline", {}).get("encodedPolyline")
+                        for st in walk_steps
+                    ]
+                    comb_poly = _combine_polylines(step_polys)
 
+                    leg_dict = {
+                        "stage_index": stage_idx,
+                        "step_index": step_idx,
+                        "leg_type": "walk",
+                        "from_type": current_endpoint_type,
+                        "from_id": current_endpoint_id,
+                        "from_name": current_endpoint_name,
+                        "to_type": next_type,
+                        "to_id": next_id,
+                        "to_name": next_name,
+                        "duration_minutes": total_dur_mins,
+                        "distance_m": total_dist_m,
+                    }
+                    if comb_poly:
+                        leg_dict["polyline"] = comb_poly
+                    legs_data.append(leg_dict)
+
+                    ensure_walking_connection(
+                        current_endpoint_type,
+                        current_endpoint_id,
+                        current_endpoint_name,
+                        next_type,
+                        next_id,
+                        next_name,
+                        total_dur_mins,
+                        total_dist_m,
+                    )
+
+                    current_endpoint_type = next_type
+                    current_endpoint_id = next_id
+                    current_endpoint_name = next_name
                     stage_idx += 1
                     step_idx += 1
 
