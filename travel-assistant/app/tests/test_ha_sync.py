@@ -143,17 +143,12 @@ def test_sync_ha_locations_generic_exception(mock_fetch: MagicMock, app: Flask) 
 
 
 @patch(
-    "app.sync.transit_sync.sync_bus_routes",
-    return_value={"status": "success", "records": 0},
-)
-@patch(
     "app.sync.transit_sync.sync_stops", return_value={"status": "success", "records": 0}
 )
 @patch("app.sync.ha_sync.HomeAssistantClient.fetch_zones")
 def test_sync_table_with_ha(
     mock_fetch: MagicMock,
     mock_sync_stops: MagicMock,
-    mock_sync_bus: MagicMock,
     app: Flask,
 ) -> None:
     """Test sync_table dispatcher for ha_locations."""

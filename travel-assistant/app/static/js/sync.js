@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const dataUrl = (gridContainer && gridContainer.getAttribute('data-data-url')) || '/config/sync/data';
 
   const SYNCABLE_NAMES = [
-    'bus_routes',
     'stops',
     'stop_interchanges',
     'ha_locations',
@@ -41,7 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getDatasetIcon(name) {
     switch (name) {
-      case 'bus_routes': return 'alt_route';
       case 'stops': return 'directions_transit';
       case 'stop_interchanges': return 'transfer_within_a_station';
       case 'ha_locations': return 'pin_drop';
@@ -56,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getDatasetDisplayName(name) {
     switch (name) {
-      case 'bus_routes': return 'Bus Routes';
       case 'stops': return 'Transit Stops (NaPTAN)';
       case 'stop_interchanges': return 'Stop Interchanges';
       case 'ha_locations': return 'Home Assistant Locations';

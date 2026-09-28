@@ -19,7 +19,6 @@ if APP_DIR not in sys.path:
 
 from app.main import create_app  # noqa: E402
 from app.models import (  # noqa: E402
-    BusRoute,
     Journey,
     Location,
     PlatformTransfer,
@@ -170,37 +169,7 @@ def seed_database(db_path: str) -> None:
         ]
         Stop.bulk_upsert(stops_data)
 
-        # 3. Seed Bus Routes
-        print("  -> Seeding bus routes...")
-        bus_routes = [
-            {
-                "route_number": "73",
-                "operator_name": "Arriva London",
-                "operator_code": "ARV",
-                "origin": "Oxford Circus",
-                "destination": "Stoke Newington Common",
-                "description": "via King's Cross, Angel, and Essex Road",
-            },
-            {
-                "route_number": "30",
-                "operator_name": "Metroline",
-                "operator_code": "MET",
-                "origin": "Portman Street / Marble Arch",
-                "destination": "Hackney Wick",
-                "description": "via Euston, King's Cross, and Highbury",
-            },
-            {
-                "route_number": "205",
-                "operator_name": "Stagecoach London",
-                "operator_code": "STG",
-                "origin": "Paddington Station",
-                "destination": "Bow Bus Garage",
-                "description": "via Marylebone, Euston, and Old Street",
-            },
-        ]
-        BusRoute.bulk_upsert(bus_routes)
-
-        # 4. Seed Home Assistant Zones & Custom Locations
+        # 3. Seed Home Assistant Zones & Custom Locations
         print("  -> Seeding Home Assistant zones and custom locations...")
         locations = [
             Location(

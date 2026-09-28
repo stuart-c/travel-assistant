@@ -16,7 +16,6 @@ from app.datasources import (
 )
 from app.db import db
 from app.models import (
-    BusRoute,
     Journey,
     Stop,
     StopInterchange,
@@ -29,37 +28,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INTERCHANGE_RADIUS_METRES = 250.0
 WALKING_METRES_PER_MINUTE = 80.0
-
-
-def sync_bus_routes(app: Optional[Flask] = None) -> Dict[str, Any]:
-    """Synchronise bus routes using configured Bus Open Data Service (BODS) credentials."""
-    client = BodsClient.from_settings()
-
-    def _check_credentials() -> Optional[str]:
-        if not client.api_key:
-            return "Bus API Key not configured in Settings > API Credentials"
-        return None
-
-    def _perform_sync() -> int:
-        logger.info("Fetching bus routes from Bus Open Data Service (BODS)...")
-        routes_to_upsert = client.fetch_routes(limit=25)
-        if routes_to_upsert:
-            logger.info(
-                "Upserting %d bus route records into database...", len(routes_to_upsert)
-            )
-            BusRoute.bulk_upsert(routes_to_upsert)
-        return len(routes_to_upsert)
-
-    return run_sync_task(
-        table_name="bus_routes",
-        sync_operation=_perform_sync,
-        client_check=_check_credentials,
-        provider_name="BODS",
-        success_message_factory=lambda cnt: (
-            f"Successfully synchronised {cnt} bus route datasets from BODS."
-        ),
-        app=app,
-    )
 
 
 def sync_stops(app: Optional[Flask] = None) -> Dict[str, Any]:
@@ -514,9 +482,7 @@ def sync_table(
     norm_name = table_name.lower().strip()
     valid_names = [e.table_name for e in SYNC_REGISTRY]
 
-    if norm_name == "bus_routes":
-        return sync_bus_routes(app=app)
-    elif norm_name in ("stops", "transit_stops", "naptan"):
+    if norm_name in ("stops", "transit_stops", "naptan"):
         return sync_stops(app=app)
     elif norm_name in ("stop_interchanges", "interchanges", "stop_interchange"):
         return sync_stop_interchanges(app=app)

@@ -16,7 +16,6 @@ from app.db import (
     vacuum_database,
 )
 from app.models import (
-    BusRoute,
     Location,
     PlatformTransfer,
     Setting,
@@ -150,38 +149,6 @@ def test_setting_model_operations(app: Flask) -> None:
         assert Setting.get_val("key1") == ""
 
 
-def test_bus_route_model(app: Flask) -> None:
-    """Test BusRoute model bulk_upsert and query methods."""
-    with app.app_context():
-        routes = [
-            {
-                "route_number": "1",
-                "operator_name": "Oxford Bus",
-                "operator_code": "OBC",
-                "origin": "Blackbird Leys",
-                "destination": "City Centre",
-                "description": "Frequent city bus",
-            },
-            {
-                "route_number": "5",
-                "operator_name": "Oxford Bus",
-                "operator_code": "OBC",
-                "origin": "Blackbird Leys",
-                "destination": "Rail Station",
-                "description": "Rail link",
-            },
-            {"route_number": ""},  # Invalid, should be skipped
-        ]
-        assert BusRoute.bulk_upsert([]) == 0
-        inserted = BusRoute.bulk_upsert(routes)
-        assert inserted == 2
-
-        # Search
-        search_res = BusRoute.search("Rail")
-        assert len(search_res) == 1
-        assert search_res[0].route_number == "5"
-
-
 def test_stop_model(app: Flask) -> None:
     """Test Stop model upsert, on_conflict resolution, and search."""
     with app.app_context():
@@ -278,25 +245,23 @@ def test_stop_model(app: Flask) -> None:
 def test_sync_metadata_model(app: Flask) -> None:
     """Test SyncMetadata state transitions and telemetry recording."""
     with app.app_context():
-        assert SyncMetadata.get_meta("bus_routes") is None
-        assert SyncMetadata.is_due_for_update("bus_routes") is True
+        assert SyncMetadata.get_meta("stops") is None
+        assert SyncMetadata.is_due_for_update("stops") is True
 
         # Start
-        SyncMetadata.record_start("bus_routes")
-        meta = SyncMetadata.get_meta("bus_routes")
+        SyncMetadata.record_start("stops")
+        meta = SyncMetadata.get_meta("stops")
         assert meta is not None
         assert meta.status == "syncing"
 
         # Success
-        SyncMetadata.record_success("bus_routes", 50, 1.25)
-        meta2 = SyncMetadata.get_meta("bus_routes")
+        SyncMetadata.record_success("stops", 50, 1.25)
+        meta2 = SyncMetadata.get_meta("stops")
         assert meta2.status == "success"
         assert meta2.records_count == 50
         assert meta2.duration_seconds == 1.25
         assert meta2.error_message is None
-        assert (
-            SyncMetadata.is_due_for_update("bus_routes", max_age_seconds=3600) is False
-        )
+        assert SyncMetadata.is_due_for_update("stops", max_age_seconds=3600) is False
 
         # Error
         SyncMetadata.record_error("ha_locations", "Network timed out", 5.0)
@@ -321,12 +286,12 @@ def test_sync_metadata_model(app: Flask) -> None:
 
         # Purge obsolete entries
         deleted = SyncMetadata.cleanup_obsolete_entries(
-            ["bus_routes", "ha_locations", "train_timetables"]
+            ["stops", "ha_locations", "train_timetables"]
         )
         assert deleted == 2
         assert SyncMetadata.get_meta("bus_stops") is None
         assert SyncMetadata.get_meta("stations") is None
-        assert SyncMetadata.get_meta("bus_routes") is not None
+        assert SyncMetadata.get_meta("stops") is not None
         assert SyncMetadata.get_meta("ha_locations") is not None
         assert SyncMetadata.get_meta("train_timetables") is not None
 
@@ -520,16 +485,18 @@ def test_get_db_stats(app: Flask) -> None:
     """Test get_db_stats produces metrics and table telemetry."""
     with app.app_context():
         Setting.set_val("test_key", "test_val")
-        BusRoute.bulk_upsert([{"route_number": "10"}])
-        SyncMetadata.record_success("bus_routes", 1, 0.5)
+        Stop.bulk_upsert(
+            [{"atco_code": "0100B1", "name": "Stop 1", "stop_type": "bus"}]
+        )
+        SyncMetadata.record_success("stops", 1, 0.5)
 
         stats = get_db_stats(app)
-        assert stats["total_tables"] >= 8
-        assert stats["total_rows"] >= 3
+        assert stats["total_tables"] >= 7
+        assert stats["total_rows"] >= 2
         assert "file_size_formatted" in stats
         assert any(t["name"] == "settings" for t in stats["tables"])
         assert any(
-            t["name"] == "bus_routes" and t["sync_status"] == "success"
+            t["name"] == "stops" and t["sync_status"] == "success"
             for t in stats["tables"]
         )
 
@@ -538,27 +505,29 @@ def test_get_sync_stats(app: Flask) -> None:
     """Test get_sync_stats returns all registered datasets and sync metadata records."""
     with app.app_context():
         SyncMetadata.delete().execute()
-        SyncMetadata.record_success("bus_routes", 15, 0.42)
-        SyncMetadata.record_error("stops", "API timeout", 1.5)
+        SyncMetadata.record_success("stops", 15, 0.42)
+        SyncMetadata.record_error("stop_interchanges", "API timeout", 1.5)
         SyncMetadata.record_skipped("train_timetables", "No S3 credentials")
         # Custom extra sync record outside standard registry (should not be returned)
         SyncMetadata.record_success("custom_feed", 99, 2.0)
 
         stats = get_sync_stats(app)
-        assert len(stats) == 8
-
-        bus_entry = next((s for s in stats if s["name"] == "bus_routes"), None)
-        assert bus_entry is not None
-        assert bus_entry["sync_status"] == "success"
-        assert bus_entry["records_count"] == 15
-        assert bus_entry["duration_seconds"] == 0.42
-        assert bus_entry["syncable"] is True
-        assert bus_entry["last_updated_at"] is not None
+        assert len(stats) == 7
 
         stops_entry = next((s for s in stats if s["name"] == "stops"), None)
         assert stops_entry is not None
-        assert stops_entry["sync_status"] == "error"
-        assert stops_entry["error_message"] == "API timeout"
+        assert stops_entry["sync_status"] == "success"
+        assert stops_entry["records_count"] == 15
+        assert stops_entry["duration_seconds"] == 0.42
+        assert stops_entry["syncable"] is True
+        assert stops_entry["last_updated_at"] is not None
+
+        interchange_entry = next(
+            (s for s in stats if s["name"] == "stop_interchanges"), None
+        )
+        assert interchange_entry is not None
+        assert interchange_entry["sync_status"] == "error"
+        assert interchange_entry["error_message"] == "API timeout"
 
         train_entry = next((s for s in stats if s["name"] == "train_timetables"), None)
         assert train_entry is not None
@@ -782,7 +751,7 @@ def test_run_migrations_cleans_up_sync_metadata() -> None:
     )
     remaining_tables = [row[0] for row in cursor.fetchall()]
 
-    assert "bus_routes" in remaining_tables
+    assert "bus_routes" not in remaining_tables
     assert "stops" in remaining_tables
     assert "bus_stops" not in remaining_tables
     assert "stations" not in remaining_tables

@@ -6,7 +6,6 @@ import requests
 from flask import Flask
 
 from app.models import (
-    BusRoute,
     Journey,
     Setting,
     Stop,
@@ -18,109 +17,9 @@ from app.sync import (
     request_sync,
     start_background_worker,
     stop_background_worker,
-    sync_bus_routes,
     sync_stops,
     sync_table,
 )
-
-
-def test_sync_bus_routes_missing_credentials(app: Flask) -> None:
-    """Test sync_bus_routes records skipped status when API key is missing."""
-    with app.app_context():
-        res = sync_bus_routes(app=app)
-        assert res["status"] == "skipped_no_credentials"
-        assert res["records"] == 0
-        assert "not configured" in res["message"]
-
-        meta = SyncMetadata.get_meta("bus_routes")
-        assert meta is not None
-        assert meta.status == "skipped"
-
-
-def test_sync_bus_routes_auth_error(app: Flask) -> None:
-    """Test sync_bus_routes handles 401/403 authentication failures."""
-    with app.app_context():
-        Setting.set_val("bus_api_key", "invalid-key")
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 401
-        with patch("requests.get", return_value=mock_resp):
-            res = sync_bus_routes(app=app)
-            assert res["status"] == "error"
-            assert "Invalid Bus API key" in res["message"]
-
-        meta = SyncMetadata.get_meta("bus_routes")
-        assert meta is not None
-        assert meta.status == "error"
-
-
-def test_sync_bus_routes_success_with_lines(app: Flask) -> None:
-    """Test sync_bus_routes successfully ingests line records."""
-    with app.app_context():
-        Setting.set_val("bus_api_key", "valid-key")
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "results": [
-                {
-                    "name": "Oxfordshire Network",
-                    "operator_name": "Oxford Bus Company",
-                    "noc": ["OBC"],
-                    "origin": "Oxford",
-                    "destination": "London",
-                    "description": "Express line",
-                    "lines": ["OX-TUBE", "1"],
-                },
-                {
-                    "id": 999,
-                    "name": "Fallback Group",
-                    "operator_name": "Stagecoach",
-                    "noc": [],
-                    "origin": "Witney",
-                    "destination": "Oxford",
-                    "comment": "Local line",
-                    "lines": [],
-                },
-            ]
-        }
-        with patch("requests.get", return_value=mock_resp):
-            res = sync_bus_routes(app=app)
-            assert res["status"] == "success"
-            assert res["records"] == 2
-
-        routes = list(BusRoute.select())
-        assert len(routes) == 2
-        route_numbers = [r.route_number for r in routes]
-        assert "OX-TUBE" in route_numbers
-        assert "1" in route_numbers
-
-
-def test_sync_bus_routes_request_exception(app: Flask) -> None:
-    """Test sync_bus_routes handles network/requests exceptions."""
-    with app.app_context():
-        Setting.set_val("bus_api_key", "valid-key")
-
-        with patch(
-            "requests.get", side_effect=requests.exceptions.ConnectTimeout("Timeout")
-        ):
-            res = sync_bus_routes(app=app)
-            assert res["status"] == "error"
-            assert "Network or API error" in res["message"]
-
-
-def test_sync_bus_routes_unexpected_exception(app: Flask) -> None:
-    """Test sync_bus_routes handles general unexpected exceptions."""
-    with app.app_context():
-        Setting.set_val("bus_api_key", "valid-key")
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.side_effect = ValueError("Corrupt JSON")
-        with patch("requests.get", return_value=mock_resp):
-            res = sync_bus_routes(app=app)
-            assert res["status"] == "error"
-            assert "Unexpected error" in res["message"]
 
 
 def test_sync_stops_success(app: Flask) -> None:
@@ -177,12 +76,9 @@ def test_sync_table_dispatch(app: Flask) -> None:
         assert res_invalid["status"] == "error"
         assert "Unknown or non-syncable table" in res_invalid["message"]
 
-        with patch(
-            "app.sync.transit_sync.sync_bus_routes",
-            return_value={"status": "success", "records": 5},
-        ):
-            res = sync_table("bus_routes")
-            assert res["status"] == "success"
+        res_bus = sync_table("bus_routes")
+        assert res_bus["status"] == "error"
+        assert "Unknown or non-syncable table" in res_bus["message"]
 
         with patch(
             "app.sync.transit_sync.sync_stops",
@@ -628,12 +524,12 @@ def test_sync_table_bus_timetables(app: Flask) -> None:
 def test_sync_metadata_request_sync_sets_flag(app: Flask) -> None:
     """Test SyncMetadata.request_sync sets flag and pending status."""
     with app.app_context():
-        meta = SyncMetadata.request_sync("bus_routes")
+        meta = SyncMetadata.request_sync("stops")
         assert meta.sync_requested is True
         assert meta.status == "pending"
 
         # Idempotent — calling again keeps flag set
-        meta2 = SyncMetadata.request_sync("bus_routes")
+        meta2 = SyncMetadata.request_sync("stops")
         assert meta2.sync_requested is True
 
 
@@ -691,7 +587,7 @@ def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
 
     def _fake_meta_get(table_name):
         m = MagicMock()
-        m.sync_requested = table_name == "bus_routes"
+        m.sync_requested = table_name == "stops"
         return m
 
     def _fake_is_due(table_name, max_age_seconds):
@@ -701,7 +597,7 @@ def test_sync_worker_runs_sync_when_flag_set(app: Flask) -> None:
         pass
 
     first_entry = SYNC_REGISTRY[0]
-    assert first_entry.table_name == "bus_routes"
+    assert first_entry.table_name == "stops"
 
     with patch("app.sync.worker.SyncMetadata") as mock_meta:
         mock_meta.get_meta.side_effect = _fake_meta_get
@@ -729,7 +625,7 @@ def test_sync_worker_runs_sync_when_overdue(app: Flask) -> None:
     with patch("app.sync.worker.SyncMetadata") as mock_meta:
         mock_meta.get_meta.return_value = None
         mock_meta.is_due_for_update.side_effect = (
-            lambda table_name, max_age_seconds: table_name == "bus_routes"
+            lambda table_name, max_age_seconds: table_name == "stops"
         )
         mock_meta.clear_sync_requested.return_value = None
 
@@ -774,7 +670,7 @@ def test_sync_worker_handles_exception_in_loop(app: Flask) -> None:
     with patch("app.sync.worker.SyncMetadata") as mock_meta:
         mock_meta.get_meta.return_value = None
         mock_meta.is_due_for_update.side_effect = (
-            lambda table_name, max_age_seconds: table_name == "bus_routes"
+            lambda table_name, max_age_seconds: table_name == "stops"
         )
         mock_meta.clear_sync_requested.return_value = None
 
@@ -848,7 +744,6 @@ def test_sync_registry_ordering() -> None:
 
     table_order = [entry.table_name for entry in SYNC_REGISTRY]
     assert table_order == [
-        "bus_routes",
         "stops",
         "stop_interchanges",
         "ha_locations",
@@ -883,9 +778,9 @@ def test_sync_metadata_record_skipped_logs_to_system_log(caplog: Any) -> None:
     import logging
 
     with caplog.at_level(logging.WARNING):
-        SyncMetadata.record_skipped("bus_routes", "Missing API key")
+        SyncMetadata.record_skipped("stops", "Missing API key")
         assert any(
-            "Synchronisation skipped for 'bus_routes'" in record.message
+            "Synchronisation skipped for 'stops'" in record.message
             and "Missing API key" in record.message
             for record in caplog.records
         )
@@ -962,7 +857,7 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
         with patch("app.sync.worker.SyncMetadata") as mock_meta:
             mock_meta.get_meta.return_value = None
             mock_meta.is_due_for_update.side_effect = (
-                lambda table_name, max_age_seconds: table_name == "bus_routes"
+                lambda table_name, max_age_seconds: table_name == "stops"
             )
             mock_meta.clear_sync_requested.return_value = None
 
@@ -972,7 +867,7 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
                 "sync_fn",
                 return_value={
                     "status": "error",
-                    "message": "BODS connection timeout",
+                    "message": "NaPTAN connection timeout",
                     "records": 0,
                 },
             ):
@@ -982,7 +877,7 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
                     time.sleep(0.15)
                     worker.stop(timeout=2.0)
                     assert any(
-                        "Sync failed for 'bus_routes': BODS connection timeout"
+                        "Sync failed for 'stops': NaPTAN connection timeout"
                         in record.message
                         for record in caplog.records
                     )
@@ -1003,8 +898,7 @@ def test_sync_worker_logs_failed_and_skipped_syncs(app: Flask, caplog: Any) -> N
                     time.sleep(0.15)
                     worker.stop(timeout=2.0)
                     assert any(
-                        "Sync skipped for 'bus_routes': Missing API key"
-                        in record.message
+                        "Sync skipped for 'stops': Missing API key" in record.message
                         for record in caplog.records
                     )
 

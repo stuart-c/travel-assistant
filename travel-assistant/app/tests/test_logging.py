@@ -66,7 +66,7 @@ def test_run_sync_task_skipped_logging(
     """Verify that run_sync_task emits WARNING logs when credentials are missing."""
     with caplog.at_level(logging.WARNING):
         result = run_sync_task(
-            table_name="bus_routes",
+            table_name="train_timetables",
             sync_operation=lambda: 10,
             client_check=lambda: "Missing API Key",
             app=app,
@@ -74,7 +74,7 @@ def test_run_sync_task_skipped_logging(
 
     assert result["status"] == "skipped_no_credentials"
     assert any(
-        "Synchronisation task for 'bus_routes' skipped: Missing API Key"
+        "Synchronisation task for 'train_timetables' skipped: Missing API Key"
         in record.message
         for record in caplog.records
     )

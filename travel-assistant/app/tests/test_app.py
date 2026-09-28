@@ -67,18 +67,22 @@ def test_api_sync_endpoints(client: FlaskClient) -> None:
         assert data_all["success"] is True
         assert data_all["status"] == "queued"
         assert "tables" in data_all
-        assert mock_req.call_count == 8  # one call per SYNC_REGISTRY entry
+        assert mock_req.call_count == 7  # one call per SYNC_REGISTRY entry
 
     # 2. Queue specific valid table
     with patch("app.main.request_sync") as mock_req2:
-        res_table = client.post("/api/sync/bus_routes")
+        res_table = client.post("/api/sync/stops")
         assert res_table.status_code == 200
         data_table = res_table.get_json()
-        assert data_table["table"] == "bus_routes"
+        assert data_table["table"] == "stops"
         assert data_table["status"] == "queued"
-        mock_req2.assert_called_once_with("bus_routes")
+        mock_req2.assert_called_once_with("stops")
 
-    # 3. Invalid table returns 400
+    # 3. Obsolete / invalid table returns 400
+    res_obsolete = client.post("/api/sync/bus_routes")
+    assert res_obsolete.status_code == 400
+    assert res_obsolete.get_json()["status"] == "error"
+
     res_invalid = client.post("/api/sync/unknown_table_xyz")
     assert res_invalid.status_code == 400
     data_invalid = res_invalid.get_json()
