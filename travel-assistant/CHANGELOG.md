@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Corridor Learner Multi-Step Walking Lookahead & Step Consolidation** (`app/services/corridor_learner.py`):
+  - Consolidated consecutive non-transit walking steps into single journey stages with unified distance and duration metrics, preventing Google Routes turn-by-turn steps from creating micro-walk stages.
+  - Corrected lookahead logic when parsing walking steps to identify the departure stop of the next scheduled transit service, preventing intermediate walking turns from falling back to the journey's final destination.
+  - Added identity and maximum distance safeguards in `ensure_walking_connection` to prevent circular self-links and excessive auto-generated walking routes.
+
 ### Changed
 - **Dependency Upgrades** (`requirements.txt`, `requirements_test.txt`):
   - Updated production dependencies to their latest PyPI versions: `requests>=2.34.2`, `boto3>=1.43.103`, `openai>=3.19.2`, and `uvicorn>=0.54.0`.
