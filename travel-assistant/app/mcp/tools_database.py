@@ -335,8 +335,28 @@ def db_execute(
         }
 
 
+@register_tool(
+    name="db_vacuum",
+    domain="database",
+    description="Inspect SQLite freelist count and execute a database VACUUM to defragment storage and reclaim unused disk pages.",
+    is_mutating=True,
+)
+def db_vacuum(
+    force: bool = True,
+    threshold_freelist_pages: int = 500,
+) -> Dict[str, Any]:
+    """Execute SQLite VACUUM maintenance on the database."""
+    from app.db.core import vacuum_database
+
+    return vacuum_database(
+        threshold_freelist_pages=threshold_freelist_pages,
+        force=force,
+    )
+
+
 __all__ = [
     "db_get_table_info",
     "db_query",
     "db_execute",
+    "db_vacuum",
 ]

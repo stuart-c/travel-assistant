@@ -8,7 +8,14 @@ import tempfile
 from typing import Any
 from flask import abort, current_app, jsonify, render_template, send_file
 
-from app.db import db, get_db_path, get_db_stats, get_sync_stats, init_db
+from app.db import (
+    db,
+    get_db_path,
+    get_db_stats,
+    get_sync_stats,
+    init_db,
+    vacuum_database,
+)
 from app.sync import request_sync
 from app.sync.worker import SYNC_REGISTRY
 from app.views.config import config_bp
@@ -27,6 +34,9 @@ def db_stats_data() -> Any:
             "total": len(tables),
             "file_size_bytes": stats.get("file_size_bytes", 0),
             "file_size_formatted": stats.get("file_size_formatted", "0 B"),
+            "freelist_count": stats.get("freelist_count", 0),
+            "last_vacuumed_at": stats.get("last_vacuumed_at"),
+            "vacuum_status": stats.get("vacuum_status", "idle"),
         }
     )
 
@@ -125,9 +135,9 @@ def background_sync() -> Any:
 
 @config_bp.route("/db/sync/<table_name>", methods=["POST"], strict_slashes=False)
 def sync_db_table(table_name: str) -> Any:
-    """Queue an on-demand synchronisation request for a specific transit dataset."""
+    """Queue an on-demand synchronisation request for a specific transit dataset or maintenance."""
     norm_name = table_name.lower().strip()
-    valid_names = [e.table_name for e in SYNC_REGISTRY]
+    valid_names = [e.table_name for e in SYNC_REGISTRY] + ["database_vacuum"]
 
     if not norm_name or norm_name == "all":
         return (
@@ -172,3 +182,12 @@ def sync_db_table(table_name: str) -> Any:
             ),
         }
     )
+
+
+@config_bp.route("/db/vacuum", methods=["POST"], strict_slashes=False)
+def vacuum_db_endpoint() -> Any:
+    """Execute an immediate, on-demand database VACUUM."""
+    logger.info("On-demand database VACUUM requested via POST /config/db/vacuum.")
+    result = vacuum_database(force=True, app=current_app)
+    status_code = 200 if result.get("status") != "error" else 500
+    return jsonify(result), status_code

@@ -789,6 +789,8 @@ def test_get_db_page_initial_render(client: FlaskClient) -> None:
     assert response.status_code == 200
     assert b"Database Size" in response.data
     assert b"stat-db-size" in response.data
+    assert b"vacuum-db-btn" in response.data
+    assert b"Vacuum Database" in response.data
     assert b"download-db-btn" in response.data
     assert b"Download Database" in response.data
     assert b"Database Tables" in response.data
@@ -992,6 +994,73 @@ def test_sync_db_table_endpoint_specific_error(
     assert data["status"] == "error"
 
 
+def test_sync_db_table_endpoint_database_vacuum(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/sync/database_vacuum queues database maintenance."""
+    from app.views.config import sync as sync_view
+
+    mock_request_sync = MagicMock()
+    monkeypatch.setattr(sync_view, "request_sync", mock_request_sync)
+
+    response = client.post("/config/db/sync/database_vacuum")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["success"] is True
+    assert data["status"] == "queued"
+    assert data["table"] == "database_vacuum"
+    mock_request_sync.assert_called_once_with("database_vacuum")
+
+
+def test_vacuum_db_endpoint_success(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/vacuum triggers on-demand database VACUUM."""
+    from app.views.config import sync as sync_view
+
+    mock_vacuum = MagicMock(
+        return_value={
+            "status": "success",
+            "freelist_count_before": 25,
+            "freelist_count_after": 0,
+            "pages_reclaimed": 25,
+            "bytes_reclaimed": 102400,
+            "duration_seconds": 0.08,
+            "message": "Successfully vacuumed database.",
+        }
+    )
+    monkeypatch.setattr(sync_view, "vacuum_database", mock_vacuum)
+
+    response = client.post("/config/db/vacuum")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["status"] == "success"
+    assert data["pages_reclaimed"] == 25
+    mock_vacuum.assert_called_once_with(force=True, app=client.application)
+
+
+def test_vacuum_db_endpoint_error(
+    client: FlaskClient, monkeypatch: MonkeyPatch
+) -> None:
+    """Test POST /config/db/vacuum returns 500 when vacuum fails."""
+    from app.views.config import sync as sync_view
+
+    mock_vacuum = MagicMock(
+        return_value={
+            "status": "error",
+            "message": "Disk I/O error during VACUUM",
+            "duration_seconds": 0.01,
+        }
+    )
+    monkeypatch.setattr(sync_view, "vacuum_database", mock_vacuum)
+
+    response = client.post("/config/db/vacuum")
+    assert response.status_code == 500
+    data = response.get_json()
+    assert data["status"] == "error"
+    assert "Disk I/O error" in data["message"]
+
+
 def test_config_routes_disable_browser_caching(client: FlaskClient) -> None:
     """Test that all configuration endpoints return HTTP headers disabling browser caching."""
     endpoints = [
@@ -1157,6 +1226,8 @@ def test_config_db_data_endpoint(client: FlaskClient) -> None:
     assert "total" in payload
     assert isinstance(payload["data"], list)
     assert payload["total"] == len(payload["data"])
+    assert "freelist_count" in payload
+    assert "vacuum_status" in payload
 
 
 def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:

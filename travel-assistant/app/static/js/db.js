@@ -4,12 +4,17 @@
  * on-demand manual refresh requests, and automated background refresh every minute.
  */
 document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('db-stats-container');
   const gridContainer = document.getElementById('db-grid-wrapper');
   if (!gridContainer) return;
 
   const dataUrl = gridContainer.getAttribute('data-data-url') || '/config/db/data';
+  const ingressPath = (container && container.dataset.ingressPath) || '';
   const refreshBtn = document.getElementById('refresh-db-btn');
   const refreshIcon = document.getElementById('refresh-db-icon');
+  const vacuumBtn = document.getElementById('vacuum-db-btn');
+  const vacuumIcon = document.getElementById('vacuum-db-icon');
+  const toastBox = document.getElementById('db-toast-box');
   const dbSizeEl = document.getElementById('stat-db-size');
 
   let gridInstance = null;
@@ -18,6 +23,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const escapeHtml =
     (window.TransitUI && window.TransitUI.escapeHtml) ||
     ((str) => (str ? String(str) : ''));
+
+  function showToast(message, isError = false) {
+    if (!toastBox) return;
+    toastBox.className = isError
+      ? 'mb-6 p-4 rounded-xl text-sm font-medium border flex items-center gap-3 bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/50 dark:border-rose-800 dark:text-rose-200'
+      : 'mb-6 p-4 rounded-xl text-sm font-medium border flex items-center gap-3 bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/50 dark:border-emerald-800 dark:text-emerald-200';
+    toastBox.innerHTML = `
+      <span class="material-symbols-outlined text-lg leading-none">${isError ? 'error' : 'check_circle'}</span>
+      <span>${escapeHtml(message)}</span>
+    `;
+    toastBox.classList.remove('hidden');
+    setTimeout(() => {
+      toastBox.classList.add('hidden');
+    }, 6000);
+  }
 
   function formatDbGridData(tableList) {
     return tableList.map((tbl) => {
@@ -103,6 +123,38 @@ document.addEventListener('DOMContentLoaded', () => {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       refreshDbData(true);
+    });
+  }
+
+  // Vacuum database trigger
+  if (vacuumBtn) {
+    vacuumBtn.addEventListener('click', async () => {
+      vacuumBtn.disabled = true;
+      if (vacuumIcon) vacuumIcon.classList.add('animate-spin');
+      try {
+        const response = await fetch(`${ingressPath}/config/db/vacuum`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+        });
+        const result = await response.json();
+        if (response.ok && result.status !== 'error') {
+          showToast(
+            result.message || 'Database vacuum completed successfully.',
+            false
+          );
+          await refreshDbData(false);
+        } else {
+          showToast(result.message || 'Failed to vacuum database.', true);
+        }
+      } catch (err) {
+        showToast(`Failed to trigger database vacuum: ${err.message}`, true);
+      } finally {
+        vacuumBtn.disabled = false;
+        if (vacuumIcon) vacuumIcon.classList.remove('animate-spin');
+      }
     });
   }
 

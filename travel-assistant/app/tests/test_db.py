@@ -13,6 +13,7 @@ from app.db import (
     get_sync_stats,
     init_app,
     run_migrations,
+    vacuum_database,
 )
 from app.models import (
     BusRoute,
@@ -940,3 +941,92 @@ def test_mcp_tools_schema_migration(tmp_path: pytest.TempPathFactory) -> None:
         'SELECT enabled FROM "mcp_tools" WHERE tool_name = "old_tool"'
     ).fetchone()
     assert row[0] == 0
+
+
+def test_vacuum_database_skipped_below_threshold(app: Flask) -> None:
+    """Test vacuum_database skips VACUUM when freelist count is below threshold."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+        res = vacuum_database(threshold_freelist_pages=1000, force=False, app=app)
+        assert res["status"] == "skipped_below_threshold"
+        assert res["pages_reclaimed"] == 0
+        assert res["bytes_reclaimed"] == 0
+        assert "below threshold" in res["message"]
+
+        meta = SyncMetadata.get_meta("database_vacuum")
+        assert meta is not None
+        assert meta.status == "success"
+        assert meta.records_count == 0
+
+
+def test_vacuum_database_force_executes(app: Flask) -> None:
+    """Test vacuum_database forces full VACUUM even when freelist count is below threshold."""
+    with app.app_context():
+        res = vacuum_database(threshold_freelist_pages=1000, force=True, app=app)
+        assert res["status"] == "success"
+        assert "Successfully vacuumed database" in res["message"]
+
+        meta = SyncMetadata.get_meta("database_vacuum")
+        assert meta is not None
+        assert meta.status == "success"
+
+
+def test_vacuum_database_reclaims_pages_above_threshold(
+    app: Flask, tmp_path: pytest.TempPathFactory
+) -> None:
+    """Test vacuum_database reclaims freelist pages when count exceeds threshold."""
+    from app.db.core import db, create_sqlite_database
+
+    test_db_path = str(tmp_path / "vacuum_test.db")
+    test_db = create_sqlite_database(test_db_path)
+    db.initialize(test_db)
+    test_db.connect()
+
+    run_migrations(test_db)
+    # Populate then delete rows to generate freelist pages
+    for i in range(200):
+        Setting.set_val(f"temp_key_{i}", "x" * 200)
+    for i in range(200):
+        Setting.delete().where(Setting.key == f"temp_key_{i}").execute()
+
+    res = vacuum_database(threshold_freelist_pages=1, force=False, app=app)
+    assert res["status"] == "success"
+    assert res["pages_reclaimed"] >= 0
+    assert "Successfully vacuumed database" in res["message"]
+
+
+def test_vacuum_database_error_handling(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test vacuum_database error handling when SQLite raises an OperationalError."""
+    from app.db.core import db
+
+    def _mock_execute_sql(sql, *args, **kwargs):
+        if "VACUUM" in sql:
+            raise RuntimeError("Disk I/O error during VACUUM")
+        return db.obj.__class__.execute_sql(db.obj, sql, *args, **kwargs)
+
+    with app.app_context():
+        monkeypatch.setattr(db.obj, "execute_sql", _mock_execute_sql)
+        res = vacuum_database(force=True, app=app)
+        assert res["status"] == "error"
+        assert "Disk I/O error during VACUUM" in res["message"]
+
+        meta = SyncMetadata.get_meta("database_vacuum")
+        assert meta is not None
+        assert meta.status == "error"
+        assert "Disk I/O error" in meta.error_message
+
+
+def test_get_db_stats_includes_vacuum_metadata(app: Flask) -> None:
+    """Test get_db_stats includes freelist_count, last_vacuumed_at, and vacuum_status."""
+    with app.app_context():
+        SyncMetadata.record_success(
+            "database_vacuum", records_count=12, duration_seconds=0.35
+        )
+        stats = get_db_stats(app)
+        assert "freelist_count" in stats
+        assert stats["vacuum_status"] == "success"
+        assert stats["last_vacuumed_at"] is not None
