@@ -1,6 +1,7 @@
 """Unit tests for application-wide system and background process logging."""
 
 import logging
+from unittest.mock import patch
 import pytest
 from flask import Flask
 
@@ -13,12 +14,16 @@ from app.views.config.common import apply_model_changeset
 
 def test_sync_worker_logging(app: Flask, caplog: pytest.LogCaptureFixture) -> None:
     """Verify that SyncWorker emits informative INFO level logs on startup and task execution."""
-    worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+    with patch("app.sync.worker.SyncMetadata") as mock_meta:
+        mock_meta.get_meta.return_value = None
+        mock_meta.is_due_for_update.return_value = False
 
-    with caplog.at_level(logging.INFO):
-        worker.start()
-        assert worker.is_running()
-        worker.stop()
+        worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+
+        with caplog.at_level(logging.INFO):
+            worker.start()
+            assert worker.is_running()
+            worker.stop()
 
     assert any(
         "Background sync worker started" in record.message for record in caplog.records
@@ -28,9 +33,9 @@ def test_sync_worker_logging(app: Flask, caplog: pytest.LogCaptureFixture) -> No
     )
 
 
-def test_request_sync_logging(caplog: pytest.LogCaptureFixture) -> None:
+def test_request_sync_logging(app: Flask, caplog: pytest.LogCaptureFixture) -> None:
     """Verify that request_sync emits an INFO level log when queueing a table."""
-    with caplog.at_level(logging.INFO):
+    with app.app_context(), caplog.at_level(logging.INFO):
         request_sync("stops")
 
     assert any(
