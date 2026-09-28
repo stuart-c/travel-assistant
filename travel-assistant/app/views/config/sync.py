@@ -14,7 +14,6 @@ from app.db import (
     get_db_stats,
     get_sync_stats,
     init_db,
-    vacuum_database,
 )
 from app.sync import request_sync
 from app.sync.worker import SYNC_REGISTRY
@@ -135,9 +134,9 @@ def background_sync() -> Any:
 
 @config_bp.route("/db/sync/<table_name>", methods=["POST"], strict_slashes=False)
 def sync_db_table(table_name: str) -> Any:
-    """Queue an on-demand synchronisation request for a specific transit dataset or maintenance."""
+    """Queue an on-demand synchronisation request for a specific transit dataset."""
     norm_name = table_name.lower().strip()
-    valid_names = [e.table_name for e in SYNC_REGISTRY] + ["database_vacuum"]
+    valid_names = [e.table_name for e in SYNC_REGISTRY]
 
     if not norm_name or norm_name == "all":
         return (
@@ -182,12 +181,3 @@ def sync_db_table(table_name: str) -> Any:
             ),
         }
     )
-
-
-@config_bp.route("/db/vacuum", methods=["POST"], strict_slashes=False)
-def vacuum_db_endpoint() -> Any:
-    """Execute an immediate, on-demand database VACUUM."""
-    logger.info("On-demand database VACUUM requested via POST /config/db/vacuum.")
-    result = vacuum_database(force=True, app=current_app)
-    status_code = 200 if result.get("status") != "error" else 500
-    return jsonify(result), status_code

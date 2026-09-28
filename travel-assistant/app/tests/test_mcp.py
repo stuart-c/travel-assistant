@@ -22,7 +22,6 @@ from app.mcp.tools_database import (
     db_execute,
     db_get_table_info,
     db_query,
-    db_vacuum,
 )
 from app.mcp.tools_dispatcher import (
     dispatcher_evaluate,
@@ -666,14 +665,6 @@ def test_database_tools_server_enforcement(app: Flask) -> None:
             assert "rows_affected" in call_rw_ins.content[0].text
 
         asyncio.run(_run())
-
-
-def test_db_vacuum_tool(app: Flask) -> None:
-    """Test db_vacuum tool executes database maintenance."""
-    with app.app_context():
-        res = db_vacuum(force=True)
-        assert res["status"] == "success"
-        assert "Successfully vacuumed database" in res["message"]
 
 
 def test_dispatcher_evaluate_is_read_only() -> None:
