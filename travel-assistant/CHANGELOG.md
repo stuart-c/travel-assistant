@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated test and linting dependency `ruff>=0.16.9`.
 
 ### Added
+- **Threshold-Based Database Vacuuming & Storage Maintenance** (`app/db/core.py`, `app/sync/worker.py`):
+  - Implemented `vacuum_database()` to inspect SQLite freelist pages (`PRAGMA freelist_count`) and execute `VACUUM` conditionally when dead pages exceed a configurable threshold (`DEFAULT_VACUUM_FREELIST_THRESHOLD = 500` pages, ~2 MB).
+  - Integrated periodic weekly database maintenance evaluation into the `SyncWorker` background daemon thread, executing on scheduled freshness expiry while preventing unnecessary disk churn on flash memory.
 - **Dependency Modernisation, Native HTTP Client & Polyline Geometry** (`requirements.txt`, `app/datasources/train_live.py`, `app/utils/transit_time.py`, `app/services/dispatcher/tracker/view_model.py`):
   - Replaced legacy `bravado` OpenAPI wrapper and Swagger 2.0 schema parsing with direct `httpx` HTTP requests in `TrainLiveClient` (`app/datasources/train_live.py`), eliminating 58 `jsonschema.RefResolver` deprecation warnings across test suites.
   - Pruned obsolete `networkx` dependency following migration to in-memory RAPTOR routing.

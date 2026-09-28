@@ -1038,3 +1038,98 @@ def test_timetable_sync_resets_calculated_routes_and_cache(app: Flask) -> None:
 
                     j_refreshed = Journey.get_by_id(j.id)
                     assert j_refreshed.calculated_routes is None
+
+
+def test_sync_worker_runs_database_maintenance_when_flag_set(app: Flask) -> None:
+    """Test that SyncWorker executes database vacuum when sync_requested flag is set."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+        SyncMetadata.request_sync("database_vacuum")
+
+        with patch("app.sync.worker.vacuum_database") as mock_vac:
+            mock_vac.return_value = {
+                "status": "success",
+                "pages_reclaimed": 50,
+                "bytes_reclaimed": 204800,
+                "duration_seconds": 0.12,
+            }
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            did_work = worker._evaluate_database_maintenance()
+            assert did_work is True
+            mock_vac.assert_called_once_with(force=True, app=app)
+            meta = SyncMetadata.get_meta("database_vacuum")
+            assert meta is not None
+            assert meta.sync_requested is False
+
+
+def test_sync_worker_runs_database_maintenance_when_overdue(app: Flask) -> None:
+    """Test that SyncWorker executes database vacuum when weekly freshness expires."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+
+        with patch("app.sync.worker.vacuum_database") as mock_vac:
+            mock_vac.return_value = {
+                "status": "success",
+                "pages_reclaimed": 20,
+                "bytes_reclaimed": 81920,
+                "duration_seconds": 0.05,
+            }
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            did_work = worker._evaluate_database_maintenance()
+            assert did_work is True
+            mock_vac.assert_called_once_with(force=False, app=app)
+
+
+def test_sync_worker_database_maintenance_skipped_below_threshold(app: Flask) -> None:
+    """Test that SyncWorker handles skipped_below_threshold status gracefully."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+
+        with patch("app.sync.worker.vacuum_database") as mock_vac:
+            mock_vac.return_value = {
+                "status": "skipped_below_threshold",
+                "freelist_count_before": 10,
+                "pages_reclaimed": 0,
+                "bytes_reclaimed": 0,
+                "duration_seconds": 0.01,
+                "message": "Below threshold",
+            }
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            did_work = worker._evaluate_database_maintenance()
+            assert did_work is True
+
+
+def test_sync_worker_database_maintenance_error(app: Flask) -> None:
+    """Test that SyncWorker handles vacuum error status gracefully."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+
+        with patch("app.sync.worker.vacuum_database") as mock_vac:
+            mock_vac.return_value = {
+                "status": "error",
+                "message": "Disk I/O error",
+                "duration_seconds": 0.02,
+            }
+            worker = SyncWorker(app=app, initial_delay_seconds=0.0)
+            did_work = worker._evaluate_database_maintenance()
+            assert did_work is True
+
+
+def test_request_sync_database_vacuum(app: Flask) -> None:
+    """Test request_sync queues database_vacuum maintenance."""
+    with app.app_context():
+        SyncMetadata.delete().where(
+            SyncMetadata.table_name == "database_vacuum"
+        ).execute()
+        request_sync("database_vacuum")
+        meta = SyncMetadata.get_meta("database_vacuum")
+        assert meta is not None
+        assert meta.sync_requested is True

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 from flask import Flask, current_app
 from peewee import DatabaseProxy, SqliteDatabase
@@ -21,6 +22,8 @@ SQLITE_PRAGMAS = {
     "busy_timeout": 30000,
     "cache_size": -1024 * 64,  # 64MB cache
 }
+
+DEFAULT_VACUUM_FREELIST_THRESHOLD = 500  # pages (~2MB at default 4096B page size)
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -152,6 +155,10 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
         cursor = database.execute_sql("PRAGMA page_count")
         page_count_row = cursor.fetchone()
         page_count = page_count_row[0] if page_count_row else 0
+
+        cursor = database.execute_sql("PRAGMA freelist_count")
+        freelist_row = cursor.fetchone()
+        freelist_count = freelist_row[0] if freelist_row else 0
 
         # Calculate file size
         if (
@@ -296,16 +303,178 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
                 }
             )
 
+        vacuum_meta = sync_meta_map.get("database_vacuum") if has_sync_meta else None
+        last_vacuumed_at = vacuum_meta.get("last_updated_at") if vacuum_meta else None
+        vacuum_status = vacuum_meta.get("status", "idle") if vacuum_meta else "idle"
+
         return {
             "file_path": db_path,
             "file_size_bytes": file_size_bytes,
             "file_size_formatted": file_size_formatted,
             "page_size": page_size,
             "page_count": page_count,
+            "freelist_count": freelist_count,
+            "last_vacuumed_at": last_vacuumed_at,
+            "vacuum_status": vacuum_status,
             "total_tables": len(tables),
             "total_rows": total_rows,
             "tables": tables,
         }
+
+
+def vacuum_database(
+    threshold_freelist_pages: int = DEFAULT_VACUUM_FREELIST_THRESHOLD,
+    force: bool = False,
+    app: Optional[Flask] = None,
+) -> Dict[str, Any]:
+    """Inspect SQLite freelist count and execute a full database VACUUM if needed.
+
+    Args:
+        threshold_freelist_pages: Minimum unallocated freelist pages required to trigger
+            a VACUUM when force is False.
+        force: If True, executes VACUUM unconditionally regardless of freelist threshold.
+        app: Optional Flask application context.
+
+    Returns:
+        Dictionary conforming to standard telemetry response:
+        {
+            "status": "success" | "skipped_below_threshold" | "error",
+            "freelist_count_before": int,
+            "freelist_count_after": int,
+            "pages_reclaimed": int,
+            "bytes_reclaimed": int,
+            "duration_seconds": float,
+            "message": str,
+        }
+    """
+    from app.models.transit import SyncMetadata
+
+    start_time = time.time()
+    db_path = get_db_path(app)
+
+    if db.obj is None:
+        init_db(app)
+
+    database = db.obj
+
+    with database.connection_context():
+        cursor = database.execute_sql("PRAGMA page_size")
+        page_size_row = cursor.fetchone()
+        page_size = page_size_row[0] if page_size_row else 4096
+
+        cursor = database.execute_sql("PRAGMA page_count")
+        page_count_row = cursor.fetchone()
+        page_count_before = page_count_row[0] if page_count_row else 0
+
+        cursor = database.execute_sql("PRAGMA freelist_count")
+        freelist_row = cursor.fetchone()
+        freelist_count_before = freelist_row[0] if freelist_row else 0
+
+        is_file_db = (
+            db_path != ":memory:"
+            and not db_path.startswith("file:")
+            and os.path.exists(db_path)
+            and os.path.isfile(db_path)
+        )
+        file_size_before = (
+            os.path.getsize(db_path) if is_file_db else (page_size * page_count_before)
+        )
+
+        if not force and freelist_count_before < threshold_freelist_pages:
+            duration = round(time.time() - start_time, 2)
+            msg = (
+                f"Database vacuum skipped: unallocated freelist page count "
+                f"({freelist_count_before}) is below threshold ({threshold_freelist_pages})."
+            )
+            logger.info(msg)
+            # Record success with 0 reclaimed records so the scheduled freshness expiry resets
+            SyncMetadata.record_success(
+                "database_vacuum", records_count=0, duration_seconds=duration
+            )
+            return {
+                "status": "skipped_below_threshold",
+                "freelist_count_before": freelist_count_before,
+                "freelist_count_after": freelist_count_before,
+                "pages_reclaimed": 0,
+                "bytes_reclaimed": 0,
+                "duration_seconds": duration,
+                "message": msg,
+            }
+
+        SyncMetadata.record_start("database_vacuum")
+        logger.info(
+            "Executing database VACUUM (freelist: %d pages, file size: %s)...",
+            freelist_count_before,
+            format_file_size(file_size_before),
+        )
+
+        try:
+            # Passive WAL checkpoint before VACUUM to fold WAL frames back into database pages
+            try:
+                database.execute_sql("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception as checkpoint_err:
+                logger.warning(
+                    "Passive WAL checkpoint prior to VACUUM reported: %s",
+                    checkpoint_err,
+                )
+
+            database.execute_sql("VACUUM")
+
+            cursor = database.execute_sql("PRAGMA freelist_count")
+            freelist_row = cursor.fetchone()
+            freelist_count_after = freelist_row[0] if freelist_row else 0
+
+            cursor = database.execute_sql("PRAGMA page_count")
+            page_count_row = cursor.fetchone()
+            page_count_after = page_count_row[0] if page_count_row else 0
+
+            file_size_after = (
+                os.path.getsize(db_path)
+                if is_file_db
+                else (page_size * page_count_after)
+            )
+
+            pages_reclaimed = max(0, freelist_count_before - freelist_count_after)
+            bytes_reclaimed = max(0, file_size_before - file_size_after)
+            duration = round(time.time() - start_time, 2)
+
+            SyncMetadata.record_success(
+                "database_vacuum",
+                records_count=pages_reclaimed,
+                duration_seconds=duration,
+            )
+
+            success_msg = (
+                f"Successfully vacuumed database in {duration:.2f}s, reclaiming "
+                f"{pages_reclaimed} freelist page(s) ({format_file_size(bytes_reclaimed)}). "
+                f"New database size: {format_file_size(file_size_after)}."
+            )
+            logger.info(success_msg)
+
+            return {
+                "status": "success",
+                "freelist_count_before": freelist_count_before,
+                "freelist_count_after": freelist_count_after,
+                "pages_reclaimed": pages_reclaimed,
+                "bytes_reclaimed": bytes_reclaimed,
+                "duration_seconds": duration,
+                "message": success_msg,
+            }
+
+        except Exception as exc:
+            duration = round(time.time() - start_time, 2)
+            err_msg = f"Failed to vacuum database: {str(exc)}"
+            logger.error(err_msg)
+            SyncMetadata.record_error("database_vacuum", err_msg, duration)
+            return {
+                "status": "error",
+                "freelist_count_before": freelist_count_before,
+                "freelist_count_after": freelist_count_before,
+                "pages_reclaimed": 0,
+                "bytes_reclaimed": 0,
+                "duration_seconds": duration,
+                "message": err_msg,
+            }
 
 
 def get_sync_stats(app: Optional[Flask] = None) -> List[Dict[str, Any]]:

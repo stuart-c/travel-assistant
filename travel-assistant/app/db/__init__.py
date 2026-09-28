@@ -4,6 +4,7 @@ Provides Peewee SQLite database lifecycle management, FlaskDB integration, and s
 """
 
 from app.db.core import (
+    DEFAULT_VACUUM_FREELIST_THRESHOLD,
     create_sqlite_database,
     db,
     flask_db,
@@ -13,6 +14,7 @@ from app.db.core import (
     get_sync_stats,
     init_app,
     init_db,
+    vacuum_database,
 )
 from app.db.migrations import run_migrations
 
@@ -27,4 +29,6 @@ __all__ = [
     "format_file_size",
     "create_sqlite_database",
     "run_migrations",
+    "vacuum_database",
+    "DEFAULT_VACUUM_FREELIST_THRESHOLD",
 ]

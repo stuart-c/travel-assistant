@@ -8,7 +8,13 @@ import tempfile
 from typing import Any
 from flask import abort, current_app, jsonify, render_template, send_file
 
-from app.db import db, get_db_path, get_db_stats, get_sync_stats, init_db
+from app.db import (
+    db,
+    get_db_path,
+    get_db_stats,
+    get_sync_stats,
+    init_db,
+)
 from app.sync import request_sync
 from app.sync.worker import SYNC_REGISTRY
 from app.views.config import config_bp
@@ -27,6 +33,9 @@ def db_stats_data() -> Any:
             "total": len(tables),
             "file_size_bytes": stats.get("file_size_bytes", 0),
             "file_size_formatted": stats.get("file_size_formatted", "0 B"),
+            "freelist_count": stats.get("freelist_count", 0),
+            "last_vacuumed_at": stats.get("last_vacuumed_at"),
+            "vacuum_status": stats.get("vacuum_status", "idle"),
         }
     )
 

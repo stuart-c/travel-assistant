@@ -1157,6 +1157,8 @@ def test_config_db_data_endpoint(client: FlaskClient) -> None:
     assert "total" in payload
     assert isinstance(payload["data"], list)
     assert payload["total"] == len(payload["data"])
+    assert "freelist_count" in payload
+    assert "vacuum_status" in payload
 
 
 def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:

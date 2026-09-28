@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from flask import Flask
 
+from app.db.core import (
+    DEFAULT_VACUUM_FREELIST_THRESHOLD,
+    format_file_size,
+    vacuum_database,
+)
 from app.models.transit import SyncMetadata
 from app.sync.ha_sync import sync_ha_locations
 from app.sync.transit_sync import (
@@ -24,6 +29,7 @@ _SECONDS_PER_HOUR = 3600
 _SECONDS_PER_DAY = 86_400
 _SECONDS_PER_WEEK = 604_800
 _IDLE_SLEEP_SECONDS = 60
+_DEFAULT_VACUUM_INTERVAL_SECONDS = _SECONDS_PER_WEEK
 
 
 @dataclass
@@ -174,10 +180,67 @@ class SyncWorker:
                 except Exception as exc:
                     logger.error("Error during sync of '%s': %s", entry.table_name, exc)
 
+            if not self._stop_event.is_set():
+                try:
+                    with self.app.app_context():
+                        if self._evaluate_database_maintenance():
+                            did_work = True
+                except Exception as exc:
+                    logger.error(
+                        "Error during database maintenance evaluation: %s", exc
+                    )
+
             if not did_work:
                 # Nothing to do — sleep until woken or the idle timeout expires
                 self._wake_event.clear()
                 self._wake_event.wait(timeout=_IDLE_SLEEP_SECONDS)
+
+    def _evaluate_database_maintenance(self) -> bool:
+        """Evaluate and run scheduled database vacuum maintenance if due or requested."""
+        meta = SyncMetadata.get_meta("database_vacuum")
+        flag_set = meta is not None and meta.sync_requested
+        overdue = SyncMetadata.is_due_for_update(
+            "database_vacuum",
+            max_age_seconds=_DEFAULT_VACUUM_INTERVAL_SECONDS,
+        )
+
+        if not (flag_set or overdue):
+            return False
+
+        SyncMetadata.clear_sync_requested("database_vacuum")
+        trigger_reason = (
+            "on-demand request" if flag_set else "scheduled weekly freshness expiry"
+        )
+        logger.info(
+            "Executing background database maintenance for 'database_vacuum' (trigger: %s).",
+            trigger_reason,
+        )
+
+        result = vacuum_database(force=flag_set, app=self.app)
+        status = result.get("status")
+        duration = result.get("duration_seconds", 0.0)
+
+        if status == "error":
+            logger.error(
+                "Database vacuum maintenance failed: %s",
+                result.get("message", "Unknown error"),
+            )
+        elif status == "skipped_below_threshold":
+            logger.info(
+                "Database vacuum skipped (freelist: %d pages below threshold %d): %s",
+                result.get("freelist_count_before", 0),
+                DEFAULT_VACUUM_FREELIST_THRESHOLD,
+                result.get("message", ""),
+            )
+        else:
+            logger.info(
+                "Completed database vacuum maintenance in %.2fs (reclaimed: %d page(s), %s).",
+                duration,
+                result.get("pages_reclaimed", 0),
+                format_file_size(result.get("bytes_reclaimed", 0)),
+            )
+
+        return True
 
 
 # ---------------------------------------------------------------------------
