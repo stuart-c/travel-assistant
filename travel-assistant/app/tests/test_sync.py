@@ -758,11 +758,11 @@ def test_sync_registry_ordering() -> None:
     assert walking_idx < bus_tt_idx < journey_routes_idx
 
 
-def test_sync_metadata_record_error_logs_to_system_log(caplog: Any) -> None:
+def test_sync_metadata_record_error_logs_to_system_log(app: Flask, caplog: Any) -> None:
     """Test SyncMetadata.record_error outputs error to system log."""
     import logging
 
-    with caplog.at_level(logging.ERROR):
+    with app.app_context(), caplog.at_level(logging.ERROR):
         SyncMetadata.record_error(
             "bus_timetables", "Test simulated BODS connection timeout", 1.23
         )
@@ -773,11 +773,13 @@ def test_sync_metadata_record_error_logs_to_system_log(caplog: Any) -> None:
         )
 
 
-def test_sync_metadata_record_skipped_logs_to_system_log(caplog: Any) -> None:
+def test_sync_metadata_record_skipped_logs_to_system_log(
+    app: Flask, caplog: Any
+) -> None:
     """Test SyncMetadata.record_skipped outputs warning to system log."""
     import logging
 
-    with caplog.at_level(logging.WARNING):
+    with app.app_context(), caplog.at_level(logging.WARNING):
         SyncMetadata.record_skipped("stops", "Missing API key")
         assert any(
             "Synchronisation skipped for 'stops'" in record.message
