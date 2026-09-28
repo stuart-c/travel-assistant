@@ -10,7 +10,6 @@ from app.sync import request_sync
 logger = logging.getLogger(__name__)
 
 VALID_DATASETS = (
-    "bus_routes",
     "stops",
     "interchanges",
     "ha_locations",

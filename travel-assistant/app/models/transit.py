@@ -18,65 +18,6 @@ from app.models.base import BaseModel
 logger = logging.getLogger(__name__)
 
 
-class BusRoute(BaseModel):
-    """Bus route dataset representation."""
-
-    id = AutoField()
-    route_number = CharField(index=True)
-    operator_name = CharField(null=True)
-    operator_code = CharField(null=True)
-    origin = CharField(null=True)
-    destination = CharField(null=True)
-    description = TextField(null=True)
-
-    class Meta:
-        table_name = "bus_routes"
-
-    @classmethod
-    def bulk_upsert(cls, routes: List[Dict[str, Any]], batch_size: int = 500) -> int:
-        """Insert or replace a list of bus route records in batches."""
-        if not routes:
-            return 0
-
-        now = datetime.datetime.utcnow()
-        rows = [
-            {
-                "route_number": str(r.get("route_number", "")).strip(),
-                "operator_name": r.get("operator_name"),
-                "operator_code": r.get("operator_code"),
-                "origin": r.get("origin"),
-                "destination": r.get("destination"),
-                "description": r.get("description"),
-                "created_at": now,
-                "updated_at": now,
-            }
-            for r in routes
-            if r.get("route_number")
-        ]
-
-        if not rows:
-            return 0
-
-        total = 0
-        with cls._meta.database.atomic():
-            for i in range(0, len(rows), batch_size):
-                batch = rows[i : i + batch_size]
-                total += cls.insert_many(batch).execute()
-        return total
-
-    @classmethod
-    def search(cls, query: str, limit: int = 50) -> List["BusRoute"]:
-        """Search bus routes by route number, operator, or description."""
-        q = f"%{query.strip()}%"
-        return list(
-            cls.select()
-            .where(
-                (cls.route_number**q) | (cls.operator_name**q) | (cls.description**q)
-            )
-            .limit(limit)
-        )
-
-
 class Stop(BaseModel):
     """Unified public transport access node representation (NaPTAN)."""
 

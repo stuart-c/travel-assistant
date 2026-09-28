@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Corrected lookahead logic when parsing walking steps to identify the departure stop of the next scheduled transit service, preventing intermediate walking turns from falling back to the journey's final destination.
   - Added identity and maximum distance safeguards in `ensure_walking_connection` to prevent circular self-links and excessive auto-generated walking routes.
 
+### Removed
+- **Deprecate & Remove Obsolete `bus_routes` Database Table** (`app/models/transit.py`, `app/models/__init__.py`, `app/db/migrations.py`, `app/db/core.py`, `app/sync/transit_sync.py`, `app/sync/worker.py`, `app/sync/__init__.py`, `app/datasources/bods/client.py`, `app/mcp/tools_sync.py`, `static/js/sync.js`, `scripts/seed_sample_db.py`):
+  - Removed obsolete `BusRoute` model and dropped the unused `bus_routes` SQLite table during automated schema migration (`cleanup_legacy_tables`).
+  - Removed obsolete BODS `sync_bus_routes` background task and deleted the redundant `fetch_routes` method on `BodsClient`.
+  - Pruned `bus_routes` from `SYNC_REGISTRY`, automatically purging stale `bus_routes` records from `sync_metadata` via `cleanup_obsolete_entries`.
+  - Removed `bus_routes` from the sync dashboard UI (`sync.js`), MCP valid datasets (`tools_sync.py`), database statistics overview (`get_db_stats`), and sample database generator (`seed_sample_db.py`).
+
 ### Changed
 - **Dependency Upgrades** (`requirements.txt`, `requirements_test.txt`):
   - Updated production dependencies to their latest PyPI versions: `requests>=2.34.2`, `boto3>=1.43.103`, `openai>=3.19.2`, and `uvicorn>=0.54.0`.

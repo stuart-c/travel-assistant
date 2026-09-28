@@ -926,9 +926,8 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert data_resp.status_code == 200
     payload = data_resp.get_json()
     tables = payload.get("data", [])
-    assert len(tables) == 8
+    assert len(tables) == 7
     expected_names = {
-        "bus_routes",
         "stops",
         "stop_interchanges",
         "ha_locations",
@@ -972,13 +971,13 @@ def test_sync_db_table_endpoint_specific_success(
     mock_request_sync = MagicMock()
     monkeypatch.setattr(sync_view, "request_sync", mock_request_sync)
 
-    response = client.post("/config/db/sync/bus_routes")
+    response = client.post("/config/db/sync/stops")
     assert response.status_code == 200
     data = response.get_json()
     assert data["success"] is True
     assert data["status"] == "queued"
-    assert data["table"] == "bus_routes"
-    mock_request_sync.assert_called_once_with("bus_routes")
+    assert data["table"] == "stops"
+    mock_request_sync.assert_called_once_with("stops")
 
 
 def test_sync_db_table_endpoint_specific_error(
@@ -1164,7 +1163,7 @@ def test_config_db_data_endpoint(client: FlaskClient) -> None:
 def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/sync/data returns all transit dataset statistics as JSON."""
     with app.app_context():
-        SyncMetadata.record_success("bus_routes", 42, 1.23)
+        SyncMetadata.record_success("train_timetables", 42, 1.23)
         SyncMetadata.record_error("stops", "Failed to reach NaPTAN API", 0.5)
 
     response = client.get("/config/sync/data")
@@ -1174,14 +1173,19 @@ def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert "data" in payload
     assert "total" in payload
     assert isinstance(payload["data"], list)
-    assert payload["total"] == 8
+    assert payload["total"] == 7
+
+    train_timetables = next(
+        (t for t in payload["data"] if t["name"] == "train_timetables"), None
+    )
+    assert train_timetables is not None
+    assert train_timetables["sync_status"] == "success"
+    assert train_timetables["records_count"] == 42
+    assert train_timetables["duration_seconds"] == 1.23
+    assert train_timetables["last_updated_at"] is not None
 
     bus_routes = next((t for t in payload["data"] if t["name"] == "bus_routes"), None)
-    assert bus_routes is not None
-    assert bus_routes["sync_status"] == "success"
-    assert bus_routes["records_count"] == 42
-    assert bus_routes["duration_seconds"] == 1.23
-    assert bus_routes["last_updated_at"] is not None
+    assert bus_routes is None
 
     stops = next((t for t in payload["data"] if t["name"] == "stops"), None)
     assert stops is not None

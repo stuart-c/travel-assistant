@@ -23,6 +23,7 @@ def cleanup_legacy_tables(database: SqliteDatabase) -> None:
         "stations",
         "location_transfers",
         "rail_references",
+        "bus_routes",
     ]
     for table in legacy_tables:
         try:
@@ -42,7 +43,6 @@ def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
     from app.models.timetable import Timetable
     from app.models.transfer import PlatformTransfer
     from app.models.transit import (
-        BusRoute,
         Stop,
         StopInterchange,
         SyncMetadata,
@@ -53,7 +53,6 @@ def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
         Setting,
         Timetable,
         SyncMetadata,
-        BusRoute,
         Stop,
         StopInterchange,
         PlatformTransfer,

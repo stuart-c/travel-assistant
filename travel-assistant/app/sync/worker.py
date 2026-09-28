@@ -14,7 +14,6 @@ from app.db.core import (
 from app.models.transit import SyncMetadata
 from app.sync.ha_sync import sync_ha_locations
 from app.sync.transit_sync import (
-    sync_bus_routes,
     sync_bus_timetables,
     sync_stop_interchanges,
     sync_stops,
@@ -45,7 +44,6 @@ class SyncEntry:
 # Dependencies are respected: stops and walking must precede bus timetables, and journey
 # route discovery runs after all underlying transit networks have been updated.
 SYNC_REGISTRY: List[SyncEntry] = [
-    SyncEntry("bus_routes", sync_bus_routes, _SECONDS_PER_DAY),
     SyncEntry("stops", sync_stops, _SECONDS_PER_WEEK),
     SyncEntry("stop_interchanges", sync_stop_interchanges, _SECONDS_PER_WEEK),
     SyncEntry("ha_locations", sync_ha_locations, _SECONDS_PER_HOUR),

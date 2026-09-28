@@ -30,6 +30,7 @@ def test_cleanup_legacy_tables(tmp_path: pytest.TempPathFactory) -> None:
     database.execute_sql('CREATE TABLE "stations" (id INTEGER PRIMARY KEY);')
     database.execute_sql('CREATE TABLE "location_transfers" (id INTEGER PRIMARY KEY);')
     database.execute_sql('CREATE TABLE "rail_references" (id INTEGER PRIMARY KEY);')
+    database.execute_sql('CREATE TABLE "bus_routes" (id INTEGER PRIMARY KEY);')
 
     cleanup_legacy_tables(database)
 
@@ -41,6 +42,7 @@ def test_cleanup_legacy_tables(tmp_path: pytest.TempPathFactory) -> None:
     assert "stations" not in remaining
     assert "location_transfers" not in remaining
     assert "rail_references" not in remaining
+    assert "bus_routes" not in remaining
     database.close()
 
 
@@ -62,6 +64,7 @@ def test_ensure_tables_and_virtual_tables(tmp_path: pytest.TempPathFactory) -> N
     assert "journeys" in table_names
     assert "walking" in table_names
     assert "mcp_tools" in table_names
+    assert "bus_routes" not in table_names
     database.close()
 
 
