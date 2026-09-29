@@ -442,6 +442,57 @@ def test_format_departure_notification() -> None:
     ]
 
 
+def test_format_departure_notification_arrival_time_fallback() -> None:
+    """Test format_departure_notification resolves arrival_time from itinerary when candidate.arrival_time is empty."""
+    from app.services.planner.models import (
+        ItineraryEndpoint,
+        ItineraryLeg,
+        ScheduledItinerary,
+    )
+
+    itin = ScheduledItinerary(
+        departure_time="08:00",
+        arrival_time="08:42",
+        total_duration_minutes=42,
+        transfers_count=0,
+        robustness_score="high",
+        legs=[
+            ItineraryLeg(
+                leg_index=1,
+                mode="bus",
+                origin=ItineraryEndpoint(id="atco:490000077E", name="King's Cross"),
+                destination=ItineraryEndpoint(id="atco:490000077C", name="Tech Campus"),
+                dep_time="08:00",
+                arr_time="08:42",
+                duration_minutes=42,
+            )
+        ],
+    )
+    cand = DepartureCandidate(
+        journey_id=1,
+        journey_name="Morning Trip",
+        service_key="test_key_fallback",
+        transit_mode="bus",
+        line_name="73",
+        operator_name="Arriva London",
+        origin_stop_name="King's Cross",
+        origin_stop_id="atco:490000077E",
+        dest_stop_name="Tech Campus",
+        dest_stop_id="atco:490000077C",
+        final_dest_name="Tech Campus",
+        transit_dep_minutes=480,
+        transit_dep_time="08:00",
+        walk_minutes=0,
+        leave_minutes=480,
+        leave_time="08:00",
+        arrival_time="",
+        notification_trigger_minutes=465,
+        itinerary=itin,
+    )
+    _, message, _ = format_departure_notification(cand)
+    assert "Estimated arrival at Tech Campus by 08:42." in message
+
+
 # --- Monitor Tests ---
 
 

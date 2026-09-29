@@ -23,6 +23,41 @@ from app.services.dispatcher.tracker.service_description import (
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 
+def _resolve_expected_arrival_time(
+    active: ActiveJourney,
+    current_dt: Optional[datetime.datetime] = None,
+) -> str:
+    """Resolve expected arrival time at the journey's final destination in HH:MM format."""
+    if active.expected_arrival_time:
+        return active.expected_arrival_time
+    if active.itinerary and active.itinerary.arrival_time:
+        return active.itinerary.arrival_time
+    if active.legs:
+        last_leg = active.legs[-1]
+        if last_leg.arr_time:
+            return last_leg.arr_time
+    if current_dt and active.legs:
+        now_m = current_dt.hour * 60 + current_dt.minute
+        rem_dur = sum(
+            (lg.duration_minutes or 0) for lg in active.legs[active.current_leg_index :]
+        )
+        if rem_dur > 0:
+            return format_minutes_to_time(now_m + rem_dur)
+    return ""
+
+
+def _format_arrival_clause(
+    to_name: str,
+    expected_arr: str,
+) -> str:
+    """Format expected arrival clause in British English."""
+    if not expected_arr:
+        return ""
+    if to_name:
+        return f" Estimated arrival at {to_name} by {expected_arr}."
+    return f" Estimated arrival by {expected_arr}."
+
+
 def format_progress_notification(
     active: ActiveJourney,
     current_dt: Optional[datetime.datetime] = None,
@@ -37,6 +72,8 @@ def format_progress_notification(
     )
 
     status = active.current_status
+    arr_str = _resolve_expected_arrival_time(active, current_dt)
+    arr_clause = _format_arrival_clause(active.to_name, arr_str)
     message = ""
 
     if status == JourneyStepStatus.PRE_DEPARTURE:
@@ -90,8 +127,7 @@ def format_progress_notification(
 
         message = (
             f"Leave by {leave_time_str} ({walk_info}) for {transit_desc}{plat_note} "
-            f"from {origin_name} departing at {dep_desc}.{next_step_info} "
-            f"Estimated arrival at {active.to_name} by {active.expected_arrival_time}."
+            f"from {origin_name} departing at {dep_desc}.{next_step_info}{arr_clause}"
         )
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_STOP:
@@ -131,10 +167,10 @@ def format_progress_notification(
             delay_reason=active.delay_reason,
         )
         plat_note = f" (Platform {active.platform})" if active.platform else ""
+        dest_part = arr_clause if arr_clause else f" Destination: {active.to_name}."
         message = (
             f"On your way to {stop_name}. "
-            f"{line_desc}{plat_note} departs at {dep_desc}.{next_step_info} "
-            f"Destination: {active.to_name}."
+            f"{line_desc}{plat_note} departs at {dep_desc}.{next_step_info}{dest_part}"
         )
 
     elif status == JourneyStepStatus.AT_DEPARTURE_STOP:
@@ -177,7 +213,7 @@ def format_progress_notification(
             message = (
                 f"At {active_transit.origin.name}. "
                 f"{line_desc} to {active_transit.destination.name} departs at "
-                f"{dep_desc} from {plat_info}.{next_step_info}"
+                f"{dep_desc} from {plat_info}.{next_step_info}{arr_clause}"
             )
         elif active_transit:
             line_desc = _format_transit_service_desc(
@@ -195,10 +231,14 @@ def format_progress_notification(
             )
             message = (
                 f"At {active_transit.origin.name}. "
-                f"{line_desc} to {active_transit.destination.name} departs at {dep_desc}{plat_info}.{next_step_info}"
+                f"{line_desc} to {active_transit.destination.name} departs at {dep_desc}{plat_info}.{next_step_info}{arr_clause}"
             )
         else:
-            message = f"At departure stop for {active.to_name}."
+            message = (
+                f"At departure stop for {active.to_name}.{arr_clause}"
+                if arr_clause
+                else f"At departure stop for {active.to_name}."
+            )
 
     elif status == JourneyStepStatus.ON_TRANSIT:
         if current_leg:
@@ -221,12 +261,25 @@ def format_progress_notification(
             ):
                 plat_note = f" ({active.platform})"
 
+            dest_arr_clause = ""
+            if (
+                current_leg.destination
+                and active.to_name
+                and current_leg.destination.name.strip().lower()
+                != active.to_name.strip().lower()
+            ):
+                dest_arr_clause = arr_clause
+
             message = (
                 f"On board {line_desc}{plat_note} towards {current_leg.destination.name}. "
-                f"Expected arrival at {current_leg.arr_time}.{next_step_info}"
+                f"Expected arrival at {current_leg.arr_time}.{next_step_info}{dest_arr_clause}"
             )
         else:
-            message = f"In transit towards {active.to_name}."
+            message = (
+                f"In transit towards {active.to_name}.{arr_clause}"
+                if arr_clause
+                else f"In transit towards {active.to_name}."
+            )
 
     elif status == JourneyStepStatus.AT_INTERCHANGE:
         preceding_transit = (
@@ -284,10 +337,10 @@ def format_progress_notification(
                 )
                 message = (
                     f"Transfer at {current_leg.origin.name}: "
-                    f"{plat_clause} departing at {dep_desc}."
+                    f"{plat_clause} departing at {dep_desc}.{arr_clause}"
                 )
             else:
-                message = f"Transfer at {current_leg.origin.name}: Walk to {current_leg.destination.name}."
+                message = f"Transfer at {current_leg.origin.name}: Walk to {current_leg.destination.name}.{arr_clause}"
         elif current_leg:
             line_desc = _format_transit_service_desc(
                 current_leg.mode,
@@ -316,28 +369,33 @@ def format_progress_notification(
             )
             message = (
                 f"Transfer at {current_leg.origin.name}: "
-                f"{plat_clause} departing at {dep_desc}."
+                f"{plat_clause} departing at {dep_desc}.{arr_clause}"
             )
         else:
-            message = "Interchange stop: transfer to connecting service."
+            message = (
+                f"Interchange stop: transfer to connecting service.{arr_clause}"
+                if arr_clause
+                else "Interchange stop: transfer to connecting service."
+            )
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION:
-        arr_str = active.expected_arrival_time
-        if not arr_str and current_dt and current_leg and current_leg.duration_minutes:
-            now_m = current_dt.hour * 60 + current_dt.minute
-            arr_str = format_minutes_to_time(now_m + current_leg.duration_minutes)
-        message = (
-            f"Final leg: Walk to {active.to_name}. Estimated arrival at {arr_str}."
+        arr_final = arr_str or (
+            format_minutes_to_time(
+                current_dt.hour * 60
+                + current_dt.minute
+                + (current_leg.duration_minutes or 0)
+            )
+            if current_dt and current_leg and current_leg.duration_minutes
+            else ""
         )
+        arr_part = f" Estimated arrival at {arr_final}." if arr_final else ""
+        message = f"Final leg: Walk to {active.to_name}.{arr_part}".strip()
 
     elif status == JourneyStepStatus.ARRIVED:
         arr_time = (
             current_dt.strftime("%H:%M")
             if current_dt
-            else (
-                active.expected_arrival_time
-                or datetime.datetime.now().strftime("%H:%M")
-            )
+            else (arr_str or datetime.datetime.now().strftime("%H:%M"))
         )
         is_home = (
             "home" in active.to_name.lower()
@@ -348,9 +406,8 @@ def format_progress_notification(
             current_dt.hour
             if current_dt
             else (
-                parse_time_to_minutes(active.expected_arrival_time) // 60
-                if active.expected_arrival_time
-                and parse_time_to_minutes(active.expected_arrival_time) is not None
+                parse_time_to_minutes(arr_str) // 60
+                if arr_str and parse_time_to_minutes(arr_str) is not None
                 else datetime.datetime.now().hour
             )
         )
@@ -368,7 +425,11 @@ def format_progress_notification(
         )
 
     else:
-        message = f"Journey update: en route to {active.to_name}."
+        message = (
+            f"Journey update: en route to {active.to_name}.{arr_clause}"
+            if arr_clause
+            else f"Journey update: en route to {active.to_name}."
+        )
 
     panel_slug = (
         Setting.get_val(
@@ -406,5 +467,7 @@ def format_progress_notification(
 
 
 __all__ = [
+    "_format_arrival_clause",
+    "_resolve_expected_arrival_time",
     "format_progress_notification",
 ]
