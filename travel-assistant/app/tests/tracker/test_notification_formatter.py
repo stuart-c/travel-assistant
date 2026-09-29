@@ -54,6 +54,7 @@ def test_format_progress_notification_stages() -> None:
     assert "On your way to London King's Cross." in msg_en_route
     assert "Rail Thameslink (Platform 4)" in msg_en_route
     assert "on time" in msg_en_route
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_en_route
 
     # 3. AT_DEPARTURE_STOP (Rail)
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -64,12 +65,14 @@ def test_format_progress_notification_stages() -> None:
     assert "At London King's Cross." in msg_at_stop
     assert "from Platform 4" in msg_at_stop
     assert "on time" in msg_at_stop
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_at_stop
 
     # 3b. AT_DEPARTURE_STOP (Rail, platform unannounced)
     active.platform = None
     active.live_status = None
     _, msg_unannounced, _ = format_progress_notification(active)
     assert "Platform to be announced" in msg_unannounced
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_unannounced
 
     # 3c. AT_DEPARTURE_STOP (Bus)
     active_bus = create_sample_active_journey(with_rail=False)
@@ -81,6 +84,7 @@ def test_format_progress_notification_stages() -> None:
         "Bus 73 to Euston Station (Stop C) departs at 08:08 (scheduled)."
         in msg_bus_stop
     )
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_bus_stop
 
     # 4. ON_TRANSIT (with next leg walk)
     active.current_status = JourneyStepStatus.ON_TRANSIT
@@ -90,6 +94,7 @@ def test_format_progress_notification_stages() -> None:
     assert "On board Rail Thameslink (Platform 4) towards Cambridge." in msg_transit
     assert "Expected arrival at 08:22." in msg_transit
     assert "Next step: Walk 6m to Tech Campus." in msg_transit
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_transit
 
     # 4b. ON_TRANSIT (with next leg transit transfer)
     multi_active = create_sample_active_journey()
@@ -111,6 +116,7 @@ def test_format_progress_notification_stages() -> None:
     multi_active.legs[2].line = "14"
     _, msg_transfer, _ = format_progress_notification(multi_active)
     assert "Bus 14" in msg_transfer
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_transfer
 
     # 5. AT_INTERCHANGE
     active.current_status = JourneyStepStatus.AT_INTERCHANGE
@@ -119,6 +125,7 @@ def test_format_progress_notification_stages() -> None:
     _, msg_interchange, _ = format_progress_notification(active)
     assert "Transfer at London King's Cross:" in msg_interchange
     assert "Platform 2" in msg_interchange
+    assert "Estimated arrival at Tech Campus by 08:28." in msg_interchange
 
     # 6. EN_ROUTE_TO_DESTINATION
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
@@ -142,19 +149,23 @@ def test_format_progress_notification_empty_leg_fallbacks() -> None:
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
     _, msg1, _ = format_progress_notification(active)
     assert "At departure stop for Tech Campus." in msg1
+    assert "Estimated arrival at Tech Campus by 08:28." in msg1
 
     active.current_status = JourneyStepStatus.ON_TRANSIT
     _, msg2, _ = format_progress_notification(active)
     assert "In transit towards Tech Campus." in msg2
+    assert "Estimated arrival at Tech Campus by 08:28." in msg2
 
     active.current_status = JourneyStepStatus.AT_INTERCHANGE
     _, msg3, _ = format_progress_notification(active)
     assert "Interchange stop: transfer to connecting service." in msg3
+    assert "Estimated arrival at Tech Campus by 08:28." in msg3
 
     # Fallback status
     active.current_status = JourneyStepStatus.EXPIRED
     _, msg4, _ = format_progress_notification(active)
     assert "Journey update: en route to Tech Campus." in msg4
+    assert "Estimated arrival at Tech Campus by 08:28." in msg4
 
 
 def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
@@ -438,3 +449,32 @@ def test_persistent_notification_state_lifecycle(app: Flask) -> None:
         assert data_arrived["url"] == expected_nav_url
         assert data_arrived["clickAction"] == expected_nav_url
         assert expected_action in data_arrived["actions"]
+
+
+def test_format_progress_notification_arrival_time_fallbacks() -> None:
+    """Test resolution of expected arrival time when primary attributes are unset."""
+    active = create_sample_active_journey(with_rail=True)
+    active.expected_arrival_time = ""
+    active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+    active.current_leg_index = 1
+
+    # 1. Fallback to itinerary.arrival_time
+    assert active.itinerary is not None
+    active.itinerary.arrival_time = "08:35"
+    _, msg1, _ = format_progress_notification(active)
+    assert "Estimated arrival at Tech Campus by 08:35." in msg1
+
+    # 2. Fallback to legs[-1].arr_time when itinerary is None
+    active.itinerary = None
+    active.legs[-1].arr_time = "08:40"
+    _, msg2, _ = format_progress_notification(active)
+    assert "Estimated arrival at Tech Campus by 08:40." in msg2
+
+    # 3. Fallback to current_dt + remaining durations when legs arr_time is empty
+    active.legs[-1].arr_time = ""
+    active.legs[1].duration_minutes = 15
+    active.legs[2].duration_minutes = 5
+    now_dt = datetime.datetime(2026, 9, 29, 8, 10)
+    # Remaining from index 1: 15 + 5 = 20 mins -> 08:30
+    _, msg3, _ = format_progress_notification(active, current_dt=now_dt)
+    assert "Estimated arrival at Tech Campus by 08:30." in msg3

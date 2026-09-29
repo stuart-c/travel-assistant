@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Expected Arrival Time Across All Journey Notification Stages** (`app/services/dispatcher/tracker/notification_formatter.py`, `app/services/dispatcher/evaluator.py`):
+  - Ensured all journey progress and lifecycle notifications (pre-departure, en route to stop, waiting at stop, on transit, interchange transfers, final egress walk, and completion) consistently include the expected arrival time at the journey's destination in British English.
+  - Added robust fallback resolution (`_resolve_expected_arrival_time` and `_format_arrival_clause`) to determine the expected arrival time from active session metadata, scheduled itineraries, last leg arrival times, or remaining leg durations.
+  - Added multi-stage unit test assertions and arrival time fallback tests.
+
 ### Fixed
 - **Departure Monitor Rail Live Status Reference & Session Synchronisation** (`app/services/dispatcher/tracker/service_description.py`, `app/services/dispatcher/tracker/view_model.py`, `app/main.py`, `app/mcp/tools_dispatcher.py`, `app/templates/base.html`):
   - Fixed an unhandled `AttributeError: 'LiveRailStatus' object has no attribute 'live_status'` in `format_next_step_for_departure` and `format_next_step_for_on_transit` by correctly accessing `conn_live.etd` and cancellation reasons from `LiveRailStatus`, resolving a daemon crash loop that halted progress notifications following initial departure alerts.

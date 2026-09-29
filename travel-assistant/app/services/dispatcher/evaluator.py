@@ -570,10 +570,25 @@ def format_departure_notification(
                 live_client=live_client,
             )
 
+    arrival_time = candidate.arrival_time
+    if not arrival_time and candidate.itinerary:
+        arrival_time = candidate.itinerary.arrival_time
+    if (
+        not arrival_time
+        and candidate.itinerary
+        and getattr(candidate.itinerary, "legs", None)
+    ):
+        arrival_time = candidate.itinerary.legs[-1].arr_time
+
+    arr_clause = (
+        f" Estimated arrival at {candidate.final_dest_name} by {arrival_time}."
+        if arrival_time
+        else ""
+    )
+
     message = (
         f"Leave by {candidate.leave_time} ({walk_info}) for {service_desc}{plat_note} "
-        f"from {candidate.origin_stop_name} departing at {dep_desc}.{next_step_info} "
-        f"Estimated arrival at {candidate.final_dest_name} by {candidate.arrival_time}."
+        f"from {candidate.origin_stop_name} departing at {dep_desc}.{next_step_info}{arr_clause}"
     )
 
     panel_slug = (
