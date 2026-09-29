@@ -11,7 +11,10 @@ from typing import Any, Dict, Optional
 from flask import Flask
 
 from app.models import Journey
-from app.services.corridor_learner import CorridorLearner
+from app.services.corridor_learner import (
+    CorridorLearner,
+    resolve_target_commute_datetime,
+)
 from app.sync.common import run_sync_task
 
 logger = logging.getLogger(__name__)
@@ -57,10 +60,13 @@ def sync_journey_routes(
         learner = CorridorLearner()
         for journey in pending_journeys:
             try:
+                target_dep, target_arr = resolve_target_commute_datetime(journey)
                 discovered_routes = learner.discover_and_persist_corridors(
                     journey,
                     query_type="initial_discovery",
                     trigger_reason="automated_journey_sync",
+                    departure_time=target_dep,
+                    arrival_time=target_arr,
                     replace_existing=force,
                 )
                 if discovered_routes:

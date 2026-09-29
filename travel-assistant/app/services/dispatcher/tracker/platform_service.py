@@ -73,26 +73,52 @@ def resolve_live_rail_platform(
     dest_crs = resolve_station_crs(dest_id)
     filter_list = [dest_crs] if dest_crs else None
 
+    services = []
     try:
         raw_departures = live_client.get_fastest_departures(crs, filter_list)
         services = extract_live_services(raw_departures)
+    except Exception as exc:
+        logger.debug(
+            "Fastest departures lookup failed for %s -> %s: %s",
+            crs,
+            dest_crs,
+            exc,
+        )
 
-        # Fallback to departure board if no services found or destination platform missing
-        if not services or (dest_crs and not any(s.get("platform") for s in services)):
-            try:
-                board = live_client.get_departure_board(
-                    crs=crs, filter_crs=dest_crs, num_rows=5
-                )
-                board_services = extract_live_services(board)
-                if board_services:
-                    services = board_services
-            except Exception as board_exc:
-                logger.debug(
-                    "Live departure board fallback probe skipped for %s -> %s: %s",
-                    crs,
-                    dest_crs,
-                    board_exc,
-                )
+    # Fallback to departure board if no services found or destination platform missing
+    if not services or (dest_crs and not any(s.get("platform") for s in services)):
+        try:
+            board = live_client.get_departure_board(
+                crs=crs, filter_crs=dest_crs, num_rows=5
+            )
+            board_services = extract_live_services(board)
+            if board_services:
+                services = board_services
+        except Exception as board_exc:
+            logger.debug(
+                "Filtered departure board fallback probe skipped for %s -> %s: %s",
+                crs,
+                dest_crs,
+                board_exc,
+            )
+
+    # Unfiltered departure board fallback if filtered query threw 500 or returned empty
+    if not services:
+        try:
+            board = live_client.get_departure_board(
+                crs=crs, filter_crs=None, num_rows=10
+            )
+            board_services = extract_live_services(board)
+            if board_services:
+                services = board_services
+        except Exception as unfiltered_exc:
+            logger.debug(
+                "Unfiltered departure board fallback probe failed for %s: %s",
+                crs,
+                unfiltered_exc,
+            )
+
+    try:
 
         if services:
             candidate_services = (

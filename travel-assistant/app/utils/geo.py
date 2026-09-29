@@ -15,6 +15,28 @@ def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> 
     return float(great_circle((lat1, lon1), (lat2, lon2)).meters)
 
 
+def distance_to_polyline_m(
+    lat: float, lon: float, polyline_str: Optional[str]
+) -> Optional[float]:
+    """Calculate the minimum distance in metres from a coordinate to an encoded polyline."""
+    if not polyline_str:
+        return None
+    try:
+        import polyline
+
+        points = polyline.decode(polyline_str)
+        if not points:
+            return None
+        min_dist = float("inf")
+        for p_lat, p_lon in points:
+            d = haversine_distance_m(lat, lon, p_lat, p_lon)
+            if d < min_dist:
+                min_dist = d
+        return min_dist if min_dist != float("inf") else None
+    except Exception:
+        return None
+
+
 def resolve_endpoint_coordinates(
     endpoint_type: str, endpoint_id: str
 ) -> Tuple[Optional[float], Optional[float], Optional[str]]:

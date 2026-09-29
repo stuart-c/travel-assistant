@@ -478,3 +478,22 @@ def test_format_progress_notification_arrival_time_fallbacks() -> None:
     # Remaining from index 1: 15 + 5 = 20 mins -> 08:30
     _, msg3, _ = format_progress_notification(active, current_dt=now_dt)
     assert "Estimated arrival at Tech Campus by 08:30." in msg3
+
+
+def test_format_progress_notification_stale_arrival_time_recalculated() -> None:
+    """Test that stored arrival time in the past is dynamically advanced using current time and remaining durations."""
+    active = create_sample_active_journey(with_rail=True)
+    # Stale arrival time fixed at 19:02
+    active.expected_arrival_time = "19:02"
+    active.current_status = JourneyStepStatus.ON_TRANSIT
+    active.current_leg_index = 1
+    active.legs[1].duration_minutes = 15
+    active.legs[2].duration_minutes = 5
+
+    # Commuter is en route at 19:15 (past the 19:02 arrival time)
+    now_dt = datetime.datetime(2026, 9, 29, 19, 15)
+    # Dynamic recalculation: 19:15 + (15 + 5 mins) = 19:35
+    _, msg, _ = format_progress_notification(active, current_dt=now_dt)
+    assert "19:02" not in msg
+    assert "Estimated arrival at Tech Campus by 19:35." in msg
+    assert active.expected_arrival_time == "19:35"

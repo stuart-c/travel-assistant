@@ -312,3 +312,185 @@ def test_advance_future_legs_rail_station_400m_geofence(
         assert res is True
         assert active.current_leg_index == 1
         assert active.current_status == JourneyStepStatus.AT_DEPARTURE_STOP
+
+
+def test_advance_future_legs_rejects_distant_off_corridor_location(
+    app: Flask,
+) -> None:
+    """Test that commuters far off a transit corridor (e.g. Cambridge for Huntingdon-Stevenage) are rejected."""
+    with app.app_context():
+        Stop.create(
+            atco_code="naptan:HUN",
+            naptan_code="HUN",
+            name="Huntingdon Rail Station",
+            stop_type="rail",
+            latitude=52.3270,
+            longitude=-0.1830,
+        )
+        Stop.create(
+            atco_code="naptan:SVG",
+            naptan_code="SVG",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+            latitude=51.9017,
+            longitude=-0.2066,
+        )
+        Location.create(
+            id="ha:home",
+            name="Home",
+            latitude=51.9000,
+            longitude=-0.2000,
+            ha=True,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="bus",
+                origin=ItineraryEndpoint(id="google:shuttle", name="Campus Shuttle"),
+                destination=ItineraryEndpoint(
+                    id="naptan:HUN", name="Huntingdon Rail Station"
+                ),
+                dep_time="17:40",
+                arr_time="18:00",
+                duration_minutes=20,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="rail",
+                origin=ItineraryEndpoint(
+                    id="naptan:HUN", name="Huntingdon Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                dep_time="17:30",
+                arr_time="18:15",
+                duration_minutes=45,
+            ),
+            ItineraryLeg(
+                leg_index=2,
+                mode="walk",
+                origin=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                destination=ItineraryEndpoint(id="ha:home", name="Home"),
+                dep_time="18:15",
+                arr_time="18:25",
+                duration_minutes=10,
+            ),
+        ]
+        active = ActiveJourney(
+            journey_id=5,
+            journey_name="Work to Home",
+            from_type="bus",
+            from_id="google:shuttle",
+            from_name="Campus Shuttle",
+            to_type="location",
+            to_id="ha:home",
+            to_name="Home",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.AT_INTERCHANGE,
+            expected_arrival_time="18:25",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Person is physically in Cambridge (52.2000, 0.1400), roughly 20km east of the corridor
+        state_cambridge = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 52.2000, "longitude": 0.1400},
+        }
+        now_1735 = datetime.datetime(2026, 9, 29, 17, 35)
+
+        # Must not falsely advance to rail leg 1 as ON_TRANSIT
+        update_journey_progress(active, state_cambridge, now_1735, mock_ha)
+        assert active.current_leg_index == 0
+        assert active.current_status != JourneyStepStatus.ON_TRANSIT
+
+
+def test_advance_current_leg_preserves_on_transit_status_when_departure_time_advanced(
+    app: Flask,
+) -> None:
+    """Test that ON_TRANSIT status is maintained on transit leg and does not flip to AT_INTERCHANGE."""
+    with app.app_context():
+        Stop.create(
+            atco_code="naptan:STP",
+            naptan_code="STP",
+            name="London St Pancras",
+            stop_type="rail",
+            latitude=51.5314,
+            longitude=-0.1261,
+        )
+        Stop.create(
+            atco_code="naptan:SVG",
+            naptan_code="SVG",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+            latitude=51.9017,
+            longitude=-0.2066,
+        )
+        Location.create(
+            id="ha:home",
+            name="Home",
+            latitude=51.9000,
+            longitude=-0.2000,
+            ha=True,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(id="naptan:STP", name="London St Pancras"),
+                destination=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                dep_time="18:00",
+                arr_time="18:30",
+                duration_minutes=30,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="walk",
+                origin=ItineraryEndpoint(
+                    id="naptan:SVG", name="Stevenage Rail Station"
+                ),
+                destination=ItineraryEndpoint(id="ha:home", name="Home"),
+                dep_time="18:30",
+                arr_time="18:40",
+                duration_minutes=10,
+            ),
+        ]
+        active = ActiveJourney(
+            journey_id=6,
+            journey_name="London to Stevenage",
+            from_type="station",
+            from_id="naptan:STP",
+            from_name="London St Pancras",
+            to_type="location",
+            to_id="ha:home",
+            to_name="Home",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.ON_TRANSIT,
+            expected_arrival_time="18:40",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Person is midway along the route (e.g. near Welwyn North at 51.8300, -0.1900)
+        state_en_route = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.8300, "longitude": -0.1900},
+        }
+
+        # If departure time is rolled forward or schedule updated to 18:05, while current time is 17:58:
+        active.legs[0].dep_time = "18:05"
+        now_1758 = datetime.datetime(2026, 9, 29, 17, 58)
+
+        update_journey_progress(active, state_en_route, now_1758, mock_ha)
+        # Status MUST remain ON_TRANSIT and not drop back to AT_INTERCHANGE
+        assert active.current_leg_index == 0
+        assert active.current_status == JourneyStepStatus.ON_TRANSIT

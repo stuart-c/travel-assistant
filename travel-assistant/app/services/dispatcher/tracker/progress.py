@@ -197,10 +197,7 @@ def update_journey_progress(
 
     current_minutes = current_dt.hour * 60 + current_dt.minute
 
-    # 1. Realign upcoming transit legs if connecting departure times have elapsed
-    _realign_active_journey_timings(active, current_dt, live_client)
-
-    # 2. Check journey expiration timeout (90 minutes past expected arrival)
+    # 1. Check journey expiration timeout (90 minutes past expected arrival)
     if _check_journey_expired(active, current_minutes):
         return False
 
@@ -284,7 +281,10 @@ def update_journey_progress(
             if not is_valid:
                 return False
 
-    # 7. Check for live platform update if rail leg or transferring to rail leg
+    # 7. Realign upcoming transit legs if connecting departure times have elapsed
+    _realign_active_journey_timings(active, current_dt, live_client)
+
+    # 8. Check for live platform update if rail leg or transferring to rail leg
     _refresh_live_platform_status(active, live_client)
 
     # 8. Notification formatting and debouncing

@@ -16,7 +16,11 @@ from app.services.dispatcher.tracker.schedule_aligner import (
 from app.services.dispatcher.tracker.significance import (
     _determine_transit_arrival_status,
 )
-from app.utils.geo import haversine_distance_m, resolve_endpoint_coordinates
+from app.utils.geo import (
+    distance_to_polyline_m,
+    haversine_distance_m,
+    resolve_endpoint_coordinates,
+)
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
@@ -105,11 +109,25 @@ def _advance_future_legs(
                 else current_minutes
             )
             is_time_valid = f_dep_m is None or cur_eff >= (f_dep_m - 2)
-            is_between = (
-                f_dist_dest < (span + f_prox_dest)
-                and f_dist_orig > f_prox_orig
-                and (f_dist_orig + f_dist_dest) <= max(span * 1.5, span + 1000.0)
-            )
+
+            f_poly = getattr(f_leg, "polyline", None)
+            if f_poly:
+                poly_dist = distance_to_polyline_m(person_lat, person_lon, f_poly)
+                corridor_buf = max(f_prox_dest, 1000.0)
+                is_between = (
+                    poly_dist is not None
+                    and poly_dist <= corridor_buf
+                    and f_dist_orig > f_prox_orig
+                    and f_dist_dest < (span + f_prox_dest)
+                )
+            else:
+                max_dev = min(max(span * 0.2, 3000.0), 8000.0)
+                is_between = (
+                    f_dist_dest < (span + f_prox_dest)
+                    and f_dist_orig > f_prox_orig
+                    and (f_dist_orig + f_dist_dest) <= (span + max_dev)
+                )
+
             if is_time_valid and is_between:
                 active.current_leg_index = f_idx
                 active.current_status = JourneyStepStatus.ON_TRANSIT
@@ -125,11 +143,23 @@ def _advance_future_legs(
             and f_dist_dest is not None
         ):
             span = haversine_distance_m(f_orig_lat, f_orig_lon, f_dest_lat, f_dest_lon)
-            if (
-                f_dist_dest < (span + f_prox_dest)
-                and f_dist_orig > f_prox_orig
-                and (f_dist_orig + f_dist_dest) <= max(span * 1.5, span + 1000.0)
-            ):
+            f_poly = getattr(f_leg, "polyline", None)
+            if f_poly:
+                poly_dist = distance_to_polyline_m(person_lat, person_lon, f_poly)
+                is_between = (
+                    poly_dist is not None
+                    and poly_dist <= max(f_prox_dest, 300.0)
+                    and f_dist_orig > f_prox_orig
+                    and f_dist_dest < (span + f_prox_dest)
+                )
+            else:
+                max_dev = min(max(span * 0.2, 500.0), 1000.0)
+                is_between = (
+                    f_dist_dest < (span + f_prox_dest)
+                    and f_dist_orig > f_prox_orig
+                    and (f_dist_orig + f_dist_dest) <= (span + max_dev)
+                )
+            if is_between:
                 active.current_leg_index = f_idx
                 active.current_status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
                 return True
@@ -255,15 +285,52 @@ def _advance_current_leg(
                 active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
             else:
                 active.current_status = JourneyStepStatus.AT_INTERCHANGE
+        elif dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
+            active.current_leg_index += 1
+            active.current_status = _determine_transit_arrival_status(active)
+            _realign_active_journey_timings(active, current_dt, live_client)
+        elif old_status == JourneyStepStatus.ON_TRANSIT:
+            # Maintain ON_TRANSIT status if commuter was already moving along the leg
+            active.current_status = JourneyStepStatus.ON_TRANSIT
         elif dep_min is not None and current_minutes >= dep_min:
-            if dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
-                active.current_leg_index += 1
-                active.current_status = _determine_transit_arrival_status(active)
-                _realign_active_journey_timings(active, current_dt, live_client)
-            else:
-                active.current_status = JourneyStepStatus.ON_TRANSIT
+            active.current_status = JourneyStepStatus.ON_TRANSIT
         else:
-            if active.current_leg_index == 0 or (
+            # Commuter is before departure time and not yet detected on transit
+            span = (
+                haversine_distance_m(orig_lat, orig_lon, dest_lat, dest_lon)
+                if (orig_lat is not None and dest_lat is not None)
+                else None
+            )
+            # Check if commuter has departed and is en route along the transit corridor
+            is_on_way = False
+            if (
+                span
+                and dist_to_dest is not None
+                and dist_to_orig is not None
+                and person_lat is not None
+                and person_lon is not None
+            ):
+                leg_poly = getattr(leg, "polyline", None)
+                if leg_poly:
+                    poly_dist = distance_to_polyline_m(person_lat, person_lon, leg_poly)
+                    corridor_buf = max(curr_prox_dest, 1000.0)
+                    is_on_way = (
+                        poly_dist is not None
+                        and poly_dist <= corridor_buf
+                        and dist_to_dest < (span + curr_prox_dest)
+                        and dist_to_orig > curr_prox_orig
+                    )
+                else:
+                    max_dev = min(max(span * 0.2, 3000.0), 8000.0)
+                    is_on_way = (
+                        dist_to_dest < (span + curr_prox_dest)
+                        and dist_to_orig > curr_prox_orig
+                        and (dist_to_orig + dist_to_dest) <= (span + max_dev)
+                    )
+
+            if is_on_way:
+                active.current_status = JourneyStepStatus.ON_TRANSIT
+            elif active.current_leg_index == 0 or (
                 active.current_leg_index == 1 and active.legs[0].mode in FOOT_MODES
             ):
                 active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP

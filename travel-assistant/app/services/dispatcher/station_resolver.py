@@ -68,6 +68,14 @@ def resolve_station_crs(stop_id: Optional[str]) -> Optional[str]:
     if crs_upper in mapping:
         return mapping[crs_upper]
 
+    # Check embedded alphabetic TIPLOC sequences in regional NaPTAN codes (e.g. 2100STEVNGE0 -> STEVNGE -> SVG)
+    import re
+
+    for match in re.finditer(r"[A-Za-z]{3,7}", crs):
+        cand = match.group(0).upper()
+        if cand in mapping:
+            return mapping[cand]
+
     # Look up in Stop table if database is initialised
     try:
         from app.models.transit import Stop
@@ -82,13 +90,64 @@ def resolve_station_crs(stop_id: Optional[str]) -> Optional[str]:
             )
             .first()
         )
-        if (
-            stop
-            and stop.naptan_code
-            and len(stop.naptan_code) == 3
-            and stop.naptan_code.isalpha()
-        ):
-            return stop.naptan_code.upper()
+        if stop:
+            if (
+                stop.naptan_code
+                and len(stop.naptan_code) == 3
+                and stop.naptan_code.isalpha()
+            ):
+                return stop.naptan_code.upper()
+
+            # Check embedded alphabetic TIPLOC sequence in stop.atco_code
+            if stop.atco_code:
+                for match in re.finditer(r"[A-Za-z]{3,7}", stop.atco_code):
+                    cand = match.group(0).upper()
+                    if cand in mapping:
+                        return mapping[cand]
+
+            # Check if stop is a synthetic Google stop with coordinates near a known rail stop
+            if (
+                str(stop.atco_code or "").startswith("google:")
+                and stop.latitude is not None
+                and stop.longitude is not None
+            ):
+                nearby_rail = (
+                    Stop.select()
+                    .where(Stop.stop_type == "rail")
+                    .where(
+                        (
+                            Stop.latitude.between(
+                                float(stop.latitude) - 0.005,
+                                float(stop.latitude) + 0.005,
+                            )
+                        )
+                        & (
+                            Stop.longitude.between(
+                                float(stop.longitude) - 0.008,
+                                float(stop.longitude) + 0.008,
+                            )
+                        )
+                    )
+                    .first()
+                )
+                if nearby_rail and nearby_rail.atco_code != stop.atco_code:
+                    resolved = resolve_station_crs(nearby_rail.atco_code)
+                    if resolved:
+                        return resolved
+
+            # Station name matching against TIPLOC mapping
+            if stop.name:
+                name_clean = re.sub(
+                    r"(?i)\b(railway|rail|station|stn|tram|metro)\b", "", stop.name
+                ).strip()
+                name_slug = re.sub(r"[^A-Za-z]+", "", name_clean).upper()
+                if name_slug in mapping:
+                    return mapping[name_slug]
+                words = re.findall(r"[A-Za-z]{3,7}", name_clean)
+                for w in words:
+                    w_upper = w.upper()
+                    if w_upper in mapping:
+                        return mapping[w_upper]
     except Exception:
         pass
 
