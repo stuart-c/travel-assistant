@@ -28,16 +28,28 @@ logger = logging.getLogger(__name__)
 def dispatcher_get_status() -> Dict[str, Any]:
     """Retrieve active journey tracking session data."""
     monitor = get_departure_monitor()
-    active_journeys = monitor.active_journeys if monitor else None
+    active_journeys = (
+        dict(monitor.active_journeys) if monitor and monitor.active_journeys else {}
+    )
+    if not active_journeys:
+        try:
+            from app.services.dispatcher.tracker.session_store import (
+                load_active_journey_sessions,
+            )
+
+            active_journeys = load_active_journey_sessions()
+        except Exception:
+            pass
+
     live_client = TrainLiveClient.from_settings()
     tracking_data = get_journey_live_tracking_data(
         active_journeys=active_journeys, live_client=live_client
     )
 
-    active_count = len(monitor.active_journeys) if monitor else 0
+    active_count = len(active_journeys)
     active_summary = []
-    if monitor and monitor.active_journeys:
-        for j_id, active in monitor.active_journeys.items():
+    if active_journeys:
+        for j_id, active in active_journeys.items():
             active_summary.append(
                 {
                     "journey_id": j_id,

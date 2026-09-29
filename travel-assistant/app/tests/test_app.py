@@ -255,3 +255,31 @@ def test_configure_logging() -> None:
     with patch.dict(os.environ, {"LOG_LEVEL": "INFO"}):
         configure_logging()
         assert logging.getLogger().level == logging.INFO
+
+
+def test_ingress_context_processor_with_persisted_session(client: FlaskClient) -> None:
+    """Test that inject_ingress_path sets has_active_journey=True from persisted session store."""
+    from app.services.dispatcher.tracker.models import ActiveJourney
+    from app.services.dispatcher.tracker.session_store import (
+        save_active_journey_session,
+        clear_active_journey_session,
+    )
+
+    active = ActiveJourney(
+        journey_id=42,
+        journey_name="London Commute",
+        from_type="ha",
+        from_id="ha:home",
+        from_name="London Home",
+        to_type="ha",
+        to_id="ha:office",
+        to_name="London Office",
+        expected_arrival_time="09:00",
+    )
+    save_active_journey_session(active)
+    try:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert b"Active Journey in Progress" in response.data
+    finally:
+        clear_active_journey_session(42)

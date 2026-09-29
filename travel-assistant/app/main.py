@@ -132,6 +132,14 @@ def create_app(test_config: Dict[str, Any] = None) -> Flask:
             mon = get_departure_monitor()
             if mon and mon.active_journeys:
                 has_active = True
+            else:
+                from app.services.dispatcher.tracker.session_store import (
+                    load_active_journey_sessions,
+                )
+
+                sessions = load_active_journey_sessions()
+                if sessions:
+                    has_active = True
         except Exception:
             pass
 

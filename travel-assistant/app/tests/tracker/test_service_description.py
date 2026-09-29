@@ -270,3 +270,110 @@ def test_format_upcoming_change_platforms_matrix() -> None:
         _format_upcoming_change_platforms(None, None, "bus", "bus")
         == "stands to be announced"
     )
+
+
+def test_format_next_step_for_departure_with_live_rail_client() -> None:
+    """Test format_next_step_for_departure resolves platform and etd from live rail client without AttributeError."""
+    from unittest.mock import MagicMock
+    from app.datasources.train_live import TrainLiveClient
+    from app.services.dispatcher.tracker.service_description import (
+        format_next_step_for_departure,
+        format_next_step_for_on_transit,
+    )
+
+    legs = [
+        ItineraryLeg(
+            leg_index=0,
+            mode="bus",
+            line="Bus 73",
+            operator="Arriva London",
+            origin=ItineraryEndpoint(
+                id="490000000A", name="Kings Cross Station (Stop E)"
+            ),
+            destination=ItineraryEndpoint(
+                id="490000000B", name="Euston Station (Stop AZ)"
+            ),
+            dep_time="07:15",
+            arr_time="07:25",
+            duration_minutes=10,
+        ),
+        ItineraryLeg(
+            leg_index=1,
+            mode="walk",
+            origin=ItineraryEndpoint(id="490000000B", name="Euston Station (Stop AZ)"),
+            destination=ItineraryEndpoint(
+                id="atco:9100EUSTON", name="London Euston Rail Station"
+            ),
+            dep_time="07:25",
+            arr_time="07:30",
+            duration_minutes=5,
+        ),
+        ItineraryLeg(
+            leg_index=2,
+            mode="rail",
+            line="Avanti West Coast",
+            operator="Avanti West Coast",
+            origin=ItineraryEndpoint(
+                id="atco:9100EUSTON", name="London Euston Rail Station"
+            ),
+            destination=ItineraryEndpoint(
+                id="atco:9100MANCRPIC", name="Manchester Piccadilly"
+            ),
+            dep_time="07:40",
+            arr_time="09:45",
+            duration_minutes=125,
+        ),
+    ]
+
+    mock_live = MagicMock(spec=TrainLiveClient)
+    # 1. On-time with platform announced
+    mock_live.get_fastest_departures.return_value = [
+        {
+            "std": "07:40",
+            "etd": "On time",
+            "platform": "5",
+            "destination": [{"crs": "MAN"}],
+        }
+    ]
+
+    next_step = format_next_step_for_departure(
+        legs=legs,
+        current_transit_leg=legs[0],
+        only_transit=True,
+        live_client=mock_live,
+    )
+    assert "London Euston Rail Station" in next_step
+    assert "Platform 5" in next_step
+    assert "07:40 (scheduled 07:40, expected 07:40 - on time)" in next_step
+
+    # 2. Delayed with reason clause
+    mock_live.get_fastest_departures.return_value = [
+        {
+            "std": "07:40",
+            "etd": "07:52",
+            "platform": "6",
+            "delayReason": "a points failure",
+            "destination": [{"crs": "MAN"}],
+        }
+    ]
+    next_step_delayed = format_next_step_for_departure(
+        legs=legs,
+        current_transit_leg=legs[0],
+        only_transit=True,
+        live_client=mock_live,
+    )
+    assert "Platform 6" in next_step_delayed
+    assert (
+        "07:52 (scheduled 07:40, expected 07:52 due to a points failure)"
+        in next_step_delayed
+    )
+
+    # 3. Transfer clause test with live rail status
+    clause = format_next_step_for_on_transit(
+        legs=legs,
+        current_leg_index=0,
+        current_leg=legs[0],
+        live_client=mock_live,
+    )
+    assert "Platform 6" in clause
+    assert "07:52" in clause
