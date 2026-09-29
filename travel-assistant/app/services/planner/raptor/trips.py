@@ -42,7 +42,13 @@ def _extract_parsed_trips(
             if s_id:
                 timetable_stop_ids.add(normalise_id(s_id))
 
-        stop_indices = {s: i for i, s in enumerate(stop_ids)}
+        stop_indices = {}
+        for i, s in enumerate(stop_ids):
+            stop_indices[s] = i
+            norm_s = normalise_id(s)
+            stop_indices[norm_s] = i
+            stop_indices[s.lower()] = i
+            stop_indices[norm_s.lower()] = i
 
         for tr in trips_raw:
             times = tr.get("times", [])
@@ -114,6 +120,8 @@ def _build_stop_to_trips(trips: List[_ParsedTrip]) -> Dict[str, List[_ParsedTrip
     stop_to_trips: Dict[str, List[_ParsedTrip]] = {}
     for tr in trips:
         for s in tr.stops:
-            s_norm = normalise_id(s)
-            stop_to_trips.setdefault(s_norm, []).append(tr)
+            norm_s = normalise_id(s)
+            for key in (s, norm_s, s.lower(), norm_s.lower()):
+                if key not in stop_to_trips or tr not in stop_to_trips[key]:
+                    stop_to_trips.setdefault(key, []).append(tr)
     return stop_to_trips

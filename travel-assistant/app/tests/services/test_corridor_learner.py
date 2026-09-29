@@ -6,6 +6,7 @@ from flask import Flask
 from app.models.journey import Journey
 from app.models.location import Location
 from app.models.route_query_log import RouteQueryLog
+from app.models.timetable import Timetable
 from app.models.transit import Stop
 from app.models.walking import Walking
 from app.services.corridor_learner import (
@@ -438,3 +439,308 @@ def test_discover_and_persist_corridors_multi_step_walking_lookahead() -> None:
     )
     assert egress_walk is not None
     assert egress_walk.time_needed_minutes == 5
+
+
+def test_synthesize_custom_timetable_last_mile_corridor() -> None:
+    """Test synthesising a last-mile custom shuttle bus corridor into journey routes."""
+    Location.create(
+        id="ha:kings_cross_home",
+        name="King's Cross Home",
+        location_type="ha",
+        latitude=51.5308,
+        longitude=-0.1238,
+    )
+    Location.create(
+        id="custom:tech_campus",
+        name="Tech Campus",
+        location_type="custom",
+        latitude=51.5490,
+        longitude=-0.1000,
+    )
+    Stop.create(
+        atco_code="490000078F",
+        name="Highbury & Islington Rail Station",
+        stop_type="rail",
+        latitude=51.5463,
+        longitude=-0.1033,
+    )
+
+    journey = Journey.create(
+        name="Morning Commute",
+        from_type="ha",
+        from_id="ha:kings_cross_home",
+        from_name="King's Cross Home",
+        to_type="custom",
+        to_id="custom:tech_campus",
+        to_name="Tech Campus",
+    )
+
+    Timetable.create(
+        name="Tech Campus Shuttle (Morning)",
+        transport_type="bus",
+        monday=1,
+        tuesday=1,
+        wednesday=1,
+        thursday=1,
+        friday=1,
+        auto_added=0,
+        content={
+            "stops": [
+                {
+                    "id": "atco:490000078F",
+                    "name": "Highbury & Islington Rail Station",
+                    "type": "rail",
+                    "latitude": 51.5463,
+                    "longitude": -0.1033,
+                },
+                {
+                    "id": "custom:tech_campus",
+                    "name": "Tech Campus",
+                    "type": "custom",
+                    "latitude": 51.5490,
+                    "longitude": -0.1000,
+                },
+            ],
+            "trips": [{"id": "t1", "times": ["08:30", "08:40"]}],
+        },
+    )
+
+    mock_client = MagicMock()
+    mock_client.compute_transit_routes.return_value = {
+        "routes": [
+            {
+                "duration": "2400s",
+                "description": "Great Northern",
+                "legs": [
+                    {
+                        "steps": [
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "180s",
+                                "distanceMeters": 200,
+                            },
+                            {
+                                "travelMode": "TRANSIT",
+                                "staticDuration": "420s",
+                                "distanceMeters": 2500,
+                                "transitDetails": {
+                                    "stopDetails": {
+                                        "departureStop": {
+                                            "name": "King's Cross Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5308,
+                                                    "longitude": -0.1238,
+                                                }
+                                            },
+                                        },
+                                        "arrivalStop": {
+                                            "name": "Highbury & Islington Rail Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5463,
+                                                    "longitude": -0.1033,
+                                                }
+                                            },
+                                        },
+                                    },
+                                    "transitLine": {
+                                        "nameShort": "Great Northern",
+                                        "vehicle": {"type": "HEAVY_RAIL"},
+                                    },
+                                },
+                            },
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "1800s",
+                                "distanceMeters": 2200,
+                            },
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    learner = CorridorLearner(client=mock_client)
+    routes = learner.discover_and_persist_corridors(journey)
+
+    assert len(routes) == 2
+    pref_route = next(r for r in routes if r.is_preferred)
+    assert "Tech Campus Shuttle (Morning)" in pref_route.name
+    assert pref_route.is_preferred is True
+    # Verify the last leg is the custom timetable transit leg
+    assert pref_route.legs[-1]["leg_type"] == "transit"
+    assert pref_route.legs[-1]["line_name"] == "Tech Campus Shuttle (Morning)"
+    assert pref_route.legs[-1]["to_id"] == "custom:tech_campus"
+
+    # Verify the non-preferred fallback route is the public one
+    fallback = next(r for r in routes if not r.is_preferred)
+    assert "Tech Campus Shuttle (Morning)" not in fallback.name
+    assert fallback.is_preferred is False
+
+
+def test_synthesize_custom_timetable_first_mile_corridor() -> None:
+    """Test synthesising a first-mile custom shuttle bus corridor into journey routes."""
+    Location.create(
+        id="custom:tech_campus",
+        name="Tech Campus",
+        location_type="custom",
+        latitude=51.5490,
+        longitude=-0.1000,
+    )
+    Location.create(
+        id="ha:tech_shuttle_stand",
+        name="Tech Shuttle Stand",
+        location_type="ha",
+        latitude=51.5485,
+        longitude=-0.1010,
+    )
+    Location.create(
+        id="ha:kings_cross_home",
+        name="King's Cross Home",
+        location_type="ha",
+        latitude=51.5308,
+        longitude=-0.1238,
+    )
+    Stop.create(
+        atco_code="490000078F",
+        name="Highbury & Islington Rail Station",
+        stop_type="rail",
+        latitude=51.5463,
+        longitude=-0.1033,
+    )
+
+    Walking.create(
+        start_type="custom",
+        start_id="custom:tech_campus",
+        start_name="Tech Campus",
+        finish_type="ha",
+        finish_id="ha:tech_shuttle_stand",
+        finish_name="Tech Shuttle Stand",
+        time_needed_minutes=3,
+        bidirectional=True,
+    )
+
+    journey = Journey.create(
+        name="Evening Commute",
+        from_type="custom",
+        from_id="custom:tech_campus",
+        from_name="Tech Campus",
+        to_type="ha",
+        to_id="ha:kings_cross_home",
+        to_name="King's Cross Home",
+    )
+
+    Timetable.create(
+        name="Tech Campus Shuttle (Evening)",
+        transport_type="bus",
+        monday=1,
+        tuesday=1,
+        wednesday=1,
+        thursday=1,
+        friday=1,
+        auto_added=0,
+        content={
+            "stops": [
+                {
+                    "id": "ha:tech_shuttle_stand",
+                    "name": "Tech Shuttle Stand",
+                    "type": "ha",
+                    "latitude": 51.5485,
+                    "longitude": -0.1010,
+                },
+                {
+                    "id": "atco:490000078F",
+                    "name": "Highbury & Islington Rail Station",
+                    "type": "rail",
+                    "latitude": 51.5463,
+                    "longitude": -0.1033,
+                },
+            ],
+            "trips": [{"id": "t2", "times": ["17:00", "17:10"]}],
+        },
+    )
+
+    mock_client = MagicMock()
+    mock_client.compute_transit_routes.return_value = {
+        "routes": [
+            {
+                "duration": "2400s",
+                "description": "Great Northern",
+                "legs": [
+                    {
+                        "steps": [
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "1500s",
+                                "distanceMeters": 2000,
+                            },
+                            {
+                                "travelMode": "TRANSIT",
+                                "staticDuration": "420s",
+                                "distanceMeters": 2500,
+                                "transitDetails": {
+                                    "stopDetails": {
+                                        "departureStop": {
+                                            "name": "Highbury & Islington Rail Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5463,
+                                                    "longitude": -0.1033,
+                                                }
+                                            },
+                                        },
+                                        "arrivalStop": {
+                                            "name": "King's Cross Station",
+                                            "location": {
+                                                "latLng": {
+                                                    "latitude": 51.5308,
+                                                    "longitude": -0.1238,
+                                                }
+                                            },
+                                        },
+                                    },
+                                    "transitLine": {
+                                        "nameShort": "Great Northern",
+                                        "vehicle": {"type": "HEAVY_RAIL"},
+                                    },
+                                },
+                            },
+                            {
+                                "travelMode": "WALK",
+                                "staticDuration": "180s",
+                                "distanceMeters": 200,
+                            },
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    learner = CorridorLearner(client=mock_client)
+    routes = learner.discover_and_persist_corridors(journey)
+
+    assert len(routes) == 2
+    pref_route = next(r for r in routes if r.is_preferred)
+    assert "Tech Campus Shuttle (Evening)" in pref_route.name
+    assert pref_route.is_preferred is True
+
+    # Leg 1: Access walk to Tech Shuttle Stand
+    assert pref_route.legs[0]["leg_type"] == "walk"
+    assert pref_route.legs[0]["to_id"] == "ha:tech_shuttle_stand"
+    assert pref_route.legs[0]["duration_minutes"] == 3
+
+    # Leg 2: Transit via custom shuttle
+    assert pref_route.legs[1]["leg_type"] == "transit"
+    assert pref_route.legs[1]["line_name"] == "Tech Campus Shuttle (Evening)"
+    assert pref_route.legs[1]["to_id"] == "atco:490000078F"
+
+    # Leg 3: Transit via Great Northern train
+    assert pref_route.legs[2]["leg_type"] == "transit"
+    assert pref_route.legs[2]["line_name"] == "Great Northern"
+
+    # Leg 4: Egress walk to home
+    assert pref_route.legs[3]["leg_type"] == "walk"
+    assert pref_route.legs[3]["to_id"] == "ha:kings_cross_home"
