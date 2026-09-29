@@ -297,3 +297,38 @@ def test_resolve_live_rail_platform_destination_filtering() -> None:
         live_client=mock_live,
     )
     assert res_upcoming.platform == "7"
+
+
+def test_resolve_live_rail_platform_darwin_500_fallback_to_unfiltered_board() -> None:
+    """Test resolve_live_rail_platform falls back to unfiltered board when pair queries error."""
+    mock_live = MagicMock(spec=TrainLiveClient)
+    # Simulate 500 on fastest departures and filtered departure board
+    mock_live.get_fastest_departures.side_effect = Exception(
+        "500 Internal Server Error"
+    )
+
+    def mock_board(crs, filter_crs=None, num_rows=5):
+        if filter_crs is not None:
+            raise Exception("500 Internal Server Error")
+        return {
+            "trainServices": [
+                {
+                    "std": "17:48",
+                    "etd": "On time",
+                    "platform": "2",
+                    "destination": [{"crs": "SVG", "locationName": "Stevenage"}],
+                }
+            ]
+        }
+
+    mock_live.get_departure_board.side_effect = mock_board
+
+    res = resolve_live_rail_platform(
+        origin_id="9100HNTNGDN",
+        dest_id="2100STEVNGE0",
+        scheduled_time="17:48",
+        live_client=mock_live,
+    )
+    assert res.platform == "2"
+    assert res.etd == "On time"
+    assert res.std == "17:48"

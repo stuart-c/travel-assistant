@@ -218,6 +218,38 @@ def _realign_active_journey_timings(
                     new_dep,
                     new_arr,
                 )
+            else:
+                # If neither live rail nor timetable trip was found, roll forward the estimated departure
+                # to current time + 2 minutes to keep ETA realistic and prevent stale past departure times
+                dur = leg.duration_minutes
+                if dur is None:
+                    orig_arr_m = parse_time_to_minutes(leg.arr_time)
+                    if orig_arr_m is not None and dep_m is not None:
+                        dur = max(1, orig_arr_m - dep_m)
+                    else:
+                        dur = 15
+                new_dep_m = current_minutes + 2
+                leg.dep_time = format_minutes_to_time(new_dep_m)
+                leg.arr_time = format_minutes_to_time(new_dep_m + dur)
+                if idx == active.current_leg_index:
+                    active.live_status = None
+                    active.delay_minutes = max(0, new_dep_m - dep_m)
+                    active.delay_reason = "Service estimated / delayed"
+                    if leg.origin and leg.origin.platform:
+                        active.platform = leg.origin.platform
+                    elif active.platform and not any(
+                        w in active.platform.lower() for w in ("stand", "stop", "bay")
+                    ):
+                        active.platform = None
+                _propagate_leg_timings(active, idx)
+                logger.info(
+                    "Estimated roll-forward for leg %d (%s -> %s) to %s (arr %s)",
+                    idx,
+                    leg.origin.name,
+                    leg.destination.name,
+                    leg.dep_time,
+                    leg.arr_time,
+                )
 
 
 __all__ = [

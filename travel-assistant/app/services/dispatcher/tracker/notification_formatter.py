@@ -28,22 +28,39 @@ def _resolve_expected_arrival_time(
     current_dt: Optional[datetime.datetime] = None,
 ) -> str:
     """Resolve expected arrival time at the journey's final destination in HH:MM format."""
+    candidate = ""
     if active.expected_arrival_time:
-        return active.expected_arrival_time
-    if active.itinerary and active.itinerary.arrival_time:
-        return active.itinerary.arrival_time
-    if active.legs:
+        candidate = active.expected_arrival_time
+    elif active.itinerary and active.itinerary.arrival_time:
+        candidate = active.itinerary.arrival_time
+    elif active.legs:
         last_leg = active.legs[-1]
         if last_leg.arr_time:
-            return last_leg.arr_time
-    if current_dt and active.legs:
-        now_m = current_dt.hour * 60 + current_dt.minute
+            candidate = last_leg.arr_time
+
+    # Calculate dynamic arrival time from current time and remaining durations
+    now_m = (current_dt.hour * 60 + current_dt.minute) if current_dt else None
+    projected = ""
+    if now_m is not None and active.legs:
         rem_dur = sum(
             (lg.duration_minutes or 0) for lg in active.legs[active.current_leg_index :]
         )
         if rem_dur > 0:
-            return format_minutes_to_time(now_m + rem_dur)
-    return ""
+            projected = format_minutes_to_time(now_m + rem_dur)
+
+    if not candidate:
+        return projected
+
+    # If candidate arrival time is in the past, dynamically advance it
+    if now_m is not None and candidate:
+        cand_m = parse_time_to_minutes(candidate)
+        if cand_m is not None and cand_m < now_m:
+            if projected:
+                active.expected_arrival_time = projected
+                return projected
+            return format_minutes_to_time(now_m + 1)
+
+    return candidate
 
 
 def _format_arrival_clause(

@@ -78,3 +78,36 @@ def test_resolve_station_crs_unresolvable() -> None:
     # Completely invalid codes
     assert resolve_station_crs("NONEXISTENT_STATION_CODE") is None
     assert resolve_station_crs("12345") is None
+
+
+def test_resolve_station_crs_regional_and_synthetic(app) -> None:
+    """Test regional NaPTAN codes with embedded TIPLOC and synthetic Google stops."""
+    # Embedded TIPLOCs in regional NaPTAN codes
+    assert resolve_station_crs("2100STEVNGE0") == "SVG"
+    assert resolve_station_crs("0500CAMBDGE0") == "CBG"
+    assert resolve_station_crs("0500HNTNGDN0") == "HUN"
+    assert resolve_station_crs("9100CAMBNTH") == "CMB"
+
+    with app.app_context():
+        # Synthetic Google stop near a known rail stop
+        Stop.create(
+            atco_code="9100EUSTON",
+            naptan_code=None,
+            name="London Euston Rail Station",
+            stop_type="rail",
+            latitude=51.5284,
+            longitude=-0.1331,
+        )
+        Stop.create(
+            atco_code="google:london_euston_railway_station_51_5284_-0_1331",
+            naptan_code=None,
+            name="London Euston",
+            stop_type="rail",
+            latitude=51.5284,
+            longitude=-0.1331,
+        )
+
+        assert (
+            resolve_station_crs("google:london_euston_railway_station_51_5284_-0_1331")
+            == "EUS"
+        )

@@ -14,6 +14,7 @@ from app.services.corridor_learner import (
     map_vehicle_type,
     parse_duration_seconds,
     resolve_or_create_stop,
+    resolve_target_commute_datetime,
 )
 
 
@@ -744,3 +745,98 @@ def test_synthesize_custom_timetable_first_mile_corridor() -> None:
     # Leg 4: Egress walk to home
     assert pref_route.legs[3]["leg_type"] == "walk"
     assert pref_route.legs[3]["to_id"] == "ha:kings_cross_home"
+
+
+def test_resolve_target_commute_datetime_departure_window() -> None:
+    """Test resolve_target_commute_datetime targets the next upcoming departure commute window."""
+    import datetime
+
+    journey = Journey(
+        name="Morning Commute",
+        from_type="ha",
+        from_id="ha:home",
+        from_name="Home",
+        to_type="custom",
+        to_id="custom:office",
+        to_name="Office",
+    )
+    journey.set_time_settings(
+        [
+            {
+                "days": ["mon", "tue", "wed", "thu", "fri"],
+                "mode": "depart",
+                "start_time": "07:30",
+                "end_time": "09:00",
+            }
+        ]
+    )
+
+    # Reference time is Monday night at 22:51 (commute for today has already passed)
+    ref_monday_night = datetime.datetime(2026, 9, 28, 22, 51)
+    dep_dt, arr_dt = resolve_target_commute_datetime(journey, ref_monday_night)
+    assert arr_dt is None
+    assert dep_dt is not None
+    # Should target Tuesday morning at 07:30
+    assert dep_dt.date() == datetime.date(2026, 9, 29)
+    assert dep_dt.hour == 7
+    assert dep_dt.minute == 30
+
+
+def test_resolve_target_commute_datetime_arrival_window() -> None:
+    """Test resolve_target_commute_datetime targets the next upcoming arrival commute window."""
+    import datetime
+
+    journey = Journey(
+        name="Evening Commute",
+        from_type="custom",
+        from_id="custom:office",
+        from_name="Office",
+        to_type="ha",
+        to_id="ha:home",
+        to_name="Home",
+    )
+    journey.set_time_settings(
+        [
+            {
+                "days": ["mon", "tue", "wed", "thu", "fri"],
+                "mode": "arrive",
+                "start_time": "16:30",
+                "end_time": "18:00",
+            }
+        ]
+    )
+
+    # Reference time is Tuesday afternoon at 14:00 (before the 18:00 arrival deadline)
+    ref_tuesday_afternoon = datetime.datetime(2026, 9, 29, 14, 0)
+    dep_dt, arr_dt = resolve_target_commute_datetime(journey, ref_tuesday_afternoon)
+    assert dep_dt is None
+    assert arr_dt is not None
+    # Should target today (Tuesday) at 18:00
+    assert arr_dt.date() == datetime.date(2026, 9, 29)
+    assert arr_dt.hour == 18
+    assert arr_dt.minute == 0
+
+
+def test_resolve_target_commute_datetime_fallback_weekday() -> None:
+    """Test resolve_target_commute_datetime defaults to next weekday morning at 08:30 when no settings configured."""
+    import datetime
+
+    journey = Journey(
+        name="Unscheduled Journey",
+        from_type="ha",
+        from_id="ha:home",
+        from_name="Home",
+        to_type="custom",
+        to_id="custom:office",
+        to_name="Office",
+    )
+
+    # Reference time is Saturday 12:00
+    ref_saturday = datetime.datetime(2026, 9, 26, 12, 0)
+    dep_dt, arr_dt = resolve_target_commute_datetime(journey, ref_saturday)
+    assert arr_dt is None
+    assert dep_dt is not None
+    # Next upcoming weekday is Monday 2026-09-28 at 08:30
+    assert dep_dt.date() == datetime.date(2026, 9, 28)
+    assert dep_dt.hour == 8
+    assert dep_dt.minute == 30

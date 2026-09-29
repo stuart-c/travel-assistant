@@ -1,5 +1,6 @@
 """Corridor learner service for discovering, parsing, auditing, and persisting transit routes."""
 
+import datetime
 import logging
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -17,6 +18,89 @@ from app.utils.geo import haversine_distance_m, resolve_endpoint_coordinates
 from app.utils.transit_time import parse_duration_seconds, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
+
+DAY_NAME_MAP = {
+    0: "mon",
+    1: "tue",
+    2: "wed",
+    3: "thu",
+    4: "fri",
+    5: "sat",
+    6: "sun",
+}
+
+
+def resolve_target_commute_datetime(
+    journey: Journey,
+    reference_dt: Optional[datetime.datetime] = None,
+) -> Tuple[Optional[datetime.datetime], Optional[datetime.datetime]]:
+    """Determine the optimal target departure or arrival datetime for transit routing discovery.
+
+    Inspects configured journey time settings to evaluate the upcoming commute window
+    (targeting daytime service hours, peak trains, and campus shuttles) rather than
+    evaluating routes at midnight or off-peak hours.
+
+    Args:
+        journey: Configured Journey model.
+        reference_dt: Reference datetime (defaults to current local time).
+
+    Returns:
+        Tuple of (departure_time, arrival_time) where at most one is non-None.
+    """
+    if reference_dt is None:
+        reference_dt = datetime.datetime.now()
+
+    time_settings = journey.get_time_settings()
+    if time_settings:
+        for offset in range(0, 8):
+            target_date = reference_dt.date() + datetime.timedelta(days=offset)
+            day_code = DAY_NAME_MAP.get(target_date.weekday())
+            for setting in time_settings:
+                setting_days = setting.get("days", [])
+                if day_code not in setting_days:
+                    continue
+
+                mode = str(setting.get("mode", "depart")).lower().strip()
+                start_time_str = setting.get("start_time") or ""
+                end_time_str = setting.get("end_time") or ""
+
+                if mode == "arrive":
+                    time_str = end_time_str or start_time_str or "09:00"
+                    try:
+                        h, m = map(int, time_str.split(":"))
+                    except Exception:
+                        h, m = 9, 0
+                    target_dt = datetime.datetime.combine(
+                        target_date, datetime.time(h, m)
+                    )
+                    if offset == 0 and target_dt <= reference_dt:
+                        continue
+                    return None, target_dt
+                else:
+                    time_str = start_time_str or end_time_str or "08:00"
+                    try:
+                        h, m = map(int, time_str.split(":"))
+                    except Exception:
+                        h, m = 8, 0
+                    target_dt = datetime.datetime.combine(
+                        target_date, datetime.time(h, m)
+                    )
+                    if offset == 0 and target_dt <= reference_dt:
+                        continue
+                    return target_dt, None
+
+    # Fallback to the next upcoming weekday morning commute (08:30)
+    for offset in range(0, 8):
+        target_date = reference_dt.date() + datetime.timedelta(days=offset)
+        if target_date.weekday() < 5:  # Mon-Fri
+            target_dt = datetime.datetime.combine(target_date, datetime.time(8, 30))
+            if offset == 0 and target_dt <= reference_dt:
+                continue
+            return target_dt, None
+
+    # Ultimate fallback
+    return reference_dt, None
+
 
 VEHICLE_TYPE_MAP = {
     "bus": "bus",
@@ -970,6 +1054,7 @@ class CorridorLearner:
         query_type: str = "initial_discovery",
         trigger_reason: str = "automated_journey_creation",
         departure_time: Optional[Any] = None,
+        arrival_time: Optional[Any] = None,
         replace_existing: bool = True,
     ) -> List[JourneyRoute]:
         """Discover transit routes via Google Routes API, audit query, and persist templates.
@@ -979,6 +1064,7 @@ class CorridorLearner:
             query_type: Classification of the routing query.
             trigger_reason: Explanatory trigger reason for the audit log.
             departure_time: Optional departure datetime or RFC3339 string.
+            arrival_time: Optional arrival datetime or RFC3339 string.
             replace_existing: Whether to remove previously auto-generated templates.
 
         Returns:
@@ -1074,11 +1160,17 @@ class CorridorLearner:
             return []
 
         client = self.get_client()
+        target_dep = departure_time
+        target_arr = arrival_time
+        if target_dep is None and target_arr is None:
+            target_dep, target_arr = resolve_target_commute_datetime(journey)
+
         try:
             raw_response = client.compute_transit_routes(
                 origin=(origin_lat, origin_lng),
                 destination=(dest_lat, dest_lng),
-                departure_time=departure_time,
+                departure_time=target_dep,
+                arrival_time=target_arr,
                 compute_alternative_routes=True,
             )
         except DataSourceConfigError:
@@ -1116,7 +1208,11 @@ class CorridorLearner:
                 origin_lng=origin_lng,
                 dest_lat=dest_lat,
                 dest_lng=dest_lng,
-                departure_time=str(departure_time) if departure_time else None,
+                departure_time=(
+                    str(target_dep)
+                    if target_dep
+                    else (str(target_arr) if target_arr else None)
+                ),
                 raw_response=raw_response,
                 parsed_summary=parsed_summary,
                 selected_route_id=persisted_routes[0].id if persisted_routes else None,
@@ -1136,7 +1232,11 @@ class CorridorLearner:
             origin_lng=origin_lng,
             dest_lat=dest_lat,
             dest_lng=dest_lng,
-            departure_time=str(departure_time) if departure_time else None,
+            departure_time=(
+                str(target_dep)
+                if target_dep
+                else (str(target_arr) if target_arr else None)
+            ),
             raw_response=raw_response,
             parsed_summary=[],
         )
