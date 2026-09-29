@@ -56,10 +56,20 @@ def get_journey_live_tracking_data(
             from app.services.dispatcher.monitor import get_departure_monitor
 
             mon = get_departure_monitor()
-            if mon:
+            if mon and mon.active_journeys:
                 current_active_journeys = mon.active_journeys
         except Exception:
             current_active_journeys = {}
+
+        if not current_active_journeys:
+            try:
+                from app.services.dispatcher.tracker.session_store import (
+                    load_active_journey_sessions,
+                )
+
+                current_active_journeys = load_active_journey_sessions()
+            except Exception:
+                pass
 
     # 2. Query configured journeys
     all_journeys = list(Journey.select())

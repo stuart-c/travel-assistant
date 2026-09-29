@@ -457,6 +457,32 @@ def test_dispatcher_tools(app: Flask) -> None:
         assert "monitor_running" in status
         assert "active_journeys_count" in status
 
+        # Test session store fallback when monitor has no in-memory active journeys
+        from app.services.dispatcher.tracker.models import ActiveJourney
+        from app.services.dispatcher.tracker.session_store import (
+            save_active_journey_session,
+            clear_active_journey_session,
+        )
+
+        active_sess = ActiveJourney(
+            journey_id=j.id,
+            journey_name=j.name,
+            from_type=j.from_type,
+            from_id=j.from_id,
+            from_name=j.from_name,
+            to_type=j.to_type,
+            to_id=j.to_id,
+            to_name=j.to_name,
+            expected_arrival_time="13:00",
+        )
+        save_active_journey_session(active_sess)
+        try:
+            status_with_sess = dispatcher_get_status()
+            assert status_with_sess["active_journeys_count"] == 1
+            assert status_with_sess["active_journeys"][0]["journey_id"] == j.id
+        finally:
+            clear_active_journey_session(j.id)
+
         # 2. dispatcher_evaluate
         eval_res = dispatcher_evaluate(j.id)
         assert eval_res["journey_id"] == j.id

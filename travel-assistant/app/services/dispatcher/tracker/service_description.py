@@ -221,8 +221,12 @@ def format_next_step_for_departure(
                 live_client,
             )
             dep_plat = conn_live.platform
-            conn_live_status = conn_live.live_status
-            conn_delay_reason = conn_live.delay_reason
+            conn_live_status = (
+                "Cancelled"
+                if conn_live.is_cancelled and not conn_live.etd
+                else conn_live.etd
+            )
+            conn_delay_reason = conn_live.cancel_reason or conn_live.delay_reason
 
         dep_desc = _format_departure_timing_with_delay(
             dep_time=following_transit.dep_time or "",
@@ -404,8 +408,12 @@ def format_next_step_for_on_transit(
             live_client,
         )
         dep_plat = conn_live.platform
-        conn_live_status = conn_live.live_status
-        conn_delay_reason = conn_live.delay_reason
+        conn_live_status = (
+            "Cancelled"
+            if conn_live.is_cancelled and not conn_live.etd
+            else conn_live.etd
+        )
+        conn_delay_reason = conn_live.cancel_reason or conn_live.delay_reason
 
     dep_desc = _format_departure_timing_with_delay(
         following_transit.dep_time or "",

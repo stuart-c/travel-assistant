@@ -75,3 +75,28 @@ def test_get_journey_live_tracking_data_decoded_polyline(app: Flask) -> None:
         assert pytest.approx(route_poly[0][1], rel=1e-4) == -0.1238
         assert pytest.approx(route_poly[1][0], rel=1e-4) == 51.5284
         assert pytest.approx(route_poly[1][1], rel=1e-4) == -0.1331
+
+
+def test_get_journey_live_tracking_data_session_store_fallback(app: Flask) -> None:
+    """Test get_journey_live_tracking_data falls back to persisted database session store."""
+    from app.services.dispatcher.tracker.session_store import (
+        save_active_journey_session,
+        clear_active_journey_session,
+    )
+
+    with app.app_context():
+        clear_tracking_cache()
+        active = create_sample_active_journey(journey_id=1, with_rail=True)
+        save_active_journey_session(active)
+        try:
+            # Without passing active_journeys and without in-memory monitor active_journeys
+            data = get_journey_live_tracking_data(
+                journey_id=1,
+                live_client=None,
+                active_journeys=None,
+            )
+            assert data["selected_journey"] is not None
+            assert data["selected_journey"]["is_active"] is True
+            assert data["active"] is True
+        finally:
+            clear_active_journey_session(1)

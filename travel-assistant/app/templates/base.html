@@ -74,5 +74,23 @@
       <p>&copy; 2026 Stuart C. Licensed under Apache 2.0.</p>
     </footer>
   </div>
+  <script>
+    // Forward deep links if parent Home Assistant ingress panel URL contains a subpath (e.g. /journey)
+    (function() {
+      try {
+        if (window.top && window.top !== window && window.top.location) {
+          const topPath = window.top.location.pathname || '';
+          const topSearch = window.top.location.search || '';
+          const ingressPath = document.body.getAttribute('data-ingress-path') || '';
+          const currentPath = window.location.pathname;
+          if (topPath.includes('/journey') && !currentPath.includes('/journey')) {
+            window.location.replace(ingressPath + '/journey' + topSearch);
+          }
+        }
+      } catch (e) {
+        // Cross-origin restriction fallback (safe to ignore)
+      }
+    })();
+  </script>
 </body>
 </html>

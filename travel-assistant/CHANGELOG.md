@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Departure Monitor Rail Live Status Reference & Session Synchronisation** (`app/services/dispatcher/tracker/service_description.py`, `app/services/dispatcher/tracker/view_model.py`, `app/main.py`, `app/mcp/tools_dispatcher.py`, `app/templates/base.html`):
+  - Fixed an unhandled `AttributeError: 'LiveRailStatus' object has no attribute 'live_status'` in `format_next_step_for_departure` and `format_next_step_for_on_transit` by correctly accessing `conn_live.etd` and cancellation reasons from `LiveRailStatus`, resolving a daemon crash loop that halted progress notifications following initial departure alerts.
+  - Added fallback to persisted database sessions (`load_active_journey_sessions()`) in `get_journey_live_tracking_data`, template context processor `inject_ingress_path`, and MCP tool `dispatcher_get_status` to ensure active tracking sessions are shared reliably across Gunicorn worker processes and the separate MCP daemon.
+  - Added client-side deep-link forwarding in `base.html` to automatically route Ingress iframes from root to `/journey` when parent Home Assistant panel navigation preserves the deep link URL.
 - **Corridor Learner Multi-Step Walking Lookahead & Step Consolidation** (`app/services/corridor_learner.py`):
   - Consolidated consecutive non-transit walking steps into single journey stages with unified distance and duration metrics, preventing Google Routes turn-by-turn steps from creating micro-walk stages.
   - Corrected lookahead logic when parsing walking steps to identify the departure stop of the next scheduled transit service, preventing intermediate walking turns from falling back to the journey's final destination.
