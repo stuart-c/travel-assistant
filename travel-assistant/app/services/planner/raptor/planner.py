@@ -35,12 +35,13 @@ from app.services.planner.raptor.trips import (
 )
 from app.services.planner.raptor.models import _ParsedTrip
 from app.services.planner.transfers import (
-    extract_route_base_name,
     get_access_edges,
     get_active_timetables,
+    matches_transit_line_or_operator,
     normalise_id,
     resolve_active_days_and_date,
     resolve_endpoint_name,
+    resolve_stop_id_aliases,
 )
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
@@ -85,27 +86,48 @@ def _evaluate_corridor_itinerary(
             current_time = arr_t
         else:
             transit_count += 1
-            norm_from = normalise_id(from_id)
-            norm_to = normalise_id(to_id)
-            candidate_trips = stop_to_trips.get(norm_from, [])
-            line_base = extract_route_base_name(leg.get("line_name", ""))
+            leg_line = leg.get("line_name", "")
+            leg_op = leg.get("operator_name")
+            leg_mode = leg.get("transport_mode") or leg.get("mode")
+
+            from_aliases = resolve_stop_id_aliases(from_id, from_name)
+            to_aliases = resolve_stop_id_aliases(to_id, to_name)
+
+            candidate_trips: List[_ParsedTrip] = []
+            seen_trips: Set[int] = set()
+            for s_cand in from_aliases:
+                for tr in stop_to_trips.get(s_cand, []):
+                    if id(tr) not in seen_trips:
+                        seen_trips.add(id(tr))
+                        candidate_trips.append(tr)
 
             matching_trip: Optional[_ParsedTrip] = None
             best_dep: Optional[int] = None
             best_arr: Optional[int] = None
 
             for tr in candidate_trips:
-                if line_base:
-                    tr_line_base = extract_route_base_name(tr.line_name)
-                    if line_base not in tr_line_base and tr_line_base not in line_base:
-                        continue
+                if not matches_transit_line_or_operator(
+                    leg_line_name=leg_line,
+                    leg_operator_name=leg_op,
+                    leg_mode=leg_mode,
+                    trip_line_name=tr.line_name,
+                    trip_operator=tr.operator,
+                    trip_headsign=tr.headsign,
+                    trip_mode=tr.transport_mode,
+                ):
+                    continue
 
-                i_from = tr.stop_indices.get(from_id)
-                if i_from is None:
-                    i_from = tr.stop_indices.get(norm_from)
-                i_to = tr.stop_indices.get(to_id)
-                if i_to is None:
-                    i_to = tr.stop_indices.get(norm_to)
+                i_from: Optional[int] = None
+                for s_from in from_aliases:
+                    if s_from in tr.stop_indices:
+                        i_from = tr.stop_indices[s_from]
+                        break
+
+                i_to: Optional[int] = None
+                for s_to in to_aliases:
+                    if s_to in tr.stop_indices:
+                        i_to = tr.stop_indices[s_to]
+                        break
 
                 if i_from is None or i_to is None or i_from >= i_to:
                     continue
@@ -139,7 +161,18 @@ def _evaluate_corridor_itinerary(
                     headsign=matching_trip.headsign,
                 )
             )
-            current_time = best_arr + min_transfer_min
+
+            # Determine transfer slack for next connection (1 min for dedicated shuttles)
+            next_leg = legs_data[leg_idx + 1] if leg_idx + 1 < len(legs_data) else None
+            next_is_shuttle = False
+            if next_leg:
+                nl_name = str(next_leg.get("line_name", "")).lower()
+                next_is_shuttle = (
+                    "shuttle" in nl_name
+                    or "shuttle" in str(next_leg.get("from_name", "")).lower()
+                )
+            slack = 1 if next_is_shuttle else min_transfer_min
+            current_time = best_arr + slack
 
     if not itinerary_legs:
         return None

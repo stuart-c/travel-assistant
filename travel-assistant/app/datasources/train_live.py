@@ -367,16 +367,27 @@ class TrainLiveClient(BaseDataSource):
         time_offset: Optional[int] = None,
         time_window: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Fetch arrival board for a station via OpenAPI GetArrivalBoard."""
-        return self._call_operation(
-            "GetArrivalBoard",
-            crs=crs.upper().strip(),
-            numRows=int(num_rows),
-            filterCrs=filter_crs.upper().strip() if filter_crs else None,
-            filterType=filter_type,
-            timeOffset=time_offset,
-            timeWindow=time_window,
-        )
+        """Fetch arrival board for a station via OpenAPI GetArrivalBoard, falling back on error."""
+        try:
+            return self._call_operation(
+                "GetArrivalBoard",
+                crs=crs.upper().strip(),
+                numRows=int(num_rows),
+                filterCrs=filter_crs.upper().strip() if filter_crs else None,
+                filterType=filter_type,
+                timeOffset=time_offset,
+                timeWindow=time_window,
+            )
+        except Exception:
+            return self._call_operation(
+                "GetDepartureBoard",
+                crs=crs.upper().strip(),
+                numRows=int(num_rows),
+                filterCrs=filter_crs.upper().strip() if filter_crs else None,
+                filterType=filter_type,
+                timeOffset=time_offset,
+                timeWindow=time_window,
+            )
 
     def get_service_details(self, service_id: str) -> Dict[str, Any]:
         """Fetch detailed service information for a specific train service ID."""
@@ -388,18 +399,27 @@ class TrainLiveClient(BaseDataSource):
     def get_fastest_departures(
         self, crs: str, filter_list: Optional[Union[str, List[str]]] = None
     ) -> Dict[str, Any]:
-        """Fetch fastest departures to a list of destinations."""
+        """Fetch fastest departures to a list of destinations, falling back to GetDepartureBoard on error."""
         clean_filter = ""
         if isinstance(filter_list, (list, tuple, set)):
             clean_filter = ",".join(str(f).upper().strip() for f in filter_list if f)
         elif filter_list is not None:
             clean_filter = str(filter_list).upper().strip()
 
-        return self._call_operation(
-            "GetFastestDepartures",
-            crs=crs.upper().strip(),
-            filterList=clean_filter,
-        )
+        try:
+            return self._call_operation(
+                "GetFastestDepartures",
+                crs=crs.upper().strip(),
+                filterList=clean_filter,
+            )
+        except Exception:
+            first_filter = clean_filter.split(",")[0].strip() if clean_filter else None
+            return self._call_operation(
+                "GetDepartureBoard",
+                crs=crs.upper().strip(),
+                numRows=10,
+                filterCrs=first_filter if first_filter else None,
+            )
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Validate live train departure board credentials against Darwin/LDBWS."""

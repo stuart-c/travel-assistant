@@ -127,21 +127,38 @@ def _refresh_live_platform_status(
             scheduled_time=target_rail_leg.dep_time,
             live_client=live_client,
         )
+        next_transit = next(
+            (
+                lg
+                for lg in active.legs[active.current_leg_index :]
+                if lg.mode not in FOOT_MODES
+            ),
+            None,
+        )
+        is_rail_active = (current_leg and current_leg.mode == "rail") or (
+            current_leg
+            and current_leg.mode in FOOT_MODES
+            and next_transit
+            and next_transit.mode == "rail"
+        )
         if live_res.platform:
             target_rail_leg.origin.platform = live_res.platform
-            if (
-                current_leg
-                and (current_leg.mode == "rail" or current_leg.mode in FOOT_MODES)
-                and live_res.platform != active.platform
-            ):
+            if is_rail_active and live_res.platform != active.platform:
                 active.platform = live_res.platform
-        if live_res.etd:
-            if current_leg and (
-                current_leg.mode == "rail" or current_leg.mode in FOOT_MODES
-            ):
-                active.live_status = live_res.etd
-                active.delay_minutes = live_res.delay_minutes
-                active.delay_reason = live_res.delay_reason
+        if live_res.etd and is_rail_active:
+            active.live_status = live_res.etd
+            active.delay_minutes = live_res.delay_minutes
+            active.delay_reason = live_res.delay_reason
+        elif (
+            current_leg
+            and current_leg.mode in FOOT_MODES
+            and next_transit
+            and next_transit.mode != "rail"
+        ):
+            active.platform = None
+            active.live_status = None
+            active.delay_minutes = 0
+            active.delay_reason = None
     elif (
         current_leg
         and current_leg.mode not in FOOT_MODES

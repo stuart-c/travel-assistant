@@ -126,7 +126,11 @@ def format_progress_notification(
         leave_min = dep_min - walk_mins
         leave_time_str = format_minutes_to_time(leave_min)
 
-        plat_note = f" (Platform {active.platform})" if active.platform else ""
+        plat_note = (
+            f" (Platform {active.platform})"
+            if (active.platform and first_transit and first_transit.mode == "rail")
+            else ""
+        )
         dep_desc = _format_departure_timing_with_delay(
             dep_time=dep_time,
             live_status=active.live_status,
@@ -183,7 +187,11 @@ def format_progress_notification(
             live_status=active.live_status,
             delay_reason=active.delay_reason,
         )
-        plat_note = f" (Platform {active.platform})" if active.platform else ""
+        plat_note = (
+            f" (Platform {active.platform})"
+            if (active.platform and next_transit and next_transit.mode == "rail")
+            else ""
+        )
         dest_part = arr_clause if arr_clause else f" Destination: {active.to_name}."
         message = (
             f"On your way to {stop_name}. "
