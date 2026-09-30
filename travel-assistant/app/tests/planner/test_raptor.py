@@ -344,3 +344,115 @@ def test_raptor_submodules_and_trips_indexing() -> None:
     assert len(_TRIPS_CACHE) > 0
     clear_raptor_cache()
     assert len(_TRIPS_CACHE) == 0
+
+
+def test_evaluate_corridor_itinerary_with_aliases_and_shuttle(app: Flask) -> None:
+    """Test corridor evaluation when leg stop IDs use interchange aliases and shuttle transfer buffer."""
+    with app.app_context():
+        from app.models.transit import Stop, StopInterchange
+        from app.services.planner.raptor.planner import _evaluate_corridor_itinerary
+        from app.services.planner.raptor.trips import _build_stop_to_trips
+        from app.services.planner.transfers import clear_stop_aliases_cache
+
+        clear_stop_aliases_cache()
+
+        # Stop master and access codes
+        Stop.create(
+            atco_code="9100KNGX",
+            name="London King's Cross Rail Station",
+            stop_type="rail",
+            latitude=51.5308,
+            longitude=-0.1238,
+        )
+        Stop.create(
+            atco_code="4900KNGX0",
+            name="London King's Cross Rail Station",
+            stop_type="rail",
+            latitude=51.5309,
+            longitude=-0.1239,
+        )
+        Stop.create(
+            atco_code="9100FPK",
+            name="Finsbury Park Rail Station",
+            stop_type="rail",
+            latitude=51.5642,
+            longitude=-0.1062,
+        )
+        Stop.create(
+            atco_code="ha:office",
+            name="Tech Campus",
+            stop_type="custom",
+        )
+
+        StopInterchange.create(
+            from_stop_atco="4900KNGX0",
+            from_stop_name="London King's Cross Rail Station",
+            from_stop_type="rail",
+            to_stop_atco="9100KNGX",
+            to_stop_name="London King's Cross Rail Station",
+            to_stop_type="rail",
+            distance_metres=20,
+            estimated_walk_minutes=1,
+        )
+
+        trip_tl = _ParsedTrip(
+            trip_id="tr_thameslink",
+            timetable_id=10,
+            line_name="London King's Cross to Peterborough",
+            transport_mode="rail",
+            operator="Thameslink",
+            headsign="TL 1P20",
+            stops=["9100KNGX", "9100FPK"],
+            arr_times=[480, 490],  # 08:00 - 08:10
+            dep_times=[480, 490],
+        )
+
+        trip_shuttle = _ParsedTrip(
+            trip_id="tr_shuttle",
+            timetable_id=11,
+            line_name="Shuttle Bus (Morning)",
+            transport_mode="bus",
+            operator=None,
+            headsign="Campus Shuttle",
+            stops=["9100FPK", "ha:office"],
+            arr_times=[491, 500],  # 08:11 - 08:20 (1 min transfer from 08:10 arrival)
+            dep_times=[491, 500],
+        )
+
+        stop_to_trips = _build_stop_to_trips([trip_tl, trip_shuttle])
+
+        # Corridor route has access point "4900KNGX0" (aliased to 9100KNGX) and line "Thameslink" (matched to TOC)
+        legs_data = [
+            {
+                "leg_type": "transit",
+                "transport_mode": "rail",
+                "line_name": "Thameslink",
+                "from_id": "4900KNGX0",
+                "from_name": "London King's Cross",
+                "to_id": "9100FPK",
+                "to_name": "Finsbury Park Rail Station",
+            },
+            {
+                "leg_type": "transit",
+                "transport_mode": "bus",
+                "line_name": "Shuttle Bus (Morning)",
+                "from_id": "9100FPK",
+                "from_name": "Finsbury Park Rail Station",
+                "to_id": "ha:office",
+                "to_name": "Tech Campus",
+            },
+        ]
+
+        itin = _evaluate_corridor_itinerary(
+            legs_data=legs_data,
+            dep_time_min=475,
+            stop_to_trips=stop_to_trips,
+            min_transfer_min=3,
+        )
+
+        assert itin is not None
+        assert itin.departure_time == "08:00"
+        assert itin.arrival_time == "08:20"
+        assert len(itin.legs) == 2
+        assert itin.legs[0].line == "London King's Cross to Peterborough"
+        assert itin.legs[1].line == "Shuttle Bus (Morning)"

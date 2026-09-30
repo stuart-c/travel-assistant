@@ -261,26 +261,32 @@ def apply_live_departure_adjustments(
     dest_crs = resolve_station_crs(candidate.dest_stop_id)
     filter_list = [dest_crs] if dest_crs else None
 
+    services: List[Dict[str, Any]] = []
     try:
         raw_departures = live_client.get_fastest_departures(crs, filter_list)
         services = extract_live_services(raw_departures)
+    except Exception as exc:
+        logger.debug(
+            "Fastest departures lookup failed for %s -> %s: %s", crs, dest_crs, exc
+        )
 
-        if not services and dest_crs:
-            try:
-                board = live_client.get_departure_board(
-                    crs=crs, filter_crs=dest_crs, num_rows=5
-                )
-                board_services = extract_live_services(board)
-                if board_services:
-                    services = board_services
-            except Exception as board_exc:
-                logger.debug(
-                    "Live departure board probe fallback skipped for %s -> %s: %s",
-                    crs,
-                    dest_crs,
-                    board_exc,
-                )
+    if not services and dest_crs:
+        try:
+            board = live_client.get_departure_board(
+                crs=crs, filter_crs=dest_crs, num_rows=5
+            )
+            board_services = extract_live_services(board)
+            if board_services:
+                services = board_services
+        except Exception as board_exc:
+            logger.debug(
+                "Live departure board probe fallback skipped for %s -> %s: %s",
+                crs,
+                dest_crs,
+                board_exc,
+            )
 
+    try:
         if services:
             target_dep = None
             if candidate.transit_dep_time:

@@ -497,3 +497,21 @@ def test_format_progress_notification_stale_arrival_time_recalculated() -> None:
     assert "19:02" not in msg
     assert "Estimated arrival at Tech Campus by 19:35." in msg
     assert active.expected_arrival_time == "19:35"
+
+
+def test_platform_not_leaked_to_bus_notifications() -> None:
+    """Verify that rail platforms are never leaked onto bus departure or en-route messages."""
+    active = create_sample_active_journey(with_rail=False)
+    # first_transit is bus 73
+    active.platform = "4"  # Spurious downstream platform
+    active.current_status = JourneyStepStatus.PRE_DEPARTURE
+    active.current_leg_index = 0
+
+    _, msg_pre_dep, _ = format_progress_notification(active)
+    assert "Platform 4" not in msg_pre_dep
+    assert "Bus 73" in msg_pre_dep
+
+    active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
+    _, msg_en_route, _ = format_progress_notification(active)
+    assert "Platform 4" not in msg_en_route
+    assert "Bus 73" in msg_en_route

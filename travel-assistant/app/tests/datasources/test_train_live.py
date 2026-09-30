@@ -468,3 +468,39 @@ def test_train_live_get_fastest_departures_list_filter(
         crs="KGX",
         filterList="EUS,STP",
     )
+
+
+@patch.object(TrainLiveClient, "_call_operation")
+def test_train_live_fastest_and_arrival_fallbacks_on_error(
+    mock_call_op: MagicMock,
+) -> None:
+    """Verify that GetFastestDepartures and GetArrivalBoard fall back to GetDepartureBoard on Darwin error."""
+    client = TrainLiveClient(api_key="valid-key")
+
+    # 1. Fastest departures fallback
+    mock_call_op.side_effect = [RuntimeError("Darwin 500 error"), {"trainServices": []}]
+    res_fast = client.get_fastest_departures(crs="KGX", filter_list="CBG")
+    assert res_fast == {"trainServices": []}
+    assert mock_call_op.call_count == 2
+    mock_call_op.assert_called_with(
+        "GetDepartureBoard",
+        crs="KGX",
+        numRows=10,
+        filterCrs="CBG",
+    )
+
+    # 2. Arrival board fallback
+    mock_call_op.reset_mock()
+    mock_call_op.side_effect = [RuntimeError("Darwin 500 error"), {"trainServices": []}]
+    res_arr = client.get_arrival_board(crs="KGX", num_rows=5)
+    assert res_arr == {"trainServices": []}
+    assert mock_call_op.call_count == 2
+    mock_call_op.assert_called_with(
+        "GetDepartureBoard",
+        crs="KGX",
+        numRows=5,
+        filterCrs=None,
+        filterType=None,
+        timeOffset=None,
+        timeWindow=None,
+    )

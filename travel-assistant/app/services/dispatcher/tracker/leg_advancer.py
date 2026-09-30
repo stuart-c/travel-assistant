@@ -16,6 +16,7 @@ from app.services.dispatcher.tracker.schedule_aligner import (
 from app.services.dispatcher.tracker.significance import (
     _determine_transit_arrival_status,
 )
+from app.services.planner.models import ItineraryEndpoint
 from app.utils.geo import (
     distance_to_polyline_m,
     haversine_distance_m,
@@ -24,6 +25,88 @@ from app.utils.geo import (
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
+
+
+def _check_and_realign_rail_interchange(
+    active: ActiveJourney,
+    person_lat: Optional[float],
+    person_lon: Optional[float],
+    live_client: Optional[TrainLiveClient],
+) -> bool:
+    """Detect if commuter bypassed a planned rail interchange for another station along the corridor."""
+    if person_lat is None or person_lon is None:
+        return False
+    if active.current_leg_index >= len(active.legs) - 1:
+        return False
+
+    curr_leg = active.legs[active.current_leg_index]
+    next_leg = active.legs[active.current_leg_index + 1]
+
+    if curr_leg.mode != "rail" or next_leg.mode != "rail":
+        return False
+
+    try:
+        from app.models.transit import Stop
+        from app.services.planner.transfers import resolve_stop_id_aliases
+
+        # Find nearby rail stations within 400m
+        nearby_stations = list(
+            Stop.select().where(
+                (Stop.latitude.is_null(False))
+                & (Stop.latitude >= person_lat - 0.004)
+                & (Stop.latitude <= person_lat + 0.004)
+                & (Stop.longitude >= person_lon - 0.006)
+                & (Stop.longitude <= person_lon + 0.006)
+                & (Stop.stop_type == "rail")
+            )
+        )
+        if not nearby_stations:
+            return False
+
+        nearby_stations.sort(
+            key=lambda s: haversine_distance_m(
+                person_lat,
+                person_lon,
+                float(s.latitude or 0.0),
+                float(s.longitude or 0.0),
+            )
+        )
+        st = nearby_stations[0]
+        dist = haversine_distance_m(
+            person_lat,
+            person_lon,
+            float(st.latitude or 0.0),
+            float(st.longitude or 0.0),
+        )
+        if dist > 400.0:
+            return False
+
+        st_aliases = resolve_stop_id_aliases(st.atco_code, st.name)
+        curr_dest_aliases = resolve_stop_id_aliases(
+            curr_leg.destination.id, curr_leg.destination.name
+        )
+
+        if st_aliases & curr_dest_aliases:
+            return False
+
+        curr_orig_aliases = resolve_stop_id_aliases(
+            curr_leg.origin.id, curr_leg.origin.name
+        )
+        if st_aliases & curr_orig_aliases:
+            return False
+
+        logger.info(
+            "Realigning rail interchange from %s to nearby station %s (%s)",
+            curr_leg.destination.name,
+            st.name,
+            st.atco_code,
+        )
+        curr_leg.destination = ItineraryEndpoint(id=st.atco_code, name=st.name)
+        next_leg.origin = ItineraryEndpoint(id=st.atco_code, name=st.name)
+        return True
+    except Exception as exc:
+        logger.debug("Rail interchange check failed: %s", exc)
+        return False
 
 
 def _advance_future_legs(
@@ -39,6 +122,7 @@ def _advance_future_legs(
 
     Returns True if an advancement to a future leg was made.
     """
+    _check_and_realign_rail_interchange(active, person_lat, person_lon, live_client)
     for f_idx in range(len(active.legs) - 1, active.current_leg_index, -1):
         f_leg = active.legs[f_idx]
         f_orig_lat, f_orig_lon, _ = resolve_endpoint_coordinates(
@@ -111,20 +195,29 @@ def _advance_future_legs(
             is_time_valid = f_dep_m is None or cur_eff >= (f_dep_m - 2)
 
             f_poly = getattr(f_leg, "polyline", None)
+            min_f_dep_dist = (
+                max(f_prox_orig * 1.5, 300.0) if f_leg.mode == "bus" else f_prox_orig
+            )
             if f_poly:
                 poly_dist = distance_to_polyline_m(person_lat, person_lon, f_poly)
-                corridor_buf = max(f_prox_dest, 1000.0)
+                corridor_buf = (
+                    min(f_prox_dest, 150.0)
+                    if f_leg.mode == "bus"
+                    else max(f_prox_dest, 1000.0)
+                )
                 is_between = (
                     poly_dist is not None
                     and poly_dist <= corridor_buf
-                    and f_dist_orig > f_prox_orig
+                    and f_dist_orig > min_f_dep_dist
                     and f_dist_dest < (span + f_prox_dest)
                 )
             else:
-                max_dev = min(max(span * 0.2, 3000.0), 8000.0)
+                max_dev = min(
+                    max(span * 0.2, 1000.0 if f_leg.mode == "bus" else 3000.0), 8000.0
+                )
                 is_between = (
                     f_dist_dest < (span + f_prox_dest)
-                    and f_dist_orig > f_prox_orig
+                    and f_dist_orig > min_f_dep_dist
                     and (f_dist_orig + f_dist_dest) <= (span + max_dev)
                 )
 
@@ -292,7 +385,19 @@ def _advance_current_leg(
         elif old_status == JourneyStepStatus.ON_TRANSIT:
             # Maintain ON_TRANSIT status if commuter was already moving along the leg
             active.current_status = JourneyStepStatus.ON_TRANSIT
-        elif dep_min is not None and current_minutes >= dep_min:
+        elif (
+            dep_min is not None
+            and current_minutes >= dep_min
+            and (
+                dist_to_orig is None
+                or dist_to_orig
+                > (
+                    max(curr_prox_orig * 1.5, 300.0)
+                    if leg.mode == "bus"
+                    else curr_prox_orig
+                )
+            )
+        ):
             active.current_status = JourneyStepStatus.ON_TRANSIT
         else:
             # Commuter is before departure time and not yet detected on transit
@@ -310,21 +415,33 @@ def _advance_current_leg(
                 and person_lat is not None
                 and person_lon is not None
             ):
+                min_dep_dist = (
+                    max(curr_prox_orig * 1.5, 300.0)
+                    if leg.mode == "bus"
+                    else curr_prox_orig
+                )
                 leg_poly = getattr(leg, "polyline", None)
                 if leg_poly:
                     poly_dist = distance_to_polyline_m(person_lat, person_lon, leg_poly)
-                    corridor_buf = max(curr_prox_dest, 1000.0)
+                    corridor_buf = (
+                        min(curr_prox_dest, 150.0)
+                        if leg.mode == "bus"
+                        else max(curr_prox_dest, 1000.0)
+                    )
                     is_on_way = (
                         poly_dist is not None
                         and poly_dist <= corridor_buf
                         and dist_to_dest < (span + curr_prox_dest)
-                        and dist_to_orig > curr_prox_orig
+                        and dist_to_orig > min_dep_dist
                     )
                 else:
-                    max_dev = min(max(span * 0.2, 3000.0), 8000.0)
+                    max_dev = min(
+                        max(span * 0.2, 1000.0 if leg.mode == "bus" else 3000.0),
+                        8000.0,
+                    )
                     is_on_way = (
                         dist_to_dest < (span + curr_prox_dest)
-                        and dist_to_orig > curr_prox_orig
+                        and dist_to_orig > min_dep_dist
                         and (dist_to_orig + dist_to_dest) <= (span + max_dev)
                     )
 

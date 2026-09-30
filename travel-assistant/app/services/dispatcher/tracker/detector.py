@@ -297,6 +297,11 @@ def detect_en_route_journey(
                 )
 
             # 3. En route on board transit during transit leg duration
+            orig_dep_thresh = (
+                max(max_proximity_metres * 1.5, 300.0)
+                if leg.mode == "bus"
+                else max_proximity_metres
+            )
             if (
                 leg_dep_m is not None
                 and leg_arr_m is not None
@@ -304,7 +309,7 @@ def detect_en_route_journey(
                 and leg.mode not in FOOT_MODES
                 and orig_lat is not None
                 and dest_lat is not None
-                and (dist_orig is None or dist_orig > max_proximity_metres)
+                and (dist_orig is None or dist_orig > orig_dep_thresh)
                 and (dist_dest is None or dist_dest > max_proximity_metres)
             ):
                 leg_span = haversine_distance_m(orig_lat, orig_lon, dest_lat, dest_lon)

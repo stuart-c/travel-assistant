@@ -462,3 +462,112 @@ def test_get_active_timetables_filtering(app: Flask) -> None:
         assert "Monday Express" in all_in_date_names
         assert "Tuesday Local" in all_in_date_names
         assert "August Special" not in all_in_date_names
+
+
+def test_resolve_stop_id_aliases_and_toc_matching(app: Flask) -> None:
+    """Test stop alias resolution and TOC matching for London interchange hubs."""
+    with app.app_context():
+        from app.models.transit import Stop, StopInterchange
+        from app.services.planner.transfers import (
+            clear_stop_aliases_cache,
+            matches_transit_line_or_operator,
+            resolve_stop_id_aliases,
+        )
+
+        clear_stop_aliases_cache()
+
+        # Create stops for London King's Cross and St Pancras
+        Stop.create(
+            atco_code="9100KNGX",
+            name="London King's Cross Rail Station",
+            stop_type="rail",
+            latitude=51.5317,
+            longitude=-0.1243,
+        )
+        Stop.create(
+            atco_code="4900KNGX0",
+            name="London King's Cross Rail Station",
+            stop_type="rail",
+            latitude=51.5318,
+            longitude=-0.1244,
+        )
+
+        # Stop interchange connecting access point and master
+        StopInterchange.create(
+            from_stop_atco="4900KNGX0",
+            from_stop_name="London King's Cross Rail Station",
+            from_stop_type="rail",
+            to_stop_atco="9100KNGX",
+            to_stop_name="London King's Cross Rail Station",
+            to_stop_type="rail",
+            distance_metres=25,
+            estimated_walk_minutes=1,
+        )
+
+        # 1. Access code resolves master code via interchange and counterpart name
+        aliases_access = resolve_stop_id_aliases("4900KNGX0")
+        assert any(k in aliases_access for k in ("9100kngx", "9100KNGX"))
+        assert any(k in aliases_access for k in ("4900kngx0", "4900KNGX0"))
+
+        # 2. Synthetic Google ID mapped via spatial proximity
+        Stop.create(
+            atco_code="google:kings_cross_bay_a_51_5317_-0_1243",
+            name="London King's Cross (Stop A)",
+            stop_type="bus",
+            latitude=51.5317,
+            longitude=-0.1243,
+        )
+        Stop.create(
+            atco_code="490000077E",
+            name="King's Cross Station",
+            indicator="Stop E",
+            stop_type="bus",
+            latitude=51.53175,
+            longitude=-0.12432,
+        )
+        clear_stop_aliases_cache()
+        google_aliases = resolve_stop_id_aliases(
+            "google:kings_cross_bay_a_51_5317_-0_1243"
+        )
+        assert any(k in google_aliases for k in ("490000077e", "490000077E"))
+
+        # 3. Test TOC matching
+        assert (
+            matches_transit_line_or_operator(
+                leg_line_name="Thameslink",
+                leg_operator_name="Thameslink",
+                leg_mode="rail",
+                trip_line_name="London St Pancras to Bedford",
+                trip_operator="Thameslink",
+                trip_headsign="TL 1C24",
+                trip_mode="rail",
+            )
+            is True
+        )
+
+        assert (
+            matches_transit_line_or_operator(
+                leg_line_name="Great Northern",
+                leg_operator_name=None,
+                leg_mode="rail",
+                trip_line_name="London King's Cross to Cambridge",
+                trip_operator="Great Northern",
+                trip_headsign="GN 2C10",
+                trip_mode="rail",
+            )
+            is True
+        )
+
+        # Bus line matching
+        assert (
+            matches_transit_line_or_operator(
+                leg_line_name="73",
+                leg_operator_name=None,
+                leg_mode="bus",
+                trip_line_name="Bus 73: Victoria to Stoke Newington",
+                trip_operator="Arriva London",
+                trip_headsign="73 to Stoke Newington",
+                trip_mode="bus",
+            )
+            is True
+        )

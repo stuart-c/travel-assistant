@@ -146,6 +146,38 @@ def resolve_or_create_stop(
         if existing:
             return existing[0].stop_type, existing[0].atco_code, existing[0].name
 
+    # Check for real existing NaPTAN stop nearby before creating synthetic ID
+    if lat is not None and lng is not None:
+        try:
+            nearby = list(
+                Stop.select().where(
+                    (Stop.latitude.is_null(False))
+                    & (Stop.latitude >= lat - 0.001)
+                    & (Stop.latitude <= lat + 0.001)
+                    & (Stop.longitude >= lng - 0.0015)
+                    & (Stop.longitude <= lng + 0.0015)
+                    & (Stop.stop_type == norm_type)
+                )
+            )
+            real_nearby = [s for s in nearby if not s.atco_code.startswith("google:")]
+            if real_nearby:
+                real_nearby.sort(
+                    key=lambda s: haversine_distance_m(
+                        lat, lng, float(s.latitude or 0.0), float(s.longitude or 0.0)
+                    )
+                )
+                closest = real_nearby[0]
+                dist = haversine_distance_m(
+                    lat,
+                    lng,
+                    float(closest.latitude or 0.0),
+                    float(closest.longitude or 0.0),
+                )
+                if dist <= 100.0:
+                    return closest.stop_type, closest.atco_code, closest.name
+        except Exception:
+            pass
+
     # Generate synthetic ATCO code from name and coordinates
     slug = re.sub(r"[^a-z0-9]+", "_", clean_name.lower()).strip("_")
     coord_part = f"{round(lat or 0.0, 4)}_{round(lng or 0.0, 4)}".replace(".", "_")
@@ -225,6 +257,33 @@ def ensure_walking_connection(
                 bidirectional=True,
                 auto_generated=True,
             )
+
+        # Also connect real NaPTAN stop aliases if synthetic ID was passed
+        from app.services.planner.transfers import resolve_stop_id_aliases
+
+        from_aliases = resolve_stop_id_aliases(from_id, from_name)
+        to_aliases = resolve_stop_id_aliases(to_id, to_name)
+        for f_alt in from_aliases:
+            for t_alt in to_aliases:
+                if (
+                    f_alt != t_alt
+                    and not f_alt.startswith("google:")
+                    and not t_alt.startswith("google:")
+                    and not f_alt.startswith("atco:")
+                    and not t_alt.startswith("atco:")
+                ):
+                    if not Walking.find_walking_route(from_type, f_alt, to_type, t_alt):
+                        Walking.create(
+                            start_type=from_type,
+                            start_id=f_alt,
+                            start_name=from_name,
+                            finish_type=to_type,
+                            finish_id=t_alt,
+                            finish_name=to_name,
+                            time_needed_minutes=max(1, duration_minutes),
+                            bidirectional=True,
+                            auto_generated=True,
+                        )
     except Exception as exc:
         logger.debug("Could not ensure walking connection: %s", exc)
 

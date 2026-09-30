@@ -494,3 +494,94 @@ def test_advance_current_leg_preserves_on_transit_status_when_departure_time_adv
         # Status MUST remain ON_TRANSIT and not drop back to AT_INTERCHANGE
         assert active.current_leg_index == 0
         assert active.current_status == JourneyStepStatus.ON_TRANSIT
+
+
+def test_dynamic_rail_interchange_realignment(app: Flask) -> None:
+    """Test dynamic realignment when commuter stays on train past planned interchange station."""
+    with app.app_context():
+        # Stations: St Albans (origin) -> Finsbury Park (planned xfer) -> Moorgate (dest)
+        # Commuter actually stays on to London King's Cross
+        Stop.create(
+            atco_code="9100STALBNS",
+            name="St Albans City",
+            stop_type="rail",
+            latitude=51.7500,
+            longitude=-0.3260,
+        )
+        Stop.create(
+            atco_code="9100FPK",
+            name="Finsbury Park Rail Station",
+            stop_type="rail",
+            latitude=51.5642,
+            longitude=-0.1062,
+        )
+        Stop.create(
+            atco_code="9100KNGX",
+            name="London King's Cross Rail Station",
+            stop_type="rail",
+            latitude=51.5308,
+            longitude=-0.1238,
+        )
+        Stop.create(
+            atco_code="9100MGT",
+            name="Moorgate Rail Station",
+            stop_type="rail",
+            latitude=51.5186,
+            longitude=-0.0886,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(id="9100STALBNS", name="St Albans City"),
+                destination=ItineraryEndpoint(
+                    id="9100FPK", name="Finsbury Park Rail Station"
+                ),
+                dep_time="08:00",
+                arr_time="08:25",
+                duration_minutes=25,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="rail",
+                origin=ItineraryEndpoint(
+                    id="9100FPK", name="Finsbury Park Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="9100MGT", name="Moorgate Rail Station"
+                ),
+                dep_time="08:30",
+                arr_time="08:45",
+                duration_minutes=15,
+            ),
+        ]
+        active = ActiveJourney(
+            journey_id=7,
+            journey_name="St Albans to Moorgate",
+            from_type="station",
+            from_id="9100STALBNS",
+            from_name="St Albans City",
+            to_type="station",
+            to_id="9100MGT",
+            to_name="Moorgate Rail Station",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.ON_TRANSIT,
+            expected_arrival_time="08:45",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        stuart_at_kgx = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5308, "longitude": -0.1238},
+        }
+        now_dt = datetime.datetime(2026, 9, 29, 8, 28)
+        res = update_journey_progress(active, stuart_at_kgx, now_dt, mock_ha)
+        assert res is True
+        # Interchange realigned from Finsbury Park to King's Cross
+        assert active.legs[0].destination.id == "9100KNGX"
+        assert active.legs[1].origin.id == "9100KNGX"
+        assert active.current_leg_index == 1
+        assert active.current_status == JourneyStepStatus.AT_INTERCHANGE

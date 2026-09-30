@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.models.location import Location
 from app.models.timetable import Timetable
@@ -236,6 +236,199 @@ def get_access_edges(
     return edges
 
 
+_STOP_ALIASES_CACHE: Dict[str, Set[str]] = {}
+
+TOC_OPERATOR_MAP = {
+    "thameslink": {"tl", "thameslink"},
+    "great northern": {"gn", "great northern"},
+    "greater anglia": {"le", "greater anglia", "ga"},
+    "crosscountry": {"xc", "crosscountry", "cross country"},
+    "lner": {"gr", "lner", "london north eastern railway"},
+    "london north eastern railway": {"gr", "lner", "london north eastern railway"},
+    "c2c": {"cc", "c2c"},
+    "southern": {"sn", "southern"},
+    "southeastern": {"se", "southeastern"},
+    "elizabeth line": {"xr", "elizabeth line"},
+    "overground": {"lo", "overground", "london overground"},
+    "east midlands railway": {"em", "emr", "east midlands railway"},
+    "avanti west coast": {"vt", "avanti", "avanti west coast"},
+}
+
+
+def clear_stop_aliases_cache() -> None:
+    """Clear the in-memory stop alias resolution cache."""
+    _STOP_ALIASES_CACHE.clear()
+
+
+def resolve_stop_id_aliases(
+    stop_id: str,
+    stop_name: Optional[str] = None,
+) -> Set[str]:
+    """Resolve an identifier into candidate alias ATCO and NaPTAN codes.
+
+    Handles:
+    - Normalised and raw ID forms (stripping/adding standard prefixes).
+    - Synthetic Google IDs (google:...) mapped to nearby NaPTAN stops or Walking links.
+    - Linked interchanges via StopInterchange records (e.g. 0500CAMBDGE0 <-> 9100CAMBDGE).
+    - Rail station counterparts sharing the same station name.
+    """
+    raw_id = str(stop_id or "").strip()
+    if not raw_id:
+        return set()
+
+    norm_id = normalise_id(raw_id)
+    cache_key = norm_id.lower()
+    if cache_key in _STOP_ALIASES_CACHE:
+        return _STOP_ALIASES_CACHE[cache_key]
+
+    aliases: Set[str] = {
+        raw_id,
+        norm_id,
+        raw_id.lower(),
+        norm_id.lower(),
+        f"atco:{norm_id}",
+        f"naptan:{norm_id}",
+    }
+
+    try:
+        from app.models.transit import Stop, StopInterchange
+        from app.models.walking import Walking
+
+        # 1. Synthetic Google ID resolution
+        if raw_id.startswith("google:") or norm_id.startswith("google:"):
+            st = Stop.get_by_atco(raw_id) or Stop.get_by_atco(norm_id)
+            if st and st.latitude is not None and st.longitude is not None:
+                lat, lon = float(st.latitude), float(st.longitude)
+                nearby = list(
+                    Stop.select().where(
+                        (Stop.latitude.is_null(False))
+                        & (Stop.latitude >= lat - 0.001)
+                        & (Stop.latitude <= lat + 0.001)
+                        & (Stop.longitude >= lon - 0.0015)
+                        & (Stop.longitude <= lon + 0.0015)
+                    )
+                )
+                for nb in nearby:
+                    if not nb.atco_code.startswith("google:"):
+                        aliases.add(nb.atco_code)
+                        aliases.add(normalise_id(nb.atco_code))
+                        aliases.add(nb.atco_code.lower())
+                        aliases.add(normalise_id(nb.atco_code).lower())
+
+            walks = list(
+                Walking.select().where(
+                    (Walking.start_id == raw_id)
+                    | (Walking.start_id == norm_id)
+                    | (Walking.finish_id == raw_id)
+                    | (Walking.finish_id == norm_id)
+                )
+            )
+            for w in walks:
+                other_id = (
+                    w.finish_id if w.start_id in (raw_id, norm_id) else w.start_id
+                )
+                if other_id and not other_id.startswith("google:"):
+                    aliases.add(other_id)
+                    aliases.add(normalise_id(other_id))
+                    aliases.add(other_id.lower())
+                    aliases.add(normalise_id(other_id).lower())
+
+        # 2. StopInterchange lookup for tight physical interchanges (<= 150m or <= 3 mins)
+        xfer_query = list(
+            StopInterchange.select(
+                StopInterchange.from_stop_atco,
+                StopInterchange.to_stop_atco,
+            ).where(
+                (
+                    StopInterchange.from_stop_atco.in_([raw_id, norm_id])
+                    | StopInterchange.to_stop_atco.in_([raw_id, norm_id])
+                )
+                & (
+                    (StopInterchange.distance_metres <= 150)
+                    | (StopInterchange.estimated_walk_minutes <= 3)
+                )
+            )
+        )
+        for xfer in xfer_query:
+            counterpart = (
+                xfer.to_stop_atco
+                if normalise_id(xfer.from_stop_atco) == norm_id
+                else xfer.from_stop_atco
+            )
+            if counterpart:
+                aliases.add(counterpart)
+                aliases.add(normalise_id(counterpart))
+                aliases.add(counterpart.lower())
+                aliases.add(normalise_id(counterpart).lower())
+
+        # 3. Rail station counterpart resolution by station name (e.g. 0500CAMBDGE0 <-> 9100CAMBDGE)
+        st_obj = Stop.get_by_atco(raw_id) or Stop.get_by_atco(norm_id)
+        search_name = (
+            st_obj.name
+            if (st_obj and st_obj.stop_type == "rail")
+            else (stop_name if (stop_name and "rail" in stop_name.lower()) else None)
+        )
+        if search_name:
+            counterparts = list(
+                Stop.select()
+                .where((Stop.stop_type == "rail") & (Stop.name == search_name))
+                .limit(5)
+            )
+            for cp in counterparts:
+                aliases.add(cp.atco_code)
+                aliases.add(normalise_id(cp.atco_code))
+                aliases.add(cp.atco_code.lower())
+                aliases.add(normalise_id(cp.atco_code).lower())
+
+    except Exception:
+        pass
+
+    _STOP_ALIASES_CACHE[cache_key] = aliases
+    return aliases
+
+
+def matches_transit_line_or_operator(
+    leg_line_name: Optional[str],
+    leg_operator_name: Optional[str],
+    leg_mode: Optional[str],
+    trip_line_name: str,
+    trip_operator: Optional[str],
+    trip_headsign: Optional[str],
+    trip_mode: str,
+) -> bool:
+    """Check if a candidate trip matches a route leg's line, operator, or TOC code."""
+    line_base = extract_route_base_name(leg_line_name)
+    if not line_base:
+        return True
+
+    tr_line_base = extract_route_base_name(trip_line_name)
+    if line_base in tr_line_base or tr_line_base in line_base:
+        return True
+
+    tr_op = (trip_operator or "").lower().strip()
+    if tr_op and (line_base in tr_op or tr_op in line_base):
+        return True
+
+    tr_head = (trip_headsign or "").lower().strip()
+    if tr_head and (line_base in tr_head):
+        return True
+
+    is_rail = leg_mode == "rail" or trip_mode == "rail"
+    if is_rail:
+        for known_key, tokens in TOC_OPERATOR_MAP.items():
+            if line_base == known_key or any(tok in line_base for tok in tokens):
+                if any(tok in tr_op for tok in tokens):
+                    return True
+                head_tokens = tr_head.split()
+                if any(tok in head_tokens for tok in tokens):
+                    return True
+                if any(tok in tr_line_base for tok in tokens):
+                    return True
+        return True
+
+    return False
+
+
 __all__ = [
     "normalise_id",
     "extract_route_base_name",
@@ -243,4 +436,7 @@ __all__ = [
     "resolve_active_days_and_date",
     "get_active_timetables",
     "get_access_edges",
+    "resolve_stop_id_aliases",
+    "matches_transit_line_or_operator",
+    "clear_stop_aliases_cache",
 ]
