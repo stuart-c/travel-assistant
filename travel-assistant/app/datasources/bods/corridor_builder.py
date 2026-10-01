@@ -282,6 +282,17 @@ def merge_timetable_into_collection(
                         return tm.strip()
                 return "99:99"
 
+            e_start = existing.get("start_date")
+            n_start = tt.get("start_date")
+            if e_start is None or (n_start is not None and n_start < e_start):
+                existing["start_date"] = n_start
+
+            e_end = existing.get("end_date")
+            n_end = tt.get("end_date")
+            if e_end is not None:
+                if n_end is None or (n_end is not None and n_end > e_end):
+                    existing["end_date"] = n_end
+
             existing_trips.sort(key=_first_time_val)
             existing["content"]["stops"] = combined_stops_list
             existing["content"]["trips"] = existing_trips

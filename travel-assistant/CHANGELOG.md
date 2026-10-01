@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added multi-stage unit test assertions and arrival time fallback tests.
 
 ### Fixed
+- **Morning Commute Corridor Matching, Rail Station Aliasing & BODS Timetable Validity** (`app/services/planner/transfers.py`, `app/services/planner/raptor/planner.py`, `app/datasources/bods/corridor_builder.py`):
+  - Normalised rail station name matching in `resolve_stop_id_aliases` to flexibly match variations such as "Railway Station", "Rail Station", and "Station" across NaPTAN bus and Darwin rail stops (e.g. `Stevenage Railway Station` <-> `Stevenage Rail Station` <-> `9100STEVNGE`).
+  - Added full prefixed alias variants (`atco:...` and `naptan:...`) for all discovered stop interchanges and station counterparts.
+  - Refined TOC matching in `matches_transit_line_or_operator` so specific operator requirements (e.g. `Thameslink`) reject incompatible trains from other operators while allowing genuine trips.
+  - Prioritised preferred corridors in `plan_journey` itinerary ranking (`robustness_score="Preferred Corridor"`), ensuring preferred routes (such as SB1 + train + shuttle) take precedence over dynamic alternatives.
+  - Updated BODS TransXChange timetable merge logic in `merge_timetable_into_collection` to extend and update validity dates (`start_date`, `end_date`) when merging sequential XML revisions, ensuring valid timetables are not prematurely filtered out as expired.
 - **Corridor Matching, Stop Aliasing & Dedicated Shuttle Bus Routing** (`app/services/planner/transfers.py`, `app/services/planner/raptor/planner.py`, `app/services/corridor_learner.py`):
   - Added spatial proximity and interchange link alias resolution (`resolve_stop_id_aliases`) matching synthetic Google stop identifiers (e.g. `google:stevenage_bus_station...`) to real NaPTAN bus and rail stops within 100 metres and linked platform interchanges.
   - Implemented line and TOC operator matching (`matches_transit_line_or_operator`) mapping Train Operating Company codes (`TL`, `GN`, `LE`, etc.) and brand names to timetable descriptions, enabling stored transit corridors to match local timetables across operators.
