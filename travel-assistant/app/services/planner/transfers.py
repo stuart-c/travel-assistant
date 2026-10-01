@@ -333,6 +333,18 @@ def resolve_stop_id_aliases(
                     aliases.add(other_id.lower())
                     aliases.add(normalise_id(other_id).lower())
 
+        def _add_alias_forms(code: str) -> None:
+            c = str(code).strip()
+            if not c:
+                return
+            c_norm = normalise_id(c)
+            aliases.add(c)
+            aliases.add(c_norm)
+            aliases.add(c.lower())
+            aliases.add(c_norm.lower())
+            aliases.add(f"atco:{c_norm}")
+            aliases.add(f"naptan:{c_norm}")
+
         # 2. StopInterchange lookup for tight physical interchanges (<= 150m or <= 3 mins)
         xfer_query = list(
             StopInterchange.select(
@@ -356,29 +368,39 @@ def resolve_stop_id_aliases(
                 else xfer.from_stop_atco
             )
             if counterpart:
-                aliases.add(counterpart)
-                aliases.add(normalise_id(counterpart))
-                aliases.add(counterpart.lower())
-                aliases.add(normalise_id(counterpart).lower())
+                _add_alias_forms(counterpart)
 
         # 3. Rail station counterpart resolution by station name (e.g. 0500CAMBDGE0 <-> 9100CAMBDGE)
         st_obj = Stop.get_by_atco(raw_id) or Stop.get_by_atco(norm_id)
         search_name = (
             st_obj.name
             if (st_obj and st_obj.stop_type == "rail")
-            else (stop_name if (stop_name and "rail" in stop_name.lower()) else None)
+            else (
+                stop_name
+                if (
+                    stop_name
+                    and ("rail" in stop_name.lower() or "station" in stop_name.lower())
+                )
+                else None
+            )
         )
         if search_name:
-            counterparts = list(
-                Stop.select()
-                .where((Stop.stop_type == "rail") & (Stop.name == search_name))
-                .limit(5)
-            )
-            for cp in counterparts:
-                aliases.add(cp.atco_code)
-                aliases.add(normalise_id(cp.atco_code))
-                aliases.add(cp.atco_code.lower())
-                aliases.add(normalise_id(cp.atco_code).lower())
+            import re
+
+            base_stn = re.sub(
+                r"(?i)\s+(railway|rail)?\s*station", "", search_name
+            ).strip()
+            if base_stn:
+                pattern = f"%{base_stn}%"
+                counterparts = list(
+                    Stop.select()
+                    .where((Stop.stop_type == "rail") & (Stop.name**pattern))
+                    .limit(10)
+                )
+                for cp in counterparts:
+                    _add_alias_forms(cp.atco_code)
+                    if cp.naptan_code:
+                        _add_alias_forms(cp.naptan_code)
 
     except Exception:
         pass
@@ -415,6 +437,29 @@ def matches_transit_line_or_operator(
 
     is_rail = leg_mode == "rail" or trip_mode == "rail"
     if is_rail:
+        # Check if the leg specifically requests a known TOC
+        leg_matched_tocs = set()
+        for known_key, tokens in TOC_OPERATOR_MAP.items():
+            if line_base == known_key or any(tok == line_base for tok in tokens):
+                leg_matched_tocs.update(tokens)
+
+        if leg_matched_tocs:
+            if any(tok in tr_op for tok in leg_matched_tocs):
+                return True
+            head_tokens = tr_head.split()
+            if any(tok in head_tokens for tok in leg_matched_tocs):
+                return True
+            if any(tok in tr_line_base for tok in leg_matched_tocs):
+                return True
+            # Leg specified a specific TOC, but trip belongs to a different TOC
+            for other_key, other_tokens in TOC_OPERATOR_MAP.items():
+                if other_key != line_base and not (other_tokens & leg_matched_tocs):
+                    if any(tok in tr_op for tok in other_tokens) or any(
+                        tok in tr_head.split() for tok in other_tokens
+                    ):
+                        return False
+            return True
+
         for known_key, tokens in TOC_OPERATOR_MAP.items():
             if line_base == known_key or any(tok in line_base for tok in tokens):
                 if any(tok in tr_op for tok in tokens):

@@ -404,6 +404,8 @@ def plan_journey(
                         min_transfer_min=min_transfer_minutes,
                     )
                     if itin:
+                        if corridor.is_preferred:
+                            itin.robustness_score = "Preferred Corridor"
                         if t_mode == "arrive":
                             arr_m = parse_time_to_minutes(itin.arrival_time)
                             if arr_m is not None and arr_m <= t_start_min:
@@ -482,6 +484,7 @@ def plan_journey(
     if t_mode == "arrive":
         unique_itineraries.sort(
             key=lambda it: (
+                0 if it.robustness_score == "Preferred Corridor" else 1,
                 -(parse_time_to_minutes(it.departure_time) or 0),
                 it.total_duration_minutes,
                 it.transfers_count,
@@ -490,6 +493,7 @@ def plan_journey(
     else:
         unique_itineraries.sort(
             key=lambda it: (
+                0 if it.robustness_score == "Preferred Corridor" else 1,
                 parse_time_to_minutes(it.departure_time) or 0,
                 it.total_duration_minutes,
                 it.transfers_count,

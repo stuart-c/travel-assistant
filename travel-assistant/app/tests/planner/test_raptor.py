@@ -456,3 +456,104 @@ def test_evaluate_corridor_itinerary_with_aliases_and_shuttle(app: Flask) -> Non
         assert len(itin.legs) == 2
         assert itin.legs[0].line == "London King's Cross to Peterborough"
         assert itin.legs[1].line == "Shuttle Bus (Morning)"
+
+
+def test_flexible_rail_station_name_aliasing(app: Flask) -> None:
+    """Verify resolve_stop_id_aliases maps 'Railway Station' and 'Rail Station' counterparts."""
+    with app.app_context():
+        from app.services.planner.transfers import (
+            clear_stop_aliases_cache,
+            resolve_stop_id_aliases,
+        )
+
+        clear_stop_aliases_cache()
+        Stop.create(
+            atco_code="2100STEVNGE0",
+            name="Stevenage Railway Station",
+            stop_type="rail",
+        )
+        Stop.create(
+            atco_code="9100STEVNGE",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+        )
+
+        aliases = resolve_stop_id_aliases("2100STEVNGE0", "Stevenage Railway Station")
+        assert "9100STEVNGE" in aliases
+        assert "atco:9100STEVNGE" in aliases
+        assert "naptan:9100STEVNGE" in aliases
+
+
+def test_preferred_corridor_ranked_first(seeded_planner: Flask) -> None:
+    """Verify that a preferred corridor itinerary is ranked ahead of dynamic alternatives."""
+    with seeded_planner.app_context():
+        from app.models.journey import Journey
+        from app.models.journey_route import JourneyRoute
+        from app.services.planner.raptor import plan_journey
+
+        j = Journey.create(
+            name="Test Commute",
+            from_type="ha",
+            from_id="ha:home",
+            from_name="Home",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+        )
+        # Create preferred JourneyRoute for this journey
+        legs_data = [
+            {
+                "stage_index": 1,
+                "leg_type": "walk",
+                "from_type": "ha",
+                "from_id": "ha:home",
+                "from_name": "Home",
+                "to_type": "bus",
+                "to_id": "490000077E",
+                "to_name": "King's Cross Station",
+                "duration_minutes": 4,
+            },
+            {
+                "stage_index": 2,
+                "leg_type": "transit",
+                "transport_mode": "bus",
+                "line_name": "Bus 73",
+                "from_type": "bus",
+                "from_id": "490000077E",
+                "from_name": "King's Cross Station",
+                "to_type": "bus",
+                "to_id": "490000077C",
+                "to_name": "Euston Station",
+                "duration_minutes": 12,
+            },
+            {
+                "stage_index": 3,
+                "leg_type": "walk",
+                "from_type": "bus",
+                "from_id": "490000077C",
+                "from_name": "Euston Station",
+                "to_type": "ha",
+                "to_id": "ha:work",
+                "to_name": "Work",
+                "duration_minutes": 5,
+            },
+        ]
+        JourneyRoute.create(
+            journey_id=j.id,
+            name="Preferred Commute",
+            is_preferred=True,
+            is_enabled=True,
+            legs=legs_data,
+        )
+
+        itins = plan_journey(
+            from_type="ha",
+            from_id="ha:home",
+            to_type="ha",
+            to_id="ha:work",
+            timing_mode="depart",
+            time_str="07:25",
+            days_of_week=["mon"],
+        )
+        assert len(itins) >= 1
+        assert itins[0].robustness_score == "Preferred Corridor"
