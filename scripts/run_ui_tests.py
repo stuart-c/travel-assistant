@@ -371,13 +371,13 @@ class UITester:
             r_sync_js.get_data(as_text=True) if r_sync_js.status_code == 200 else ""
         )
         has_human_titles = (
-            "Stop Interchanges" in sync_js_content
-            and "transfer_within_a_station" in sync_js_content
-            and "Transit Stops (NaPTAN)" in sync_js_content
+            "Transit Stops (NaPTAN)" in sync_js_content
+            and "Home Assistant Locations" in sync_js_content
+            and "Walking Connections" in sync_js_content
         )
         self.record(
             "Sync Datasets Grid.js Data & Human Labels",
-            r_sync_get.status_code == 200 and len(sync_data) >= 7 and has_human_titles,
+            r_sync_get.status_code == 200 and len(sync_data) >= 3 and has_human_titles,
             f"Verified {len(sync_data)} sync datasets with human labels",
         )
 

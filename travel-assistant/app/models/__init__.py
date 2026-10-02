@@ -18,11 +18,9 @@ from app.models.timetable import (
 from app.models.transfer import PlatformTransfer
 from app.models.transit import (
     Stop,
-    StopInterchange,
     SyncMetadata,
 )
 from app.models.mcp import MCPTool
-from app.models.journey_route import JourneyRoute
 from app.models.route_query_log import RouteQueryLog
 from app.models.walking import Walking
 
@@ -31,11 +29,9 @@ ALL_MODELS = [
     Timetable,
     SyncMetadata,
     Stop,
-    StopInterchange,
     PlatformTransfer,
     Location,
     Journey,
-    JourneyRoute,
     RouteQueryLog,
     Walking,
     MCPTool,
@@ -52,12 +48,10 @@ __all__ = [
     "TimetableContent",
     "Location",
     "Journey",
-    "JourneyRoute",
     "RouteQueryLog",
     "JourneyTimeSetting",
     "Walking",
     "Stop",
-    "StopInterchange",
     "SyncMetadata",
     "PlatformTransfer",
     "MCPTool",

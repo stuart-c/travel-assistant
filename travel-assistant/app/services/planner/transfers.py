@@ -291,7 +291,7 @@ def resolve_stop_id_aliases(
     }
 
     try:
-        from app.models.transit import Stop, StopInterchange
+        from app.models.transit import Stop
         from app.models.walking import Walking
 
         # 1. Synthetic Google ID resolution
@@ -344,31 +344,6 @@ def resolve_stop_id_aliases(
             aliases.add(c_norm.lower())
             aliases.add(f"atco:{c_norm}")
             aliases.add(f"naptan:{c_norm}")
-
-        # 2. StopInterchange lookup for tight physical interchanges (<= 150m or <= 3 mins)
-        xfer_query = list(
-            StopInterchange.select(
-                StopInterchange.from_stop_atco,
-                StopInterchange.to_stop_atco,
-            ).where(
-                (
-                    StopInterchange.from_stop_atco.in_([raw_id, norm_id])
-                    | StopInterchange.to_stop_atco.in_([raw_id, norm_id])
-                )
-                & (
-                    (StopInterchange.distance_metres <= 150)
-                    | (StopInterchange.estimated_walk_minutes <= 3)
-                )
-            )
-        )
-        for xfer in xfer_query:
-            counterpart = (
-                xfer.to_stop_atco
-                if normalise_id(xfer.from_stop_atco) == norm_id
-                else xfer.from_stop_atco
-            )
-            if counterpart:
-                _add_alias_forms(counterpart)
 
         # 3. Rail station counterpart resolution by station name (e.g. 0500CAMBDGE0 <-> 9100CAMBDGE)
         st_obj = Stop.get_by_atco(raw_id) or Stop.get_by_atco(norm_id)

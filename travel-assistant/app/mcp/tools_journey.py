@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _trigger_journey_syncs(from_type: str, to_type: str) -> None:
-    """Queue targeted walking, timetable, and route synchronisation."""
+    """Queue targeted walking synchronisation."""
     ft = str(from_type).strip().lower()
     tt = str(to_type).strip().lower()
 
@@ -20,17 +20,6 @@ def _trigger_journey_syncs(from_type: str, to_type: str) -> None:
             request_sync("walking")
         except Exception:
             pass
-
-    if ft == "bus" or tt == "bus":
-        try:
-            request_sync("bus_timetables")
-        except Exception:
-            pass
-
-    try:
-        request_sync("journey_routes")
-    except Exception:
-        pass
 
 
 @register_tool(
@@ -44,20 +33,18 @@ def journey_list() -> List[Dict[str, Any]]:
     journeys = Journey.select()
     results = []
     for j in journeys:
-        data = j.to_dict()
-        data["has_routes"] = bool(j.calculated_routes)
-        results.append(data)
+        results.append(j.to_dict())
     return results
 
 
 @register_tool(
     name="journey_get",
     domain="journey",
-    description="Get detailed configuration and calculated route corridors for a specific journey by ID.",
+    description="Get detailed configuration for a specific journey by ID.",
     is_mutating=False,
 )
 def journey_get(journey_id: int) -> Dict[str, Any]:
-    """Retrieve a specific journey by ID including its calculated routes."""
+    """Retrieve a specific journey by ID."""
     try:
         j = Journey.get_by_id(journey_id)
         return j.to_dict()
@@ -194,20 +181,16 @@ def journey_discover_corridors(journey_id: int) -> Dict[str, Any]:
     except Journey.DoesNotExist:
         return {"error": f"Journey with ID {journey_id} not found."}
 
-    from app.services.corridor_learner import CorridorLearner
+    from app.services.planner.dynamic_planner import DynamicRoutePlanner
 
-    learner = CorridorLearner()
-    routes = learner.discover_and_persist_corridors(
-        journey=journey,
-        query_type="manual_refresh",
-        trigger_reason="mcp_tool_trigger",
-        replace_existing=True,
-    )
+    planner = DynamicRoutePlanner()
+    itineraries = planner.plan_transit(journey=journey)
+    routes = [itin.model_dump() for itin in itineraries]
     return {
         "success": True,
         "journey_id": journey_id,
         "count": len(routes),
-        "routes": [r.to_dict() for r in routes],
+        "routes": routes,
     }
 
 

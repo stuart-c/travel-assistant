@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import List, Optional, Set, Union
 
 from app.models.walking import Walking
 from app.services.planner.exceptions import (
@@ -33,162 +33,16 @@ from app.services.planner.raptor.trips import (
     _build_stop_to_trips,
     _extract_parsed_trips,
 )
-from app.services.planner.raptor.models import _ParsedTrip
 from app.services.planner.transfers import (
     get_access_edges,
     get_active_timetables,
-    matches_transit_line_or_operator,
     normalise_id,
     resolve_active_days_and_date,
     resolve_endpoint_name,
-    resolve_stop_id_aliases,
 )
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
-
-
-def _evaluate_corridor_itinerary(
-    legs_data: List[Dict[str, Any]],
-    dep_time_min: int,
-    stop_to_trips: Dict[str, List[_ParsedTrip]],
-    min_transfer_min: int = 3,
-) -> Optional[ScheduledItinerary]:
-    """Directly evaluate scheduled timetable departures along a known route corridor."""
-    if not legs_data:
-        return None
-
-    current_time = dep_time_min
-    itinerary_legs: List[ItineraryLeg] = []
-    transit_count = 0
-
-    for leg_idx, leg in enumerate(legs_data):
-        leg_type = leg.get("leg_type", "walk")
-        from_id = str(leg.get("from_id", ""))
-        from_name = str(leg.get("from_name", from_id))
-        to_id = str(leg.get("to_id", ""))
-        to_name = str(leg.get("to_name", to_id))
-
-        if leg_type == "walk":
-            walk_dur = int(leg.get("duration_minutes", 1) or 1)
-            arr_t = current_time + walk_dur
-            itinerary_legs.append(
-                ItineraryLeg(
-                    leg_index=leg_idx + 1,
-                    mode="walk",
-                    origin=ItineraryEndpoint(id=from_id, name=from_name),
-                    destination=ItineraryEndpoint(id=to_id, name=to_name),
-                    dep_time=format_minutes_to_time(current_time),
-                    arr_time=format_minutes_to_time(arr_t),
-                    duration_minutes=walk_dur,
-                )
-            )
-            current_time = arr_t
-        else:
-            transit_count += 1
-            leg_line = leg.get("line_name", "")
-            leg_op = leg.get("operator_name")
-            leg_mode = leg.get("transport_mode") or leg.get("mode")
-
-            from_aliases = resolve_stop_id_aliases(from_id, from_name)
-            to_aliases = resolve_stop_id_aliases(to_id, to_name)
-
-            candidate_trips: List[_ParsedTrip] = []
-            seen_trips: Set[int] = set()
-            for s_cand in from_aliases:
-                for tr in stop_to_trips.get(s_cand, []):
-                    if id(tr) not in seen_trips:
-                        seen_trips.add(id(tr))
-                        candidate_trips.append(tr)
-
-            matching_trip: Optional[_ParsedTrip] = None
-            best_dep: Optional[int] = None
-            best_arr: Optional[int] = None
-
-            for tr in candidate_trips:
-                if not matches_transit_line_or_operator(
-                    leg_line_name=leg_line,
-                    leg_operator_name=leg_op,
-                    leg_mode=leg_mode,
-                    trip_line_name=tr.line_name,
-                    trip_operator=tr.operator,
-                    trip_headsign=tr.headsign,
-                    trip_mode=tr.transport_mode,
-                ):
-                    continue
-
-                i_from: Optional[int] = None
-                for s_from in from_aliases:
-                    if s_from in tr.stop_indices:
-                        i_from = tr.stop_indices[s_from]
-                        break
-
-                i_to: Optional[int] = None
-                for s_to in to_aliases:
-                    if s_to in tr.stop_indices:
-                        i_to = tr.stop_indices[s_to]
-                        break
-
-                if i_from is None or i_to is None or i_from >= i_to:
-                    continue
-
-                tr_dep = tr.dep_times[i_from]
-                tr_arr = tr.arr_times[i_to]
-                if tr_dep is None or tr_arr is None:
-                    continue
-
-                if tr_dep >= current_time:
-                    if best_dep is None or tr_dep < best_dep:
-                        best_dep = tr_dep
-                        best_arr = tr_arr
-                        matching_trip = tr
-
-            if not matching_trip or best_dep is None or best_arr is None:
-                return None
-
-            dur = max(1, best_arr - best_dep)
-            itinerary_legs.append(
-                ItineraryLeg(
-                    leg_index=leg_idx + 1,
-                    mode=matching_trip.transport_mode,
-                    origin=ItineraryEndpoint(id=from_id, name=from_name),
-                    destination=ItineraryEndpoint(id=to_id, name=to_name),
-                    dep_time=format_minutes_to_time(best_dep),
-                    arr_time=format_minutes_to_time(best_arr),
-                    duration_minutes=dur,
-                    line=matching_trip.line_name,
-                    operator=matching_trip.operator,
-                    headsign=matching_trip.headsign,
-                )
-            )
-
-            # Determine transfer slack for next connection (1 min for dedicated shuttles)
-            next_leg = legs_data[leg_idx + 1] if leg_idx + 1 < len(legs_data) else None
-            next_is_shuttle = False
-            if next_leg:
-                nl_name = str(next_leg.get("line_name", "")).lower()
-                next_is_shuttle = (
-                    "shuttle" in nl_name
-                    or "shuttle" in str(next_leg.get("from_name", "")).lower()
-                )
-            slack = 1 if next_is_shuttle else min_transfer_min
-            current_time = best_arr + slack
-
-    if not itinerary_legs:
-        return None
-
-    first_dep_m = parse_time_to_minutes(itinerary_legs[0].dep_time) or dep_time_min
-    last_arr_m = parse_time_to_minutes(itinerary_legs[-1].arr_time) or current_time
-    total_dur = max(1, last_arr_m - first_dep_m)
-
-    return ScheduledItinerary(
-        departure_time=itinerary_legs[0].dep_time,
-        arrival_time=itinerary_legs[-1].arr_time,
-        total_duration_minutes=total_dur,
-        transfers_count=max(0, transit_count - 1),
-        robustness_score="Optimal (Corridor Evaluated)",
-        legs=itinerary_legs,
-    )
 
 
 def plan_journey(
@@ -371,91 +225,36 @@ def plan_journey(
     relevant_stops = set(stop_to_trips.keys()) | origin_access_stops
     interchanges_by_stop = _load_interchanges_for_stops(relevant_stops)
 
-    # Check for stored route corridors
-    corridor_itineraries: List[ScheduledItinerary] = []
-    try:
-        from app.models.journey import Journey
-        from app.models.journey_route import JourneyRoute
-
-        matching_j = list(
-            Journey.select().where(
-                (Journey.from_type == f_type)
-                & ((Journey.from_id == f_id) | (Journey.from_id == normalise_id(f_id)))
-                & (Journey.to_type == t_type)
-                & ((Journey.to_id == t_id) | (Journey.to_id == normalise_id(t_id)))
-            )
+    for dep_t in eval_departures:
+        itinerary = _run_raptor_forward(
+            dep_time_min=dep_t,
+            origin_walks=origin_walks,
+            dest_walks=dest_walks,
+            trips=trips,
+            f_type=f_type,
+            f_id=f_id,
+            t_type=t_type,
+            t_id=t_id,
+            min_transfer_min=min_transfer_minutes,
+            max_rounds=max_transfers + 1,
+            stop_to_trips=stop_to_trips,
+            interchanges_by_stop=interchanges_by_stop,
         )
-        if matching_j:
-            j_ids = [j.id for j in matching_j]
-            known_corridors = list(
-                JourneyRoute.select()
-                .where(
-                    (JourneyRoute.journey_id.in_(j_ids))
-                    & (JourneyRoute.is_enabled == True)  # noqa: E712
-                )
-                .order_by(JourneyRoute.is_preferred.desc())
-            )
-            for corridor in known_corridors:
-                for dep_t in eval_departures:
-                    itin = _evaluate_corridor_itinerary(
-                        legs_data=corridor.legs or [],
-                        dep_time_min=dep_t,
-                        stop_to_trips=stop_to_trips,
-                        min_transfer_min=min_transfer_minutes,
-                    )
-                    if itin:
-                        if corridor.is_preferred:
-                            itin.robustness_score = "Preferred Corridor"
-                        if t_mode == "arrive":
-                            arr_m = parse_time_to_minutes(itin.arrival_time)
-                            if arr_m is not None and arr_m <= t_start_min:
-                                corridor_itineraries.append(itin)
-                        elif t_mode == "window":
-                            dep_m = parse_time_to_minutes(itin.departure_time)
-                            if (
-                                dep_m is not None
-                                and dep_m >= t_start_min
-                                and dep_m <= (t_end_min or t_start_min)
-                            ):
-                                corridor_itineraries.append(itin)
-                        else:
-                            corridor_itineraries.append(itin)
-    except Exception as exc:
-        logger.debug("Could not evaluate stored corridors: %s", exc)
-
-    if corridor_itineraries:
-        candidate_itineraries.extend(corridor_itineraries)
-    else:
-        for dep_t in eval_departures:
-            itinerary = _run_raptor_forward(
-                dep_time_min=dep_t,
-                origin_walks=origin_walks,
-                dest_walks=dest_walks,
-                trips=trips,
-                f_type=f_type,
-                f_id=f_id,
-                t_type=t_type,
-                t_id=t_id,
-                min_transfer_min=min_transfer_minutes,
-                max_rounds=max_transfers + 1,
-                stop_to_trips=stop_to_trips,
-                interchanges_by_stop=interchanges_by_stop,
-            )
-            if itinerary:
-                if t_mode == "arrive":
-                    arr_m = parse_time_to_minutes(itinerary.arrival_time)
-                    if arr_m is not None and arr_m <= t_start_min:
-                        candidate_itineraries.append(itinerary)
-                elif t_mode == "window":
-                    dep_m = parse_time_to_minutes(itinerary.departure_time)
-                    if (
-                        dep_m is not None
-                        and dep_m >= t_start_min
-                        and dep_m <= (t_end_min or t_start_min)
-                    ):
-                        candidate_itineraries.append(itinerary)
-                else:
+        if itinerary:
+            if t_mode == "arrive":
+                arr_m = parse_time_to_minutes(itinerary.arrival_time)
+                if arr_m is not None and arr_m <= t_start_min:
                     candidate_itineraries.append(itinerary)
+            elif t_mode == "window":
+                dep_m = parse_time_to_minutes(itinerary.departure_time)
+                if (
+                    dep_m is not None
+                    and dep_m >= t_start_min
+                    and dep_m <= (t_end_min or t_start_min)
+                ):
+                    candidate_itineraries.append(itinerary)
+            else:
+                candidate_itineraries.append(itinerary)
 
     if not candidate_itineraries:
         if _check_corridor_connectivity(origin_walks, dest_walks, trips):

@@ -133,7 +133,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
     from app.models.transfer import PlatformTransfer
     from app.models.transit import (
         Stop,
-        StopInterchange,
         SyncMetadata,
     )
     from app.models.walking import Walking
@@ -203,7 +202,6 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             "timetables": Timetable,
             "sync_metadata": SyncMetadata,
             "stops": Stop,
-            "stop_interchanges": StopInterchange,
             "platform_transfers": PlatformTransfer,
             "locations": Location,
             "journeys": Journey,
@@ -231,12 +229,8 @@ def get_db_stats(app: Optional[Flask] = None) -> Dict[str, Any]:
             # Determine sync status and last updated
             _syncable = (
                 "stops",
-                "stop_interchanges",
                 "ha_locations",
-                "train_timetables",
-                "bus_timetables",
                 "walking",
-                "journey_routes",
             )
             is_syncable = table_name in _syncable or table_name in (
                 "locations",

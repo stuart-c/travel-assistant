@@ -34,6 +34,10 @@ def view_journey() -> str:
         except (ValueError, TypeError):
             pass
 
+    preview_mode = (request.args.get("preview_mode") or "scheduled").strip().lower()
+    if preview_mode not in ("now", "scheduled"):
+        preview_mode = "scheduled"
+
     ha_client = HomeAssistantClient.from_settings()
     live_client = TrainLiveClient.from_settings()
 
@@ -41,6 +45,7 @@ def view_journey() -> str:
         journey_id=journey_id,
         ha_client=ha_client,
         live_client=live_client,
+        preview_mode=preview_mode,
     )
 
     return render_template(
@@ -61,6 +66,10 @@ def api_journey_live() -> Any:
         except (ValueError, TypeError):
             pass
 
+    preview_mode = (request.args.get("preview_mode") or "scheduled").strip().lower()
+    if preview_mode not in ("now", "scheduled"):
+        preview_mode = "scheduled"
+
     ha_client = HomeAssistantClient.from_settings()
     live_client = TrainLiveClient.from_settings()
 
@@ -68,6 +77,7 @@ def api_journey_live() -> Any:
         journey_id=journey_id,
         ha_client=ha_client,
         live_client=live_client,
+        preview_mode=preview_mode,
     )
 
     return jsonify(data)

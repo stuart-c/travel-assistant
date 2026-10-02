@@ -9,8 +9,6 @@ from app.models.journey import Journey
 from app.services.dispatcher.tracker.models import (
     FOOT_MODES,
     ActiveJourney,
-    ItineraryEndpoint,
-    ItineraryLeg,
     JourneyStepStatus,
 )
 from app.services.dispatcher.tracker.notification_formatter import (
@@ -43,6 +41,7 @@ def get_journey_live_tracking_data(
     ha_client: Optional[HomeAssistantClient] = None,
     live_client: Optional[TrainLiveClient] = None,
     active_journeys: Optional[Dict[int, ActiveJourney]] = None,
+    preview_mode: str = "scheduled",
 ) -> Dict[str, Any]:
     """Compile aggregated journey progress, waypoints, and Stuart's real-time position."""
     current_dt = dt or datetime.datetime.now()
@@ -105,6 +104,7 @@ def get_journey_live_tracking_data(
     person_lat, person_lon, person_status_str = _resolve_person_location(ha_client)
 
     # 5. Extract journey data
+    notification_message: Optional[str] = None
     if target_id in current_active_journeys:
         active = current_active_journeys[target_id]
         is_active = True
@@ -122,7 +122,8 @@ def get_journey_live_tracking_data(
         departure_time = active.itinerary.departure_time if active.itinerary else ""
         expected_arrival_time = active.expected_arrival_time
         legs = list(active.legs)
-        notification_message = active.last_notification_message
+        delay_reason = active.delay_reason
+        rerouted = bool(active.delay_reason and "Rerouted:" in active.delay_reason)
     else:
         j_obj = next(j for j in all_journeys if j.id == target_id)
         is_active = False
@@ -138,9 +139,11 @@ def get_journey_live_tracking_data(
         platform = None
         live_status = None
         notification_message = None
+        delay_reason = None
+        rerouted = False
 
         upcoming_itinerary = _plan_upcoming_itinerary_cached(
-            target_id, j_obj, current_dt
+            target_id, j_obj, current_dt, preview_mode=preview_mode
         )
         if upcoming_itinerary:
             legs = list(upcoming_itinerary.legs)
@@ -150,50 +153,6 @@ def get_journey_live_tracking_data(
             legs = []
             departure_time = ""
             expected_arrival_time = ""
-            calc_routes = j_obj.get_calculated_routes()
-            if calc_routes and isinstance(calc_routes, list):
-                primary_route = calc_routes[0]
-                route_legs = (
-                    primary_route.get("legs", [])
-                    if isinstance(primary_route, dict)
-                    else getattr(primary_route, "legs", [])
-                )
-                for r_idx, r_leg in enumerate(route_legs):
-                    r_leg_dict = (
-                        r_leg
-                        if isinstance(r_leg, dict)
-                        else (
-                            r_leg.model_dump()
-                            if hasattr(r_leg, "model_dump")
-                            else dict(r_leg)
-                        )
-                    )
-                    mode = (
-                        r_leg_dict.get("transport_mode")
-                        or r_leg_dict.get("leg_type")
-                        or "walk"
-                    )
-                    legs.append(
-                        ItineraryLeg(
-                            leg_index=r_idx,
-                            mode=mode,
-                            origin=ItineraryEndpoint(
-                                id=str(r_leg_dict.get("from_id", "")),
-                                name=str(r_leg_dict.get("from_name", "")),
-                            ),
-                            destination=ItineraryEndpoint(
-                                id=str(r_leg_dict.get("to_id", "")),
-                                name=str(r_leg_dict.get("to_name", "")),
-                            ),
-                            dep_time="",
-                            arr_time="",
-                            duration_minutes=int(
-                                r_leg_dict.get("duration_minutes") or 0
-                            ),
-                            line=r_leg_dict.get("line_name"),
-                            operator=r_leg_dict.get("operator_name"),
-                        )
-                    )
 
     # Check live rail platform and arrival platforms for all upcoming legs
     target_rail_leg = None
@@ -380,6 +339,9 @@ def get_journey_live_tracking_data(
         "selected_journey": {
             "id": target_id,
             "name": journey_name,
+            "preview_mode": preview_mode if not is_active else None,
+            "rerouted": rerouted,
+            "delay_reason": delay_reason,
             "from_name": from_name,
             "from_type": from_type,
             "from_id": from_id,

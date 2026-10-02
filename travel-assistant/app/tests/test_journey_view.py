@@ -529,84 +529,78 @@ def test_journey_schematic_mode_colours(app: Flask) -> None:
 def test_get_journey_live_tracking_data_outside_window_corridor_fallback(
     app: Flask,
 ) -> None:
-    """Test that viewing a journey outside operating hours falls back to calculated route corridor."""
+    """Test that outside the window, upcoming dynamic route is resolved and rendered."""
     from app.services.dispatcher.tracker import clear_tracking_cache
+    from app.services.planner.dynamic_planner import DynamicRoutePlanner
+    from app.services.planner.models import (
+        ItineraryEndpoint,
+        ItineraryLeg,
+        ScheduledItinerary,
+    )
 
     clear_tracking_cache()
     with app.app_context():
         j = _seed_sample_journey()
-        sample_routes = [
-            {
-                "corridor_id": "corridor_1",
-                "name": "Northern Line Corridor",
-                "summary_text": "King's Cross to Euston via Northern Line",
-                "primary_mode": "rail",
-                "total_duration_est_minutes": 20,
-                "transfer_count": 0,
-                "stages_count": 3,
-                "active_days": ["mon", "tue", "wed", "thu", "fri"],
-                "legs": [
-                    {
-                        "stage_index": 0,
-                        "step_index": 0,
-                        "leg_type": "walk",
-                        "from_type": "ha",
-                        "from_id": "ha:home",
-                        "from_name": "London King's Cross Residential",
-                        "to_type": "rail",
-                        "to_id": "490000001",
-                        "to_name": "London King's Cross Station",
-                        "duration_minutes": 6,
-                        "transport_mode": "walk",
-                    },
-                    {
-                        "stage_index": 1,
-                        "step_index": 1,
-                        "leg_type": "transit",
-                        "from_type": "rail",
-                        "from_id": "490000001",
-                        "from_name": "London King's Cross Station",
-                        "to_type": "rail",
-                        "to_id": "490000002",
-                        "to_name": "London Euston Station",
-                        "duration_minutes": 8,
-                        "transport_mode": "rail",
-                        "line_name": "Northern Line",
-                        "operator_name": "London Underground",
-                    },
-                    {
-                        "stage_index": 2,
-                        "step_index": 2,
-                        "leg_type": "walk",
-                        "from_type": "rail",
-                        "from_id": "490000002",
-                        "from_name": "London Euston Station",
-                        "to_type": "ha",
-                        "to_id": "ha:work",
-                        "to_name": "London Euston Offices",
-                        "duration_minutes": 6,
-                        "transport_mode": "walk",
-                    },
-                ],
-            }
-        ]
-        j.set_calculated_routes(sample_routes)
-        j.save()
-
-        # Target evening outside the 08:00 - 09:00 morning window
         evening_dt = datetime.datetime(2026, 9, 10, 20, 0)
 
-        with patch("app.services.planner.raptor.plan_journey") as mock_raptor:
+        mock_itin = ScheduledItinerary(
+            departure_time="08:15",
+            arrival_time="08:45",
+            total_duration_minutes=30,
+            transfers_count=0,
+            robustness_score="high",
+            legs=[
+                ItineraryLeg(
+                    leg_index=1,
+                    mode="walk",
+                    origin=ItineraryEndpoint(
+                        id="ha:home", name="London King's Cross Residential"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="490000001", name="London King's Cross Station"
+                    ),
+                    dep_time="08:15",
+                    arr_time="08:25",
+                    duration_minutes=10,
+                ),
+                ItineraryLeg(
+                    leg_index=2,
+                    mode="rail",
+                    origin=ItineraryEndpoint(
+                        id="490000001", name="London King's Cross Station"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="490000002", name="London Euston Station"
+                    ),
+                    dep_time="08:25",
+                    arr_time="08:35",
+                    duration_minutes=10,
+                    line="Northern Line",
+                ),
+                ItineraryLeg(
+                    leg_index=3,
+                    mode="walk",
+                    origin=ItineraryEndpoint(
+                        id="490000002", name="London Euston Station"
+                    ),
+                    destination=ItineraryEndpoint(
+                        id="ha:work", name="London Euston Offices"
+                    ),
+                    dep_time="08:35",
+                    arr_time="08:45",
+                    duration_minutes=10,
+                ),
+            ],
+        )
+
+        with patch.object(
+            DynamicRoutePlanner, "plan_transit", return_value=[mock_itin]
+        ):
             data = get_journey_live_tracking_data(journey_id=j.id, dt=evening_dt)
-            mock_raptor.assert_not_called()
 
         assert data["selected_journey"]["name"] == "Commute to Euston"
         assert len(data["selected_journey"]["legs"]) == 3
         assert len(data["selected_journey"]["schematic"]["stages"]) == 3
-        assert (
-            data["selected_journey"]["status"]["message"]
-            == "Scheduled route from London King's Cross Residential to London Euston Offices."
-        )
 
 
 def test_get_journey_live_tracking_data_caches_itinerary_none(app: Flask) -> None:

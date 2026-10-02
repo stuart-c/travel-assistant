@@ -5,9 +5,8 @@ from flask import jsonify
 
 from app.models import Journey, JourneyTimeSetting
 from app.models.base import LOCATION_TYPES
-from app.models.journey_route import JourneyRoute
 from app.models.route_query_log import RouteQueryLog
-from app.services.corridor_learner import CorridorLearner
+from app.services.planner.dynamic_planner import DynamicRoutePlanner
 from app.sync.worker import request_sync
 from app.views.config import config_bp
 from app.views.config.common import (
@@ -21,13 +20,12 @@ from app.views.config.common import (
 def _trigger_syncs_if_changed(
     stats: Dict[str, int], changeset: Dict[str, list[Any]]
 ) -> None:
-    """Queue targeted walking, timetable, and route synchronisation when journeys are modified."""
+    """Queue targeted walking synchronisation when journeys are modified."""
     modified_entries = changeset.get("added", []) + changeset.get("updated", [])
     if not modified_entries:
         return
 
     has_location_endpoint = False
-    has_bus_endpoint = False
 
     for entry in modified_entries:
         if not isinstance(entry, dict):
@@ -39,15 +37,9 @@ def _trigger_syncs_if_changed(
         if from_type in ("ha", "custom") or to_type in ("ha", "custom"):
             has_location_endpoint = True
 
-        if from_type == "bus" or to_type == "bus":
-            has_bus_endpoint = True
-
     try:
         if has_location_endpoint:
             request_sync("walking")
-        if has_bus_endpoint:
-            request_sync("bus_timetables")
-        request_sync("journey_routes")
 
         from app.services.dispatcher.tracker import clear_tracking_cache
 
@@ -96,12 +88,6 @@ def clean_journey_item(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "to_id": to_id,
         "to_name": to_name,
         "time_settings": cleaned_time_settings,
-        "calculated_routes": (
-            entry.get("calculated_routes")
-            if "calculated_routes" in entry
-            and entry.get("calculated_routes") is not None
-            else None
-        ),
     }
     if item_id is not None:
         result["id"] = item_id
@@ -130,43 +116,35 @@ def discover_journey_corridors(journey_id: int) -> Any:
     if not journey:
         return jsonify({"error": f"Journey {journey_id} not found."}), 404
 
-    learner = CorridorLearner()
-    routes = learner.discover_and_persist_corridors(
-        journey=journey,
-        query_type="manual_refresh",
-        trigger_reason="manual_ui_trigger",
-        replace_existing=True,
-    )
+    planner = DynamicRoutePlanner()
+    itineraries = planner.plan_transit(journey=journey)
+    routes = [itin.model_dump() for itin in itineraries]
     return jsonify(
         {
             "success": True,
             "journey_id": journey_id,
             "count": len(routes),
-            "routes": [r.to_dict() for r in routes],
+            "routes": routes,
         }
     )
 
 
 @config_bp.route("/journeys/<int:journey_id>/routes", methods=["GET"])
 def get_journey_routes(journey_id: int) -> Any:
-    """Retrieve persisted JourneyRoute templates for a journey."""
-    routes = list(
-        JourneyRoute.select()
-        .where(
-            (JourneyRoute.journey_id == journey_id)
-            & (JourneyRoute.is_enabled == True)  # noqa: E712
-        )
-        .order_by(
-            JourneyRoute.is_preferred.desc(),
-            JourneyRoute.total_duration_est_minutes.asc(),
-        )
-    )
+    """Retrieve dynamic transit itineraries for a journey."""
+    journey = Journey.get_or_none(Journey.id == journey_id)
+    if not journey:
+        return jsonify({"error": f"Journey {journey_id} not found."}), 404
+
+    planner = DynamicRoutePlanner()
+    itineraries = planner.plan_transit(journey=journey)
+    routes = [itin.model_dump() for itin in itineraries]
     return jsonify(
         {
             "success": True,
             "journey_id": journey_id,
             "count": len(routes),
-            "routes": [r.to_dict() for r in routes],
+            "routes": routes,
         }
     )
 

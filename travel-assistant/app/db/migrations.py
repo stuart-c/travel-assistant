@@ -24,6 +24,8 @@ def cleanup_legacy_tables(database: SqliteDatabase) -> None:
         "location_transfers",
         "rail_references",
         "bus_routes",
+        "journey_routes",
+        "stop_interchanges",
     ]
     for table in legacy_tables:
         try:
@@ -31,11 +33,27 @@ def cleanup_legacy_tables(database: SqliteDatabase) -> None:
         except Exception as err:
             logger.debug("Failed to drop legacy table %s: %s", table, err)
 
+    # Drop obsolete calculated_routes column from journeys if present
+    try:
+        col_cursor = database.execute_sql('PRAGMA table_info("journeys")')
+        cols = [col[1] for col in col_cursor.fetchall()]
+        if "calculated_routes" in cols:
+            database.execute_sql(
+                'ALTER TABLE "journeys" DROP COLUMN "calculated_routes"'
+            )
+    except Exception as err:
+        logger.debug("Could not drop calculated_routes column from journeys: %s", err)
+
+    # Purge auto-added timetables
+    try:
+        database.execute_sql("DELETE FROM timetables WHERE auto_added = 1")
+    except Exception as err:
+        logger.debug("Could not purge auto-added timetables: %s", err)
+
 
 def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
     """Ensure all core schema models and R*Tree virtual tables exist."""
     from app.models.journey import Journey
-    from app.models.journey_route import JourneyRoute
     from app.models.location import Location
     from app.models.mcp import MCPTool
     from app.models.route_query_log import RouteQueryLog
@@ -44,7 +62,6 @@ def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
     from app.models.transfer import PlatformTransfer
     from app.models.transit import (
         Stop,
-        StopInterchange,
         SyncMetadata,
     )
     from app.models.walking import Walking
@@ -54,11 +71,9 @@ def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
         Timetable,
         SyncMetadata,
         Stop,
-        StopInterchange,
         PlatformTransfer,
         Location,
         Journey,
-        JourneyRoute,
         RouteQueryLog,
         Walking,
         MCPTool,

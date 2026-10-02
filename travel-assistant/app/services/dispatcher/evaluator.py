@@ -6,11 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from app.datasources.bus_live import BodsLiveClient
 from app.datasources.train_live import TrainLiveClient, extract_live_services
 from app.models.journey import Journey, JourneyTimeSetting
 from app.models.setting import Setting
 from app.services.dispatcher.station_resolver import resolve_station_crs
 from app.services.planner.exceptions import JourneyPlanningError
+from app.services.planner.dynamic_planner import DynamicRoutePlanner
 from app.services.planner.raptor import plan_journey
 from app.utils.transit_time import (
     format_minutes_to_time,
@@ -59,27 +61,12 @@ def get_journey_estimated_duration_minutes(
     journey: Journey,
     default_minutes: int = 120,
 ) -> int:
-    """Estimate journey duration in minutes from calculated routes or fallback default."""
+    """Estimate journey duration in minutes from dynamic planning or fallback default."""
     try:
-        routes = journey.get_routes(enabled_only=True)
-        if routes:
-            durations = [
-                int(r.total_duration_est_minutes)
-                for r in routes
-                if r.total_duration_est_minutes is not None
-            ]
-            if durations:
-                return max(max(durations), 60)
-        calc_routes = journey.get_calculated_routes()
-        if calc_routes and isinstance(calc_routes, list):
-            durations = [
-                int(r.get("total_duration_est_minutes"))
-                for r in calc_routes
-                if isinstance(r, dict)
-                and r.get("total_duration_est_minutes") is not None
-            ]
-            if durations:
-                return max(max(durations), 60)
+        planner = DynamicRoutePlanner()
+        plans = planner.plan_transit(journey=journey, enrich_live=False)
+        if plans:
+            return max(int(plans[0].total_duration_minutes), 30)
     except Exception:
         pass
     return default_minutes
@@ -147,98 +134,152 @@ def is_journey_active_for_datetime(
     return False, None
 
 
+def _itinerary_to_candidate(
+    itin: Any,
+    journey: Journey,
+    date_obj: datetime.date,
+) -> Optional[DepartureCandidate]:
+    """Convert a ScheduledItinerary into a viable DepartureCandidate."""
+    if not itin.legs:
+        return None
+
+    walk_mins = 0
+    transit_leg = None
+
+    first_leg = itin.legs[0]
+    if first_leg.mode == "walk":
+        walk_mins = first_leg.duration_minutes
+        if len(itin.legs) > 1:
+            transit_leg = itin.legs[1]
+    else:
+        transit_leg = first_leg
+
+    if not transit_leg or not transit_leg.dep_time:
+        return None
+
+    transit_dep_min = parse_time_to_minutes(transit_leg.dep_time)
+    if transit_dep_min is None:
+        return None
+
+    leave_min = transit_dep_min - walk_mins
+    leave_time_str = format_minutes_to_time(leave_min)
+    trigger_min = leave_min - 15
+
+    service_key = (
+        f"j{journey.id}_{transit_leg.mode}_{transit_leg.line or 'direct'}_"
+        f"{transit_leg.dep_time}_{date_obj.isoformat()}"
+    )
+
+    plat = transit_leg.platform or (
+        transit_leg.origin.platform if transit_leg.origin else None
+    )
+    is_live = bool(
+        plat
+        or transit_leg.delay_minutes
+        or transit_leg.delay_reason
+        or getattr(transit_leg, "is_cancelled", False)
+    )
+    delay_min = transit_leg.delay_minutes or 0
+    is_cancelled = bool(getattr(transit_leg, "is_cancelled", False))
+    cancel_reason = getattr(transit_leg, "cancel_reason", None)
+
+    requires_reroute = is_cancelled or delay_min >= 10
+    reroute_reason = None
+    if is_cancelled:
+        reroute_reason = f"Cancelled: {cancel_reason or 'Service cancelled'}"
+    elif delay_min >= 10:
+        reroute_reason = f"Delay of {delay_min}m exceeds 10m threshold"
+
+    return DepartureCandidate(
+        journey_id=journey.id,
+        journey_name=journey.name,
+        service_key=service_key,
+        transit_mode=transit_leg.mode,
+        line_name=transit_leg.line or "",
+        operator_name=transit_leg.operator,
+        origin_stop_name=transit_leg.origin.name,
+        origin_stop_id=transit_leg.origin.id,
+        dest_stop_name=transit_leg.destination.name,
+        dest_stop_id=transit_leg.destination.id,
+        final_dest_name=journey.to_name,
+        transit_dep_minutes=transit_dep_min,
+        transit_dep_time=transit_leg.dep_time,
+        walk_minutes=walk_mins,
+        leave_minutes=leave_min,
+        leave_time=leave_time_str,
+        arrival_time=itin.arrival_time,
+        notification_trigger_minutes=trigger_min,
+        itinerary=itin,
+        is_live=is_live,
+        delay_minutes=delay_min,
+        platform=plat,
+        delay_reason=transit_leg.delay_reason,
+        is_cancelled=is_cancelled,
+        cancel_reason=cancel_reason,
+        requires_reroute=requires_reroute,
+        reroute_reason=reroute_reason,
+    )
+
+
 def extract_departure_candidates(
     journey: Journey,
     dt: datetime.datetime,
     max_plans: int = 5,
 ) -> List[DepartureCandidate]:
-    """Calculate upcoming scheduled itineraries and extract transit departure candidates."""
-    current_minutes = dt.hour * 60 + dt.minute
-    time_str = format_minutes_to_time(current_minutes)
+    """Calculate upcoming scheduled itineraries and extract transit departure candidates dynamically."""
     date_obj = dt.date()
-
-    day_code = get_day_code(dt)
+    itineraries: List[Any] = []
 
     try:
-        itineraries = plan_journey(
-            from_type=journey.from_type,
-            from_id=journey.from_id,
-            to_type=journey.to_type,
-            to_id=journey.to_id,
-            timing_mode="depart",
-            time_str=time_str,
-            days_of_week=[day_code],
-            target_date=date_obj,
-            max_itineraries=max_plans,
+        planner = DynamicRoutePlanner()
+        itineraries = planner.plan_transit(
+            journey=journey,
+            departure_time=dt,
+            max_results=max_plans,
+            enrich_live=True,
         )
-    except JourneyPlanningError as exc:
+    except Exception as exc:
         logger.debug(
-            "No itineraries discovered for journey %d (%s) at %s: %s",
+            "DynamicRoutePlanner failed for journey %d (%s) at %s: %s",
             journey.id,
             journey.name,
-            time_str,
+            dt.isoformat(),
             exc,
         )
-        return []
+
+    # Secondary fallback to local RAPTOR if dynamic planning produced no results
+    if not itineraries:
+        current_minutes = dt.hour * 60 + dt.minute
+        time_str = format_minutes_to_time(current_minutes)
+        day_code = get_day_code(dt)
+        try:
+            itineraries = plan_journey(
+                from_type=journey.from_type,
+                from_id=journey.from_id,
+                to_type=journey.to_type,
+                to_id=journey.to_id,
+                timing_mode="depart",
+                time_str=time_str,
+                days_of_week=[day_code],
+                target_date=date_obj,
+                max_itineraries=max_plans,
+            )
+        except JourneyPlanningError as exc:
+            logger.debug(
+                "No itineraries discovered for journey %d (%s) at %s: %s",
+                journey.id,
+                journey.name,
+                time_str,
+                exc,
+            )
+            return []
 
     candidates: List[DepartureCandidate] = []
-
     for itin in itineraries:
-        if not itin.legs:
-            continue
+        cand = _itinerary_to_candidate(itin, journey, date_obj)
+        if cand:
+            candidates.append(cand)
 
-        walk_mins = 0
-        transit_leg = None
-
-        # Determine walking access and first transit leg
-        first_leg = itin.legs[0]
-        if first_leg.mode == "walk":
-            walk_mins = first_leg.duration_minutes
-            if len(itin.legs) > 1:
-                transit_leg = itin.legs[1]
-        else:
-            transit_leg = first_leg
-
-        if not transit_leg or not transit_leg.dep_time:
-            continue
-
-        transit_dep_min = parse_time_to_minutes(transit_leg.dep_time)
-        if transit_dep_min is None:
-            continue
-
-        leave_min = transit_dep_min - walk_mins
-        leave_time_str = format_minutes_to_time(leave_min)
-        trigger_min = leave_min - 15
-
-        service_key = (
-            f"j{journey.id}_{transit_leg.mode}_{transit_leg.line or 'direct'}_"
-            f"{transit_leg.dep_time}_{date_obj.isoformat()}"
-        )
-
-        cand = DepartureCandidate(
-            journey_id=journey.id,
-            journey_name=journey.name,
-            service_key=service_key,
-            transit_mode=transit_leg.mode,
-            line_name=transit_leg.line or "",
-            operator_name=transit_leg.operator,
-            origin_stop_name=transit_leg.origin.name,
-            origin_stop_id=transit_leg.origin.id,
-            dest_stop_name=transit_leg.destination.name,
-            dest_stop_id=transit_leg.destination.id,
-            final_dest_name=journey.to_name,
-            transit_dep_minutes=transit_dep_min,
-            transit_dep_time=transit_leg.dep_time,
-            walk_minutes=walk_mins,
-            leave_minutes=leave_min,
-            leave_time=leave_time_str,
-            arrival_time=itin.arrival_time,
-            notification_trigger_minutes=trigger_min,
-            itinerary=itin,
-        )
-        candidates.append(cand)
-
-    # Sort candidates by departure timing
     candidates.sort(key=lambda c: c.transit_dep_minutes)
     return candidates
 
@@ -246,12 +287,58 @@ def extract_departure_candidates(
 def apply_live_departure_adjustments(
     candidate: DepartureCandidate,
     live_client: Optional[TrainLiveClient] = None,
+    bus_live_client: Optional[BodsLiveClient] = None,
 ) -> DepartureCandidate:
-    """Optionally probe live departure board feeds to refine departure timings."""
-    if not live_client:
+    """Optionally probe live departure board and vehicle telemetry feeds to refine departure timings."""
+    # Determine disruption sensitivity threshold
+    delay_threshold = 10
+    try:
+        sens = Setting.get_val("reroute_sensitivity", "medium")
+        if str(sens).lower() == "high":
+            delay_threshold = 5
+        elif str(sens).lower() == "low":
+            delay_threshold = 15
+    except Exception:
+        pass
+
+    # 1. Bus Live SIRI-VM Adjustments
+    if candidate.transit_mode == "bus":
+        if bus_live_client:
+            try:
+                matched_bus = bus_live_client.get_matching_vehicle(
+                    line_name=candidate.line_name,
+                    operator_ref=candidate.operator_name,
+                    scheduled_time=candidate.transit_dep_time,
+                    origin_ref=candidate.origin_stop_id,
+                    destination_ref=candidate.dest_stop_id,
+                )
+                if matched_bus and matched_bus.is_active:
+                    candidate.is_live = True
+                    delay = matched_bus.delay_minutes
+                    candidate.delay_minutes = delay
+                    if delay != 0:
+                        live_min = candidate.transit_dep_minutes + delay
+                        candidate.original_dep_time = candidate.transit_dep_time
+                        candidate.transit_dep_minutes = live_min
+                        candidate.transit_dep_time = format_minutes_to_time(live_min)
+                        candidate.leave_minutes = live_min - candidate.walk_minutes
+                        candidate.leave_time = format_minutes_to_time(
+                            candidate.leave_minutes
+                        )
+                        candidate.notification_trigger_minutes = (
+                            candidate.leave_minutes - 15
+                        )
+                    if delay >= delay_threshold:
+                        candidate.requires_reroute = True
+                        candidate.reroute_reason = f"Bus delay of {delay}m exceeds {delay_threshold}m threshold"
+            except Exception as bus_exc:
+                logger.debug(
+                    "Live bus probe skipped for %s: %s", candidate.line_name, bus_exc
+                )
         return candidate
 
-    if candidate.transit_mode != "rail":
+    # 2. National Rail Darwin Adjustments
+    if not live_client or candidate.transit_mode != "rail":
         return candidate
 
     crs = resolve_station_crs(candidate.origin_stop_id)
@@ -345,10 +432,10 @@ def apply_live_departure_adjustments(
                         candidate.leave_minutes - 15
                     )
                     candidate.is_live = True
-                    if delay >= 10:
+                    if delay >= delay_threshold:
                         candidate.requires_reroute = True
                         candidate.reroute_reason = (
-                            f"Delay of {delay}m exceeds 10m threshold"
+                            f"Delay of {delay}m exceeds {delay_threshold}m threshold"
                         )
     except Exception as exc:
         logger.debug("Live departure probe skipped for %s: %s", crs, exc)
@@ -361,6 +448,7 @@ def evaluate_journey_notification(
     dt: datetime.datetime,
     sent_keys: Set[str],
     live_client: Optional[TrainLiveClient] = None,
+    bus_live_client: Optional[BodsLiveClient] = None,
     tolerance_minutes: int = 1,
 ) -> Optional[DepartureCandidate]:
     """Evaluate whether a journey departure notification should be dispatched now.
@@ -384,7 +472,9 @@ def evaluate_journey_notification(
             continue
 
         # Adjust for live feeds if available
-        adjusted = apply_live_departure_adjustments(candidate, live_client)
+        adjusted = apply_live_departure_adjustments(
+            candidate, live_client=live_client, bus_live_client=bus_live_client
+        )
 
         if adjusted.leave_minutes < current_minutes - tolerance_minutes:
             continue
@@ -427,6 +517,7 @@ def find_next_departure_candidate(
     dt: datetime.datetime,
     exclude_service_keys: Optional[Set[str]] = None,
     live_client: Optional[TrainLiveClient] = None,
+    bus_live_client: Optional[BodsLiveClient] = None,
     tolerance_minutes: int = 1,
     min_notice_minutes: int = 1,
 ) -> Optional[DepartureCandidate]:
@@ -452,32 +543,56 @@ def find_next_departure_candidate(
             continue
 
         # Adjust for live feeds if available
-        adjusted = apply_live_departure_adjustments(candidate, live_client)
+        adjusted = apply_live_departure_adjustments(
+            candidate, live_client=live_client, bus_live_client=bus_live_client
+        )
 
         if adjusted.is_cancelled:
             try:
                 from app.services.reroute_engine import RerouteEngine
 
-                RerouteEngine(live_client=live_client).evaluate_and_reroute(
+                rerouted, strategy = RerouteEngine(
+                    live_client=live_client,
+                    bus_live_client=bus_live_client,
+                ).evaluate_and_reroute(
                     journey=journey,
                     trigger_reason=adjusted.reroute_reason or "Cancelled service",
                     departure_time=dt,
                 )
+                if rerouted:
+                    logger.info(
+                        "Rerouted journey %d via %s due to cancellation: %s",
+                        journey.id,
+                        strategy,
+                        adjusted.reroute_reason,
+                    )
+                    rerouted_cand = _itinerary_to_candidate(
+                        rerouted, journey, dt.date()
+                    )
+                    if (
+                        rerouted_cand
+                        and rerouted_cand.leave_minutes
+                        >= current_minutes + min_notice_minutes
+                        and rerouted_cand.service_key not in excluded
+                    ):
+                        return rerouted_cand
             except Exception as reroute_err:
                 logger.warning(
                     "Reroute evaluation error on cancellation: %s", reroute_err
                 )
             continue
 
-        if adjusted.delay_minutes >= 10 and adjusted.requires_reroute:
+        if adjusted.requires_reroute:
             try:
                 from app.services.reroute_engine import RerouteEngine
 
                 rerouted, strategy = RerouteEngine(
-                    live_client=live_client
+                    live_client=live_client,
+                    bus_live_client=bus_live_client,
                 ).evaluate_and_reroute(
                     journey=journey,
-                    trigger_reason=adjusted.reroute_reason or "Delay >= 10m",
+                    trigger_reason=adjusted.reroute_reason
+                    or "Delay threshold exceeded",
                     departure_time=dt,
                 )
                 if rerouted:
@@ -487,9 +602,19 @@ def find_next_departure_candidate(
                         strategy,
                         adjusted.reroute_reason,
                     )
+                    rerouted_cand = _itinerary_to_candidate(
+                        rerouted, journey, dt.date()
+                    )
+                    if (
+                        rerouted_cand
+                        and rerouted_cand.leave_minutes
+                        >= current_minutes + min_notice_minutes
+                        and rerouted_cand.service_key not in excluded
+                    ):
+                        return rerouted_cand
             except Exception as reroute_err:
                 logger.warning(
-                    "Reroute evaluation error on delay >= 10m: %s", reroute_err
+                    "Reroute evaluation error on delay threshold: %s", reroute_err
                 )
 
         # Re-verify leave time after live adjustments

@@ -136,6 +136,26 @@
       </div>
 
       <div class="flex items-center gap-3 self-end md:self-auto">
+        <!-- Preview Mode Toggle (Interactive when not actively tracking) -->
+        <div id="preview-mode-toggle-group" class="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium {% if data.selected_journey and data.selected_journey.is_active %}hidden{% endif %}">
+          <button
+            type="button"
+            id="btn-preview-scheduled"
+            class="px-2.5 py-1.5 rounded-lg transition-all {% if not data.selected_journey or data.selected_journey.preview_mode != 'now' %}bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs{% else %}text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white{% endif %}"
+            title="Preview next scheduled commute window"
+          >
+            Next Scheduled
+          </button>
+          <button
+            type="button"
+            id="btn-preview-now"
+            class="px-2.5 py-1.5 rounded-lg transition-all {% if data.selected_journey and data.selected_journey.preview_mode == 'now' %}bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs{% else %}text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white{% endif %}"
+            title="Preview immediate departure right now"
+          >
+            Leave Now
+          </button>
+        </div>
+
         <!-- Live Active Status Badge -->
         <div id="live-indicator-badge">
           {% if data.selected_journey and data.selected_journey.is_active %}
@@ -205,6 +225,19 @@
             <strong class="text-slate-900 dark:text-white font-semibold" id="hero-arr-time">
               {{ data.selected_journey.arrival_time or '--:--' }}
             </strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Reroute Alert Banner -->
+      <div id="detour-alert-banner" class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 flex items-start gap-3 {% if not (data.selected_journey and data.selected_journey.rerouted) %}hidden{% endif %}">
+        <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-xl shrink-0 mt-0.5">alt_route</span>
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 mb-0.5">
+            Dynamic Reroute Active
+          </div>
+          <div class="text-sm font-semibold text-amber-900 dark:text-amber-100" id="detour-reason-text">
+            {{ data.selected_journey.delay_reason if data.selected_journey and data.selected_journey.delay_reason else 'Detour activated due to transit disruption.' }}
           </div>
         </div>
       </div>
