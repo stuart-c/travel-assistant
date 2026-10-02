@@ -456,9 +456,7 @@ def test_trigger_walking_sync_if_changed_calls_request_sync(app: Flask) -> None:
                     "updated": [],
                 },
             )
-            mock_request_sync.assert_has_calls(
-                [call("walking"), call("journey_routes")]
-            )
+            mock_request_sync.assert_called_once_with("walking")
 
 
 def test_sync_walking_routes_timetable_stop_resolution(app: Flask) -> None:

@@ -467,7 +467,7 @@ def test_get_active_timetables_filtering(app: Flask) -> None:
 def test_resolve_stop_id_aliases_and_toc_matching(app: Flask) -> None:
     """Test stop alias resolution and TOC matching for London interchange hubs."""
     with app.app_context():
-        from app.models.transit import Stop, StopInterchange
+        from app.models.transit import Stop
         from app.services.planner.transfers import (
             clear_stop_aliases_cache,
             matches_transit_line_or_operator,
@@ -490,18 +490,6 @@ def test_resolve_stop_id_aliases_and_toc_matching(app: Flask) -> None:
             stop_type="rail",
             latitude=51.5318,
             longitude=-0.1244,
-        )
-
-        # Stop interchange connecting access point and master
-        StopInterchange.create(
-            from_stop_atco="4900KNGX0",
-            from_stop_name="London King's Cross Rail Station",
-            from_stop_type="rail",
-            to_stop_atco="9100KNGX",
-            to_stop_name="London King's Cross Rail Station",
-            to_stop_type="rail",
-            distance_metres=25,
-            estimated_walk_minutes=1,
         )
 
         # 1. Access code resolves master code via interchange and counterpart name

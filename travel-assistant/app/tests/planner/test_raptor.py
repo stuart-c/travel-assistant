@@ -10,7 +10,8 @@ from app.models.timetable import (
     TimetableStop,
     TimetableTrip,
 )
-from app.models.transit import Stop, StopInterchange
+from app.models.transit import Stop
+from app.models.walking import Walking
 from app.services.planner.models import ScheduledItinerary
 from app.services.planner.raptor import (
     _ParsedTrip,
@@ -238,29 +239,35 @@ def test_load_interchanges_for_stops_filtering_and_chunking(app: Flask) -> None:
         assert _load_interchanges_for_stops(set()) == {}
 
         # Seed test interchanges
-        StopInterchange.create(
-            from_stop_atco="2100_STOP_A",
-            from_stop_name="Stop A",
-            to_stop_atco="2100_STOP_B",
-            to_stop_name="Stop B",
-            distance_metres=100,
-            estimated_walk_minutes=2,
+        Walking.create(
+            start_type="bus",
+            start_id="2100_STOP_A",
+            start_name="Stop A",
+            finish_type="bus",
+            finish_id="2100_STOP_B",
+            finish_name="Stop B",
+            time_needed_minutes=2,
+            bidirectional=True,
         )
-        StopInterchange.create(
-            from_stop_atco="2100_STOP_C",
-            from_stop_name="Stop C",
-            to_stop_atco="2100_STOP_D",
-            to_stop_name="Stop D",
-            distance_metres=150,
-            estimated_walk_minutes=3,
+        Walking.create(
+            start_type="bus",
+            start_id="2100_STOP_C",
+            start_name="Stop C",
+            finish_type="bus",
+            finish_id="2100_STOP_D",
+            finish_name="Stop D",
+            time_needed_minutes=3,
+            bidirectional=True,
         )
-        StopInterchange.create(
-            from_stop_atco="2100_UNRELATED",
-            from_stop_name="Unrelated",
-            to_stop_atco="2100_OTHER",
-            to_stop_name="Other",
-            distance_metres=200,
-            estimated_walk_minutes=4,
+        Walking.create(
+            start_type="bus",
+            start_id="2100_UNRELATED",
+            start_name="Unrelated",
+            finish_type="bus",
+            finish_id="2100_OTHER",
+            finish_name="Other",
+            time_needed_minutes=4,
+            bidirectional=True,
         )
 
         # Only query for STOP_A and STOP_C
@@ -346,118 +353,6 @@ def test_raptor_submodules_and_trips_indexing() -> None:
     assert len(_TRIPS_CACHE) == 0
 
 
-def test_evaluate_corridor_itinerary_with_aliases_and_shuttle(app: Flask) -> None:
-    """Test corridor evaluation when leg stop IDs use interchange aliases and shuttle transfer buffer."""
-    with app.app_context():
-        from app.models.transit import Stop, StopInterchange
-        from app.services.planner.raptor.planner import _evaluate_corridor_itinerary
-        from app.services.planner.raptor.trips import _build_stop_to_trips
-        from app.services.planner.transfers import clear_stop_aliases_cache
-
-        clear_stop_aliases_cache()
-
-        # Stop master and access codes
-        Stop.create(
-            atco_code="9100KNGX",
-            name="London King's Cross Rail Station",
-            stop_type="rail",
-            latitude=51.5308,
-            longitude=-0.1238,
-        )
-        Stop.create(
-            atco_code="4900KNGX0",
-            name="London King's Cross Rail Station",
-            stop_type="rail",
-            latitude=51.5309,
-            longitude=-0.1239,
-        )
-        Stop.create(
-            atco_code="9100FPK",
-            name="Finsbury Park Rail Station",
-            stop_type="rail",
-            latitude=51.5642,
-            longitude=-0.1062,
-        )
-        Stop.create(
-            atco_code="ha:office",
-            name="Tech Campus",
-            stop_type="custom",
-        )
-
-        StopInterchange.create(
-            from_stop_atco="4900KNGX0",
-            from_stop_name="London King's Cross Rail Station",
-            from_stop_type="rail",
-            to_stop_atco="9100KNGX",
-            to_stop_name="London King's Cross Rail Station",
-            to_stop_type="rail",
-            distance_metres=20,
-            estimated_walk_minutes=1,
-        )
-
-        trip_tl = _ParsedTrip(
-            trip_id="tr_thameslink",
-            timetable_id=10,
-            line_name="London King's Cross to Peterborough",
-            transport_mode="rail",
-            operator="Thameslink",
-            headsign="TL 1P20",
-            stops=["9100KNGX", "9100FPK"],
-            arr_times=[480, 490],  # 08:00 - 08:10
-            dep_times=[480, 490],
-        )
-
-        trip_shuttle = _ParsedTrip(
-            trip_id="tr_shuttle",
-            timetable_id=11,
-            line_name="Shuttle Bus (Morning)",
-            transport_mode="bus",
-            operator=None,
-            headsign="Campus Shuttle",
-            stops=["9100FPK", "ha:office"],
-            arr_times=[491, 500],  # 08:11 - 08:20 (1 min transfer from 08:10 arrival)
-            dep_times=[491, 500],
-        )
-
-        stop_to_trips = _build_stop_to_trips([trip_tl, trip_shuttle])
-
-        # Corridor route has access point "4900KNGX0" (aliased to 9100KNGX) and line "Thameslink" (matched to TOC)
-        legs_data = [
-            {
-                "leg_type": "transit",
-                "transport_mode": "rail",
-                "line_name": "Thameslink",
-                "from_id": "4900KNGX0",
-                "from_name": "London King's Cross",
-                "to_id": "9100FPK",
-                "to_name": "Finsbury Park Rail Station",
-            },
-            {
-                "leg_type": "transit",
-                "transport_mode": "bus",
-                "line_name": "Shuttle Bus (Morning)",
-                "from_id": "9100FPK",
-                "from_name": "Finsbury Park Rail Station",
-                "to_id": "ha:office",
-                "to_name": "Tech Campus",
-            },
-        ]
-
-        itin = _evaluate_corridor_itinerary(
-            legs_data=legs_data,
-            dep_time_min=475,
-            stop_to_trips=stop_to_trips,
-            min_transfer_min=3,
-        )
-
-        assert itin is not None
-        assert itin.departure_time == "08:00"
-        assert itin.arrival_time == "08:20"
-        assert len(itin.legs) == 2
-        assert itin.legs[0].line == "London King's Cross to Peterborough"
-        assert itin.legs[1].line == "Shuttle Bus (Morning)"
-
-
 def test_flexible_rail_station_name_aliasing(app: Flask) -> None:
     """Verify resolve_stop_id_aliases maps 'Railway Station' and 'Rail Station' counterparts."""
     with app.app_context():
@@ -482,78 +377,3 @@ def test_flexible_rail_station_name_aliasing(app: Flask) -> None:
         assert "9100STEVNGE" in aliases
         assert "atco:9100STEVNGE" in aliases
         assert "naptan:9100STEVNGE" in aliases
-
-
-def test_preferred_corridor_ranked_first(seeded_planner: Flask) -> None:
-    """Verify that a preferred corridor itinerary is ranked ahead of dynamic alternatives."""
-    with seeded_planner.app_context():
-        from app.models.journey import Journey
-        from app.models.journey_route import JourneyRoute
-        from app.services.planner.raptor import plan_journey
-
-        j = Journey.create(
-            name="Test Commute",
-            from_type="ha",
-            from_id="ha:home",
-            from_name="Home",
-            to_type="ha",
-            to_id="ha:work",
-            to_name="Work",
-        )
-        # Create preferred JourneyRoute for this journey
-        legs_data = [
-            {
-                "stage_index": 1,
-                "leg_type": "walk",
-                "from_type": "ha",
-                "from_id": "ha:home",
-                "from_name": "Home",
-                "to_type": "bus",
-                "to_id": "490000077E",
-                "to_name": "King's Cross Station",
-                "duration_minutes": 4,
-            },
-            {
-                "stage_index": 2,
-                "leg_type": "transit",
-                "transport_mode": "bus",
-                "line_name": "Bus 73",
-                "from_type": "bus",
-                "from_id": "490000077E",
-                "from_name": "King's Cross Station",
-                "to_type": "bus",
-                "to_id": "490000077C",
-                "to_name": "Euston Station",
-                "duration_minutes": 12,
-            },
-            {
-                "stage_index": 3,
-                "leg_type": "walk",
-                "from_type": "bus",
-                "from_id": "490000077C",
-                "from_name": "Euston Station",
-                "to_type": "ha",
-                "to_id": "ha:work",
-                "to_name": "Work",
-                "duration_minutes": 5,
-            },
-        ]
-        JourneyRoute.create(
-            journey_id=j.id,
-            name="Preferred Commute",
-            is_preferred=True,
-            is_enabled=True,
-            legs=legs_data,
-        )
-
-        itins = plan_journey(
-            from_type="ha",
-            from_id="ha:home",
-            to_type="ha",
-            to_id="ha:work",
-            timing_mode="depart",
-            time_str="07:25",
-            days_of_week=["mon"],
-        )
-        assert len(itins) >= 1
-        assert itins[0].robustness_score == "Preferred Corridor"

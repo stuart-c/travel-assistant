@@ -15,7 +15,7 @@ from app.models.timetable import (
     TimetableTrip,
 )
 from app.models.transfer import PlatformTransfer
-from app.models.transit import Stop, StopInterchange
+from app.models.transit import Stop
 from app.models.walking import Walking
 
 
@@ -129,16 +129,16 @@ def seeded_planner(app: Flask):
             bidirectional=True,
         )
 
-        # 4. Nearby Stop Interchanges (Priority 2)
-        StopInterchange.create(
-            from_stop_atco="490000077C",
-            from_stop_name="Euston Station",
-            from_stop_type="bus",
-            to_stop_atco="9100EUSTON",
-            to_stop_name="London Euston",
-            to_stop_type="rail",
-            distance_metres=120,
-            estimated_walk_minutes=2,
+        # 4. Nearby Walking Interchanges
+        Walking.create(
+            start_type="bus",
+            start_id="490000077C",
+            start_name="Euston Station",
+            finish_type="rail",
+            finish_id="9100EUSTON",
+            finish_name="London Euston",
+            time_needed_minutes=2,
+            bidirectional=True,
         )
 
         # 5. Station Platform Transfers (Priority 1 & Fallback)

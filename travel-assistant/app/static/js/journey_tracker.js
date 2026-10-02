@@ -29,6 +29,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const liveIndicatorBadge = document.getElementById('live-indicator-badge');
   const badgeStatusText = document.getElementById('badge-status-text');
 
+  // Preview Mode Toggles (Idle State) & Detour Banner
+  const btnPreviewScheduled = document.getElementById('btn-preview-scheduled');
+  const btnPreviewNow = document.getElementById('btn-preview-now');
+  const previewModeToggleGroup = document.getElementById('preview-mode-toggle-group');
+  const detourAlertBanner = document.getElementById('detour-alert-banner');
+  const detourReasonText = document.getElementById('detour-reason-text');
+  let currentPreviewMode = (trackingData && trackingData.selected_journey && trackingData.selected_journey.preview_mode) || 'scheduled';
+
   // View Switcher Buttons
   const btnViewSchematic = document.getElementById('btn-view-schematic');
   const btnViewMap = document.getElementById('btn-view-map');
@@ -570,7 +578,38 @@ document.addEventListener('DOMContentLoaded', () => {
       telemetryLastUpdated.textContent = `Updated: ${person.updated_at || 'Just now'}`;
     }
 
-    // 4. Update the abstract vertical schematic diagram
+    // 4. Update preview mode toggle buttons if present
+    if (previewModeToggleGroup) {
+      if (j && j.is_active) {
+        previewModeToggleGroup.classList.add('hidden');
+      } else {
+        previewModeToggleGroup.classList.remove('hidden');
+        const activeMode = (j && j.preview_mode) || currentPreviewMode;
+        if (btnPreviewScheduled && btnPreviewNow) {
+          if (activeMode === 'now') {
+            btnPreviewNow.className = 'px-2.5 py-1.5 rounded-lg transition-all bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs';
+            btnPreviewScheduled.className = 'px-2.5 py-1.5 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+          } else {
+            btnPreviewScheduled.className = 'px-2.5 py-1.5 rounded-lg transition-all bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs';
+            btnPreviewNow.className = 'px-2.5 py-1.5 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+          }
+        }
+      }
+    }
+
+    // 5. Update Detour / Reroute alert banner
+    if (detourAlertBanner) {
+      if (j && (j.rerouted || (j.delay_reason && j.delay_reason.includes('Rerouted:')))) {
+        detourAlertBanner.classList.remove('hidden');
+        if (detourReasonText) {
+          detourReasonText.textContent = j.delay_reason || 'Detour activated due to transit disruption.';
+        }
+      } else {
+        detourAlertBanner.classList.add('hidden');
+      }
+    }
+
+    // 6. Update the abstract vertical schematic diagram
     renderSchematicDiagram(data);
   }
 
@@ -590,7 +629,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const selectedId = journeySelect ? journeySelect.value : '';
-    const queryParam = selectedId ? `?journey_id=${encodeURIComponent(selectedId)}` : '';
+    const queryParts = [];
+    if (selectedId) queryParts.push(`journey_id=${encodeURIComponent(selectedId)}`);
+    if (currentPreviewMode) queryParts.push(`preview_mode=${encodeURIComponent(currentPreviewMode)}`);
+    const queryParam = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
     const url = `${ingressPath}/api/journey/live${queryParam}`;
 
     try {
@@ -673,6 +715,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnRefresh) {
     btnRefresh.addEventListener('click', () => {
+      fetchLiveTelemetry(true);
+    });
+  }
+
+  // Preview Mode Toggles Handler
+  if (btnPreviewScheduled && btnPreviewNow) {
+    btnPreviewScheduled.addEventListener('click', () => {
+      currentPreviewMode = 'scheduled';
+      btnPreviewScheduled.className = 'px-2.5 py-1.5 rounded-lg transition-all bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs';
+      btnPreviewNow.className = 'px-2.5 py-1.5 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+      fetchLiveTelemetry(true);
+    });
+
+    btnPreviewNow.addEventListener('click', () => {
+      currentPreviewMode = 'now';
+      btnPreviewNow.className = 'px-2.5 py-1.5 rounded-lg transition-all bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-semibold shadow-2xs';
+      btnPreviewScheduled.className = 'px-2.5 py-1.5 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
       fetchLiveTelemetry(true);
     });
   }

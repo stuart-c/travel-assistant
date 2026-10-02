@@ -506,13 +506,12 @@ def test_get_sync_stats(app: Flask) -> None:
     with app.app_context():
         SyncMetadata.delete().execute()
         SyncMetadata.record_success("stops", 15, 0.42)
-        SyncMetadata.record_error("stop_interchanges", "API timeout", 1.5)
-        SyncMetadata.record_skipped("train_timetables", "No S3 credentials")
+        SyncMetadata.record_error("walking", "Graph error", 1.5)
         # Custom extra sync record outside standard registry (should not be returned)
         SyncMetadata.record_success("custom_feed", 99, 2.0)
 
         stats = get_sync_stats(app)
-        assert len(stats) == 7
+        assert len(stats) == 3
 
         stops_entry = next((s for s in stats if s["name"] == "stops"), None)
         assert stops_entry is not None
@@ -522,16 +521,10 @@ def test_get_sync_stats(app: Flask) -> None:
         assert stops_entry["syncable"] is True
         assert stops_entry["last_updated_at"] is not None
 
-        interchange_entry = next(
-            (s for s in stats if s["name"] == "stop_interchanges"), None
-        )
-        assert interchange_entry is not None
-        assert interchange_entry["sync_status"] == "error"
-        assert interchange_entry["error_message"] == "API timeout"
-
-        train_entry = next((s for s in stats if s["name"] == "train_timetables"), None)
-        assert train_entry is not None
-        assert train_entry["sync_status"] == "skipped"
+        walking_entry = next((s for s in stats if s["name"] == "walking"), None)
+        assert walking_entry is not None
+        assert walking_entry["sync_status"] == "error"
+        assert walking_entry["error_message"] == "Graph error"
 
         ha_entry = next((s for s in stats if s["name"] == "ha_locations"), None)
         assert ha_entry is not None
@@ -760,8 +753,8 @@ def test_run_migrations_cleans_up_sync_metadata() -> None:
     test_db.close()
 
 
-def test_run_migrations_clears_legacy_rail_timetable_end_date() -> None:
-    """Test run_migrations clears legacy single-day end_date on auto-added rail timetables."""
+def test_run_migrations_purges_auto_added_timetables() -> None:
+    """Test run_migrations purges legacy auto-added timetables while preserving custom timetables."""
     test_db = SqliteDatabase(":memory:")
     test_db.connect()
 
@@ -782,34 +775,21 @@ def test_run_migrations_clears_legacy_rail_timetable_end_date() -> None:
             end_date="2026-10-01",
         )
         Timetable.create(
-            name="Custom Rail",
-            transport_type="rail",
+            name="Custom Shuttle",
+            transport_type="bus",
             auto_added=False,
             start_date="2026-09-08",
             end_date="2026-09-08",
-        )
-        Timetable.create(
-            name="Southern",
-            transport_type="rail",
-            auto_added=True,
-            start_date="2026-09-08",
-            end_date=None,
         )
 
     run_migrations(test_db)
 
     with test_db.bind_ctx([Timetable]):
-        tt_lner = Timetable.get(Timetable.name == "LNER")
-        assert tt_lner.end_date is None
-
-        tt_bus = Timetable.get(Timetable.name == "Bus 73")
-        assert str(tt_bus.end_date) == "2026-10-01"
-
-        tt_custom = Timetable.get(Timetable.name == "Custom Rail")
+        assert Timetable.select().where(Timetable.name == "LNER").count() == 0
+        assert Timetable.select().where(Timetable.name == "Bus 73").count() == 0
+        tt_custom = Timetable.get(Timetable.name == "Custom Shuttle")
+        assert tt_custom is not None
         assert str(tt_custom.end_date) == "2026-09-08"
-
-        tt_southern = Timetable.get(Timetable.name == "Southern")
-        assert tt_southern.end_date is None
 
     test_db.close()
 

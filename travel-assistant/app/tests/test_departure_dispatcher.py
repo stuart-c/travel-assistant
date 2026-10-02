@@ -1056,23 +1056,35 @@ def test_get_journey_estimated_duration_minutes(app: Flask) -> None:
     with app.app_context():
         journey = _seed_commute_data()
 
-        # 1. No calculated routes -> default fallback (120 min)
-        assert get_journey_estimated_duration_minutes(journey) == 120
-        assert get_journey_estimated_duration_minutes(journey, default_minutes=90) == 90
+        # 1. No planned routes / exception -> default fallback (120 min)
+        with patch(
+            "app.services.dispatcher.evaluator.DynamicRoutePlanner"
+        ) as mock_planner_cls:
+            mock_planner = mock_planner_cls.return_value
+            mock_planner.plan_transit.side_effect = Exception("offline")
+            assert get_journey_estimated_duration_minutes(journey) == 120
+            assert (
+                get_journey_estimated_duration_minutes(journey, default_minutes=90)
+                == 90
+            )
 
-        # 2. Calculated routes with durations
-        journey.set_calculated_routes(
-            [
-                {"total_duration_est_minutes": 45},
-                {"total_duration_est_minutes": 85},
-            ]
-        )
-        # Max of [45, 85] is 85
-        assert get_journey_estimated_duration_minutes(journey) == 85
+        # 2. Dynamic plan with duration 85 min
+        mock_plan = MagicMock()
+        mock_plan.total_duration_minutes = 85
+        with patch(
+            "app.services.dispatcher.evaluator.DynamicRoutePlanner"
+        ) as mock_planner_cls:
+            mock_planner_cls.return_value.plan_transit.return_value = [mock_plan]
+            assert get_journey_estimated_duration_minutes(journey) == 85
 
-        # 3. Short routes below 60 min are capped at minimum 60 min
-        journey.set_calculated_routes([{"total_duration_est_minutes": 30}])
-        assert get_journey_estimated_duration_minutes(journey) == 60
+        # 3. Short routes below 30 min are capped at minimum 30 min
+        mock_short_plan = MagicMock()
+        mock_short_plan.total_duration_minutes = 20
+        with patch(
+            "app.services.dispatcher.evaluator.DynamicRoutePlanner"
+        ) as mock_planner_cls:
+            mock_planner_cls.return_value.plan_transit.return_value = [mock_short_plan]
+            assert get_journey_estimated_duration_minutes(journey) == 30
 
 
 def test_is_journey_active_for_datetime_arrive_mode(app: Flask) -> None:
@@ -1090,38 +1102,41 @@ def test_is_journey_active_for_datetime_arrive_mode(app: Flask) -> None:
                 }
             ]
         )
-        journey.set_calculated_routes([{"total_duration_est_minutes": 85}])
 
-        # Estimated duration = 85m. Advance margin = 85 + 45 = 130m.
-        # Start: 08:30 (510 min) - 130 min = 380 min (06:20).
-        # End: 10:00 (600 min).
+        with patch(
+            "app.services.dispatcher.evaluator.get_journey_estimated_duration_minutes",
+            return_value=85,
+        ):
+            # Estimated duration = 85m. Advance margin = 85 + 45 = 130m.
+            # Start: 08:30 (510 min) - 130 min = 380 min (06:20).
+            # End: 10:00 (600 min).
 
-        # Wednesday 2026-09-09
-        # 06:10 is before 06:20 -> False
-        active_early, _ = is_journey_active_for_datetime(
-            journey, datetime.datetime(2026, 9, 9, 6, 10)
-        )
-        assert active_early is False
-
-        # 07:15, 07:22, 07:37, 08:00, 09:30, 10:00 -> True
-        for h, m in [(7, 15), (7, 22), (7, 37), (8, 0), (9, 30), (10, 0)]:
-            active, ts = is_journey_active_for_datetime(
-                journey, datetime.datetime(2026, 9, 9, h, m)
+            # Wednesday 2026-09-09
+            # 06:10 is before 06:20 -> False
+            active_early, _ = is_journey_active_for_datetime(
+                journey, datetime.datetime(2026, 9, 9, 6, 10)
             )
-            assert active is True, f"Expected active at {h:02d}:{m:02d}"
-            assert ts.mode == "arrive"
+            assert active_early is False
 
-        # 10:05 is after 10:00 -> False
-        active_late, _ = is_journey_active_for_datetime(
-            journey, datetime.datetime(2026, 9, 9, 10, 5)
-        )
-        assert active_late is False
+            # 07:15, 07:22, 07:37, 08:00, 09:30, 10:00 -> True
+            for h, m in [(7, 15), (7, 22), (7, 37), (8, 0), (9, 30), (10, 0)]:
+                active, ts = is_journey_active_for_datetime(
+                    journey, datetime.datetime(2026, 9, 9, h, m)
+                )
+                assert active is True, f"Expected active at {h:02d}:{m:02d}"
+                assert ts.mode == "arrive"
 
-        # Saturday 2026-09-12 08:00 -> False (day mismatch)
-        active_weekend, _ = is_journey_active_for_datetime(
-            journey, datetime.datetime(2026, 9, 12, 8, 0)
-        )
-        assert active_weekend is False
+            # 10:05 is after 10:00 -> False
+            active_late, _ = is_journey_active_for_datetime(
+                journey, datetime.datetime(2026, 9, 9, 10, 5)
+            )
+            assert active_late is False
+
+            # Saturday 2026-09-12 08:00 -> False (day mismatch)
+            active_weekend, _ = is_journey_active_for_datetime(
+                journey, datetime.datetime(2026, 9, 12, 8, 0)
+            )
+            assert active_weekend is False
 
 
 def test_evaluate_journey_notification_time_window_filtering(app: Flask) -> None:

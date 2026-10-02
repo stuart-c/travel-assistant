@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dynamic Transit Route Planning with Google Routes v2 & Custom Timetable Splicing** (`app/services/planner/dynamic_planner.py`, `app/services/reroute_engine.py`, `app/views/journey.py`, `app/services/dispatcher/tracker/view_model.py`):
+  - Transitioned from static pre-computed route templates to real-time, dynamic multi-modal transit planning using Google Maps Routes API v2 (`directions/v2:computeRoutes`).
+  - Added hybrid private/custom timetable splicing for first-mile and last-mile links (e.g., campus and hospital shuttle services) into public transit itineraries.
+  - Enriched rail transit legs with live National Rail Darwin platform numbers/announcements and bus legs with BODS stand indicators.
+  - Implemented configurable disruption sensitivity options (`high`: 5m/3m, `medium`: 10m/5m, `low`: 15m/10m) triggering automatic Google Maps detour recalculations and downstream ETA adjustments upon live cancellations or connection-breaking delays.
+  - Made `/journey` user interface permanently visible, providing real-time journey progression during travel and an interactive preview switcher ("Leave Now" vs "Next Scheduled") when idle.
 - **Expected Arrival Time Across All Journey Notification Stages** (`app/services/dispatcher/tracker/notification_formatter.py`, `app/services/dispatcher/evaluator.py`):
   - Ensured all journey progress and lifecycle notifications (pre-departure, en route to stop, waiting at stop, on transit, interchange transfers, final egress walk, and completion) consistently include the expected arrival time at the journey's destination in British English.
   - Added robust fallback resolution (`_resolve_expected_arrival_time` and `_format_arrival_clause`) to determine the expected arrival time from active session metadata, scheduled itineraries, last leg arrival times, or remaining leg durations.
@@ -50,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added identity and maximum distance safeguards in `ensure_walking_connection` to prevent circular self-links and excessive auto-generated walking routes.
 
 ### Removed
+- **Removal of Pre-Computed Route Templates, Corridors & Obsolete Timetable Sync Workers** (`app/models/journey.py`, `app/models/transit.py`, `app/models/journey_route.py`, `app/services/corridor_learner.py`, `app/sync/transit_sync.py`, `app/sync/worker.py`, `app/db/migrations.py`):
+  - Completely dropped `journey_routes` and `stop_interchanges` SQLite tables, and purged `calculated_routes` column from `journeys`.
+  - Deleted obsolete `JourneyRoute`, `StopInterchange`, `CorridorLearner`, and `journey_sync` modules.
+  - Purged all auto-added local timetables (`timetables` where `auto_added == 1`) and pruned `sync_bus_timetables` and `sync_train_timetables` from `SYNC_REGISTRY`.
 - **Deprecate & Remove Obsolete `bus_routes` Database Table** (`app/models/transit.py`, `app/models/__init__.py`, `app/db/migrations.py`, `app/db/core.py`, `app/sync/transit_sync.py`, `app/sync/worker.py`, `app/sync/__init__.py`, `app/datasources/bods/client.py`, `app/mcp/tools_sync.py`, `static/js/sync.js`, `scripts/seed_sample_db.py`):
   - Removed obsolete `BusRoute` model and dropped the unused `bus_routes` SQLite table during automated schema migration (`cleanup_legacy_tables`).
   - Removed obsolete BODS `sync_bus_routes` background task and deleted the redundant `fetch_routes` method on `BodsClient`.

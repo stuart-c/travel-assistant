@@ -13,11 +13,11 @@ from app.services.dispatcher.tracker.models import (
     ItineraryLeg,
 )
 from app.utils.geo import resolve_endpoint_coordinates
-from app.utils.transit_time import get_day_code, parse_time_to_minutes
+from app.utils.transit_time import parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
 
-_UPCOMING_ITINERARY_CACHE: Dict[int, Tuple[float, Any]] = {}
+_UPCOMING_ITINERARY_CACHE: Dict[str, Tuple[float, Any]] = {}
 _TRACKING_CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
 
@@ -98,53 +98,50 @@ def _plan_upcoming_itinerary_cached(
     target_id: int,
     j_obj: Journey,
     current_dt: datetime.datetime,
+    preview_mode: str = "scheduled",
 ) -> Optional[Any]:
-    """Plan upcoming itinerary with caching to avoid repeated RAPTOR runs."""
-    time_str = current_dt.strftime("%H:%M")
+    """Plan upcoming itinerary dynamically with caching to avoid repeated routing runs."""
+    cache_key = f"{target_id}_{preview_mode}"
     now_ts = time.time()
-    cached_entry = _UPCOMING_ITINERARY_CACHE.get(target_id)
+    cached_entry = _UPCOMING_ITINERARY_CACHE.get(cache_key)
     if (
         cached_entry is not None
         and (now_ts - cached_entry[0]) < _TRACKING_CACHE_TTL_SECONDS
     ):
         return cached_entry[1]
 
-    time_settings = j_obj.get_time_settings()
-    should_plan = False
-    if not time_settings:
-        should_plan = True
-    else:
-        is_active_window, _ = is_journey_active_for_datetime(j_obj, current_dt)
-        if is_active_window:
-            should_plan = True
-
     upcoming_itinerary = None
-    if should_plan:
-        day_code = get_day_code(current_dt)
-        try:
-            from app.services.planner.raptor import plan_journey
+    try:
+        from app.services.planner.dynamic_planner import (
+            DynamicRoutePlanner,
+            resolve_target_commute_datetime,
+        )
 
-            plans = plan_journey(
-                from_type=j_obj.from_type,
-                from_id=j_obj.from_id,
-                to_type=j_obj.to_type,
-                to_id=j_obj.to_id,
-                timing_mode="depart",
-                time_str=time_str,
-                days_of_week=[day_code],
-                target_date=current_dt.date(),
-                max_itineraries=1,
-            )
-            if plans:
-                upcoming_itinerary = plans[0]
-        except Exception as exc:
-            logger.debug(
-                "Could not plan upcoming itinerary for journey %d: %s",
-                target_id,
-                exc,
-            )
+        planner = DynamicRoutePlanner()
+        if preview_mode == "now":
+            dep_dt = current_dt
+            arr_dt = None
+        else:
+            dep_dt, arr_dt = resolve_target_commute_datetime(j_obj, current_dt)
 
-    _UPCOMING_ITINERARY_CACHE[target_id] = (now_ts, upcoming_itinerary)
+        plans = planner.plan_transit(
+            journey=j_obj,
+            departure_time=dep_dt,
+            arrival_time=arr_dt,
+            enrich_live=True,
+            max_results=1,
+        )
+        if plans:
+            upcoming_itinerary = plans[0]
+    except Exception as exc:
+        logger.debug(
+            "Could not plan upcoming dynamic itinerary for journey %d (%s): %s",
+            target_id,
+            preview_mode,
+            exc,
+        )
+
+    _UPCOMING_ITINERARY_CACHE[cache_key] = (now_ts, upcoming_itinerary)
     return upcoming_itinerary
 
 

@@ -49,11 +49,6 @@ class Journey(BaseModel):
     to_id = CharField()
     to_name = CharField()
     time_settings = PydanticField(model_type=List[JourneyTimeSetting], default=list)
-    calculated_routes = PydanticField(
-        model_type=Optional[Union[List[Any], Dict[str, Any], Any]],
-        default=None,
-        null=True,
-    )
 
     class Meta:
         table_name = "journeys"
@@ -90,67 +85,10 @@ class Journey(BaseModel):
                     continue
         self.time_settings = parsed
 
-    def get_routes(self, enabled_only: bool = True) -> List[Any]:
-        """Retrieve persisted JourneyRoute instances for this journey."""
-        from app.models.journey_route import JourneyRoute
-
-        query = JourneyRoute.select().where(JourneyRoute.journey_id == self.id)
-        if enabled_only:
-            query = query.where(JourneyRoute.is_enabled == True)  # noqa: E712
-        return list(
-            query.order_by(
-                JourneyRoute.is_preferred.desc(),
-                JourneyRoute.total_duration_est_minutes.asc(),
-            )
-        )
-
-    def get_calculated_routes(self) -> Optional[List[Dict[str, Any]]]:
-        """Deserialise and return calculated routes data, preferring JourneyRoute records."""
-        routes = self.get_routes(enabled_only=True)
-        if routes:
-            return [r.to_dict() for r in routes]
-        val = self.calculated_routes
-        if isinstance(val, list):
-            return val
-        if isinstance(val, str):
-            try:
-                import json
-
-                parsed = json.loads(val)
-                if isinstance(parsed, list):
-                    return parsed
-            except Exception:
-                pass
-        return None
-
-    def set_calculated_routes(
-        self, routes: Optional[Union[List[Any], Dict[str, Any], str]]
-    ) -> None:
-        """Serialise and store calculated routes data, keeping JourneyRoute in sync."""
-        from app.models.journey_route import JourneyRoute
-
-        if routes is None:
-            self.calculated_routes = None
-            if self.id:
-                JourneyRoute.delete().where(
-                    JourneyRoute.journey_id == self.id
-                ).execute()
-            return
-        if isinstance(routes, str):
-            try:
-                import json
-
-                self.calculated_routes = json.loads(routes)
-            except Exception:
-                self.calculated_routes = routes
-            return
-        self.calculated_routes = routes
-
     def to_dict(self, recurse: bool = False, **kwargs: Any) -> Dict[str, Any]:
-        """Convert journey model to dictionary with parsed time settings and calculated routes."""
+        """Convert journey model to dictionary with parsed time settings."""
         data = super().to_dict(recurse=recurse, **kwargs)
         data["time_settings"] = self.get_time_settings()
-        data["calculated_routes"] = self.get_calculated_routes()
         return data
 
     @classmethod

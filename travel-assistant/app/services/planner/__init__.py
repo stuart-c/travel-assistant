@@ -18,6 +18,10 @@ from app.services.planner.models import (
     ItineraryLeg,
     ScheduledItinerary,
 )
+from app.services.planner.dynamic_planner import (
+    DynamicRoutePlanner,
+    resolve_target_commute_datetime,
+)
 from app.services.planner.raptor import plan_journey
 from app.services.planner.transfers import (
     extract_route_base_name,
@@ -30,6 +34,8 @@ from app.services.planner.transfers import (
 
 __all__ = [
     # Solvers
+    "DynamicRoutePlanner",
+    "resolve_target_commute_datetime",
     "plan_journey",
     "extract_route_base_name",
     # Models

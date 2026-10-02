@@ -926,15 +926,11 @@ def test_get_sync_page_initial_render(client: FlaskClient) -> None:
     assert data_resp.status_code == 200
     payload = data_resp.get_json()
     tables = payload.get("data", [])
-    assert len(tables) == 7
+    assert len(tables) == 3
     expected_names = {
         "stops",
-        "stop_interchanges",
         "ha_locations",
-        "train_timetables",
         "walking",
-        "bus_timetables",
-        "journey_routes",
     }
     returned_names = {t["name"] for t in tables}
     assert expected_names == returned_names
@@ -1163,7 +1159,7 @@ def test_config_db_data_endpoint(client: FlaskClient) -> None:
 def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     """Test GET /config/sync/data returns all transit dataset statistics as JSON."""
     with app.app_context():
-        SyncMetadata.record_success("train_timetables", 42, 1.23)
+        SyncMetadata.record_success("walking", 42, 1.23)
         SyncMetadata.record_error("stops", "Failed to reach NaPTAN API", 0.5)
 
     response = client.get("/config/sync/data")
@@ -1173,16 +1169,14 @@ def test_config_sync_data_endpoint(app: Flask, client: FlaskClient) -> None:
     assert "data" in payload
     assert "total" in payload
     assert isinstance(payload["data"], list)
-    assert payload["total"] == 7
+    assert payload["total"] == 3
 
-    train_timetables = next(
-        (t for t in payload["data"] if t["name"] == "train_timetables"), None
-    )
-    assert train_timetables is not None
-    assert train_timetables["sync_status"] == "success"
-    assert train_timetables["records_count"] == 42
-    assert train_timetables["duration_seconds"] == 1.23
-    assert train_timetables["last_updated_at"] is not None
+    walking_entry = next((t for t in payload["data"] if t["name"] == "walking"), None)
+    assert walking_entry is not None
+    assert walking_entry["sync_status"] == "success"
+    assert walking_entry["records_count"] == 42
+    assert walking_entry["duration_seconds"] == 1.23
+    assert walking_entry["last_updated_at"] is not None
 
     bus_routes = next((t for t in payload["data"] if t["name"] == "bus_routes"), None)
     assert bus_routes is None
@@ -1262,8 +1256,8 @@ def test_config_walking_data_endpoint(app: Flask, client: FlaskClient) -> None:
 
 
 def test_journeys_save_triggers_targeted_syncs(client: FlaskClient) -> None:
-    """Verify journey saves trigger targeted syncs based on endpoint types."""
-    from unittest.mock import call, patch
+    """Verify journey saves trigger targeted walking sync for location endpoints."""
+    from unittest.mock import patch
 
     # 1. Location-only endpoints (custom/ha to rail) -> triggers walking sync only
     payload_location_only = {
@@ -1289,64 +1283,9 @@ def test_journeys_save_triggers_targeted_syncs(client: FlaskClient) -> None:
             json=payload_location_only,
         )
         assert resp.status_code == 200
-        mock_req.assert_has_calls([call("walking"), call("journey_routes")])
+        mock_req.assert_called_once_with("walking")
 
-    # 2. Bus-only endpoints (bus to rail) -> triggers bus_timetables and journey_routes sync
-    payload_bus_only = {
-        "added": [
-            {
-                "name": "Bus Leg",
-                "from_type": "bus",
-                "from_id": "490000077E",
-                "from_name": "King's Cross Stop E",
-                "to_type": "rail",
-                "to_id": "9100KGX",
-                "to_name": "London King's Cross",
-                "time_settings": [],
-            }
-        ],
-        "updated": [],
-        "deleted": [],
-    }
-
-    with patch("app.views.config.journeys.request_sync") as mock_req:
-        resp = client.post(
-            "/config/journeys/data",
-            json=payload_bus_only,
-        )
-        assert resp.status_code == 200
-        mock_req.assert_has_calls([call("bus_timetables"), call("journey_routes")])
-
-    # 3. Location and Bus endpoints (ha to bus) -> triggers walking, bus_timetables, and journey_routes syncs
-    payload_mixed = {
-        "added": [
-            {
-                "name": "Home to Bus Stop",
-                "from_type": "ha",
-                "from_id": "ha:home",
-                "from_name": "Home Residence",
-                "to_type": "bus",
-                "to_id": "490000077E",
-                "to_name": "King's Cross Stop E",
-                "time_settings": [],
-            }
-        ],
-        "updated": [],
-        "deleted": [],
-    }
-
-    with patch("app.views.config.journeys.request_sync") as mock_req:
-        resp = client.post(
-            "/config/journeys/data",
-            json=payload_mixed,
-        )
-        assert resp.status_code == 200
-        assert mock_req.call_count == 3
-        mock_req.assert_has_calls(
-            [call("walking"), call("bus_timetables"), call("journey_routes")]
-        )
-
-    # 4. Pure rail endpoints -> triggers journey_routes sync
+    # 2. Pure rail endpoints -> does not trigger sync
     payload_rail_only = {
         "added": [
             {
@@ -1370,7 +1309,7 @@ def test_journeys_save_triggers_targeted_syncs(client: FlaskClient) -> None:
             json=payload_rail_only,
         )
         assert resp.status_code == 200
-        mock_req.assert_called_once_with("journey_routes")
+        mock_req.assert_not_called()
 
 
 def test_walking_save_triggers_targeted_bus_sync(client: FlaskClient) -> None:

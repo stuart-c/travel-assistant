@@ -32,6 +32,11 @@ class ItineraryLeg(PydanticBaseModel):
     stops_count: Optional[int] = None
     timetable_id: Optional[int] = None
     polyline: Optional[str] = None
+    platform: Optional[str] = None
+    delay_minutes: Optional[int] = 0
+    delay_reason: Optional[str] = None
+    is_cancelled: bool = False
+    cancel_reason: Optional[str] = None
 
 
 class ScheduledItinerary(PydanticBaseModel):

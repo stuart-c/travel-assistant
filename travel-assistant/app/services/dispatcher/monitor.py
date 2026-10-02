@@ -6,6 +6,7 @@ import threading
 from typing import Dict, Optional, Set
 from flask import Flask
 
+from app.datasources.bus_live import BodsLiveClient
 from app.datasources.exceptions import DataSourceConnectionError, DataSourceError
 from app.datasources.homeassistant import HomeAssistantClient
 from app.datasources.train_live import TrainLiveClient
@@ -111,6 +112,7 @@ class DepartureMonitor:
         self,
         ha_client: Optional[HomeAssistantClient] = None,
         live_client: Optional[TrainLiveClient] = None,
+        bus_live_client: Optional[BodsLiveClient] = None,
         now: Optional[datetime.datetime] = None,
     ) -> int:
         """Execute a single evaluation pass across all journeys.
@@ -150,6 +152,7 @@ class DepartureMonitor:
             return 0
 
         train_live = live_client or TrainLiveClient.from_settings()
+        bus_live = bus_live_client or BodsLiveClient.from_settings()
 
         dispatched_count = 0
 
@@ -254,6 +257,7 @@ class DepartureMonitor:
                 dt=current_dt,
                 sent_keys=self.sent_keys,
                 live_client=train_live,
+                bus_live_client=bus_live,
             )
             if not candidate:
                 continue

@@ -1,18 +1,18 @@
-"""Unit tests for RerouteEngine service."""
+"""Unit tests for RerouteEngine dynamic transit rerouting service."""
 
 import datetime
 from unittest.mock import MagicMock
 import pytest
 from flask import Flask
+
 from app.models.journey import Journey
-from app.models.journey_route import JourneyRoute
 from app.models.location import Location
 from app.models.route_query_log import RouteQueryLog
+from app.models.setting import Setting
 from app.services.dispatcher.tracker.models import ActiveJourney
 from app.services.dispatcher.tracker.session_store import load_active_journey_sessions
-from app.services.reroute_engine import (
-    RerouteEngine,
-)
+from app.services.planner.dynamic_planner import DynamicRoutePlanner
+from app.services.reroute_engine import RerouteEngine
 
 
 @pytest.fixture(autouse=True)
@@ -22,10 +22,10 @@ def setup_test_db(app: Flask) -> None:
 
 
 def test_check_disruption_requires_reroute() -> None:
-    """Test delay threshold and disruption condition checks."""
+    """Test delay threshold, cancellation, and sensitivity condition checks."""
     engine = RerouteEngine()
 
-    # Delay under 10m does not require reroute
+    # Default medium sensitivity: delay under 10m does not require reroute
     req, _ = engine.check_disruption_requires_reroute(delay_minutes=9)
     assert req is False
 
@@ -38,7 +38,7 @@ def test_check_disruption_requires_reroute() -> None:
     assert req is True
     assert "18m" in reason
 
-    # Cancellations require reroute
+    # Cancellations require immediate reroute
     req, reason = engine.check_disruption_requires_reroute(is_cancelled=True)
     assert req is True
     assert "cancelled" in reason.lower()
@@ -48,91 +48,49 @@ def test_check_disruption_requires_reroute() -> None:
     assert req is True
     assert "connection severed" in reason.lower()
 
+    # High sensitivity setting (5m delay threshold)
+    Setting.set_val("reroute_sensitivity", "high")
+    req_high, reason_high = engine.check_disruption_requires_reroute(delay_minutes=6)
+    assert req_high is True
+    assert "5m threshold" in reason_high
 
-def test_reroute_tier1_local_failover() -> None:
-    """Test Tier 1 failover to secondary local JourneyRoute template."""
-    journey = Journey.create(
-        name="Local Failover Commute",
-        from_type="ha",
-        from_id="ha:home",
-        from_name="Home",
-        to_type="custom",
-        to_id="custom:office",
-        to_name="Office",
-    )
+    # Low sensitivity setting (15m delay threshold)
+    Setting.set_val("reroute_sensitivity", "low")
+    req_low, _ = engine.check_disruption_requires_reroute(delay_minutes=12)
+    assert req_low is False
+    req_low_hit, reason_low = engine.check_disruption_requires_reroute(delay_minutes=16)
+    assert req_low_hit is True
+    assert "15m threshold" in reason_low
 
-    route_primary = JourneyRoute.create(
-        journey_id=journey.id,
-        name="Bus 73 (Primary)",
-        is_preferred=True,
-        is_enabled=True,
-        auto_generated=True,
-        total_duration_est_minutes=30,
-        transfer_count=0,
-        primary_mode="bus",
-    )
-    route_secondary = JourneyRoute.create(
-        journey_id=journey.id,
-        name="Thameslink Rail (Backup)",
-        is_preferred=False,
-        is_enabled=True,
-        auto_generated=True,
-        total_duration_est_minutes=25,
-        transfer_count=0,
-        primary_mode="rail",
-    )
-
-    engine = RerouteEngine()
-    selected_route, strategy = engine.evaluate_and_reroute(
-        journey=journey,
-        trigger_reason="Delay of 14m on Bus 73",
-        current_route_id=route_primary.id,
-    )
-
-    assert selected_route is not None
-    assert selected_route.id == route_secondary.id
-    assert strategy == "local_failover"
-
-    # Verify preference switch
-    assert JourneyRoute.get_by_id(route_secondary.id).is_preferred is True
-    assert JourneyRoute.get_by_id(route_primary.id).is_preferred is False
-
-    # Verify audit log
-    logs = list(
-        RouteQueryLog.select().where(
-            (RouteQueryLog.journey_id == journey.id)
-            & (RouteQueryLog.query_type == "local_failover")
-        )
-    )
-    assert len(logs) == 1
-    assert logs[0].selected_route_id == route_secondary.id
+    # Reset setting
+    Setting.set_val("reroute_sensitivity", "medium")
 
 
-def test_reroute_tier2_google_routes_api() -> None:
-    """Test Tier 2 live Google Routes API query when no local alternatives exist."""
+def test_reroute_dynamic_planning() -> None:
+    """Test dynamic live rerouting via Google Routes API and audit logging."""
     Location.create(
-        id="ha:home_tier2",
-        name="Home",
+        id="ha:home_reroute",
+        name="London King's Cross Residence",
         location_type="ha",
         latitude=51.5308,
         longitude=-0.1238,
     )
     Location.create(
-        id="custom:office_tier2",
-        name="Office",
+        id="custom:office_reroute",
+        name="Old Street Tech Hub",
         location_type="custom",
-        latitude=51.5284,
-        longitude=-0.1331,
+        latitude=51.5255,
+        longitude=-0.0875,
     )
 
     journey = Journey.create(
-        name="Live Cloud Reroute Commute",
+        name="London Morning Commute",
         from_type="ha",
-        from_id="ha:home_tier2",
-        from_name="Home",
+        from_id="ha:home_reroute",
+        from_name="London King's Cross Residence",
         to_type="custom",
-        to_id="custom:office_tier2",
-        to_name="Office",
+        to_id="custom:office_reroute",
+        to_name="Old Street Tech Hub",
     )
 
     mock_google = MagicMock()
@@ -140,7 +98,7 @@ def test_reroute_tier2_google_routes_api() -> None:
         "routes": [
             {
                 "duration": "1080s",
-                "description": "Great Northern Detour",
+                "description": "Northern Line Detour",
                 "legs": [
                     {
                         "steps": [
@@ -149,12 +107,16 @@ def test_reroute_tier2_google_routes_api() -> None:
                                 "staticDuration": "900s",
                                 "transitDetails": {
                                     "stopDetails": {
-                                        "departureStop": {"name": "King's Cross"},
-                                        "arrivalStop": {"name": "Moorgate"},
+                                        "departureStop": {
+                                            "name": "King's Cross St. Pancras"
+                                        },
+                                        "arrivalStop": {"name": "Old Street"},
+                                        "departureTime": "2026-10-02T08:15:00Z",
+                                        "arrivalTime": "2026-10-02T08:30:00Z",
                                     },
                                     "transitLine": {
-                                        "nameShort": "GN",
-                                        "vehicle": {"type": "HEAVY_RAIL"},
+                                        "nameShort": "Northern",
+                                        "vehicle": {"type": "SUBWAY"},
                                     },
                                 },
                             }
@@ -165,17 +127,19 @@ def test_reroute_tier2_google_routes_api() -> None:
         ]
     }
 
-    engine = RerouteEngine(google_client=mock_google)
-    selected_route, strategy = engine.evaluate_and_reroute(
+    planner = DynamicRoutePlanner(google_client=mock_google)
+    engine = RerouteEngine(google_client=mock_google, dynamic_planner=planner)
+
+    selected_itin, strategy = engine.evaluate_and_reroute(
         journey=journey,
         trigger_reason="Train cancelled at King's Cross",
-        departure_time=datetime.datetime(2026, 9, 26, 8, 15, 0),
+        departure_time=datetime.datetime(2026, 10, 2, 8, 10, 0),
     )
 
-    assert selected_route is not None
-    assert strategy == "google_reroute"
-    assert selected_route.name == "Great Northern Detour"
-    assert selected_route.is_preferred is True
+    assert selected_itin is not None
+    assert strategy == "dynamic_reroute"
+    assert len(selected_itin.legs) >= 1
+    assert selected_itin.legs[0].line == "Northern"
 
     # Verify query logged with delay_reroute query_type
     logs = list(
@@ -189,26 +153,65 @@ def test_reroute_tier2_google_routes_api() -> None:
 
 
 def test_reroute_updates_active_journey_session() -> None:
-    """Test that executing a reroute flushes the updated session to SQLite settings table."""
-    journey = Journey.create(
-        name="Session Commute",
-        from_type="ha",
-        from_id="ha:home_session",
-        from_name="Home",
-        to_type="custom",
-        to_id="custom:office_session",
-        to_name="Office",
+    """Test that executing a dynamic reroute updates the active session with new legs and resets delay."""
+    Location.create(
+        id="ha:home_session",
+        name="London King's Cross Residence",
+        location_type="ha",
+        latitude=51.5308,
+        longitude=-0.1238,
+    )
+    Location.create(
+        id="custom:office_session",
+        name="London Euston Offices",
+        location_type="custom",
+        latitude=51.5284,
+        longitude=-0.1331,
     )
 
-    route_backup = JourneyRoute.create(
-        journey_id=journey.id,
-        name="Metro Backup",
-        is_preferred=False,
-        is_enabled=True,
-        auto_generated=True,
-        total_duration_est_minutes=20,
-        primary_mode="metro",
+    journey = Journey.create(
+        name="Active Session Commute",
+        from_type="ha",
+        from_id="ha:home_session",
+        from_name="London King's Cross Residence",
+        to_type="custom",
+        to_id="custom:office_session",
+        to_name="London Euston Offices",
     )
+
+    mock_google = MagicMock()
+    mock_google.compute_transit_routes.return_value = {
+        "routes": [
+            {
+                "duration": "720s",
+                "description": "Bus 73 Detour",
+                "legs": [
+                    {
+                        "steps": [
+                            {
+                                "travelMode": "TRANSIT",
+                                "staticDuration": "600s",
+                                "transitDetails": {
+                                    "stopDetails": {
+                                        "departureStop": {
+                                            "name": "King's Cross Station"
+                                        },
+                                        "arrivalStop": {"name": "Euston Station"},
+                                        "departureTime": "2026-10-02T08:20:00Z",
+                                        "arrivalTime": "2026-10-02T08:30:00Z",
+                                    },
+                                    "transitLine": {
+                                        "nameShort": "73",
+                                        "vehicle": {"type": "BUS"},
+                                    },
+                                },
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
 
     active_session = ActiveJourney(
         journey_id=journey.id,
@@ -218,22 +221,25 @@ def test_reroute_updates_active_journey_session() -> None:
         to_type=journey.to_type,
         to_id=journey.to_id,
         delay_minutes=15,
-        delay_reason="Train signal failure",
+        delay_reason="Original service cancelled",
     )
 
-    engine = RerouteEngine()
-    new_route, strategy = engine.evaluate_and_reroute(
+    planner = DynamicRoutePlanner(google_client=mock_google)
+    engine = RerouteEngine(google_client=mock_google, dynamic_planner=planner)
+
+    new_itin, strategy = engine.evaluate_and_reroute(
         journey=journey,
         trigger_reason="Train delay of 15m",
         active_session=active_session,
     )
 
-    assert new_route.id == route_backup.id
-    assert strategy == "local_failover"
+    assert new_itin is not None
+    assert strategy == "dynamic_reroute"
 
-    # Verify persisted in SQLite settings
+    # Verify session was updated and persisted in SQLite settings
     sessions = load_active_journey_sessions()
     assert journey.id in sessions
-    persisted_session = sessions[journey.id]
-    assert "Rerouted: Metro Backup" in persisted_session.delay_reason
-    assert persisted_session.delay_minutes == 0
+    persisted = sessions[journey.id]
+    assert "Rerouted: Train delay of 15m" in persisted.delay_reason
+    assert persisted.delay_minutes == 0
+    assert len(persisted.legs) >= 1
