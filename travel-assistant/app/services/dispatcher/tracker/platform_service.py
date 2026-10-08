@@ -178,8 +178,30 @@ def resolve_live_rail_platform(
                 cleaned_delay_reason = clean_delay_reason(raw_delay_reason)
                 cleaned_cancel_reason = clean_delay_reason(raw_cancel_reason)
 
+                raw_dest = target_dep.get("destination")
+                service_destination = None
+                if isinstance(raw_dest, list) and raw_dest:
+                    first_d = raw_dest[0]
+                    if isinstance(first_d, dict):
+                        service_destination = first_d.get(
+                            "locationName"
+                        ) or first_d.get("crs")
+                    elif isinstance(first_d, str):
+                        service_destination = first_d
+                elif isinstance(raw_dest, dict):
+                    service_destination = raw_dest.get("locationName") or raw_dest.get(
+                        "crs"
+                    )
+                elif isinstance(raw_dest, str):
+                    service_destination = raw_dest
+
                 return LiveRailStatus(
                     platform=str(platform).strip() if platform else None,
+                    service_destination=(
+                        str(service_destination).strip()
+                        if service_destination
+                        else None
+                    ),
                     std=str(std).strip() if std else None,
                     etd=str(etd).strip() if etd else None,
                     delay_minutes=delay_mins,

@@ -250,7 +250,7 @@ def test_update_journey_progress_walking_egress_stable_eta_no_notification_churn
         t0 = datetime.datetime(2026, 9, 7, 8, 22, 0)
         active.last_notification_time = t0
         active.last_notification_message = (
-            "Final leg: Walk to Tech Campus. Estimated arrival at 08:28."
+            "🏁 Final leg: Walk to Tech Campus • ETA 08:28"
         )
 
         mock_ha = MagicMock(spec=HomeAssistantClient)

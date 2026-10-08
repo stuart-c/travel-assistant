@@ -96,8 +96,9 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
         active = create_sample_active_journey(with_rail=False)
         active.current_status = JourneyStepStatus.PRE_DEPARTURE
         active.last_notification_message = (
-            "Leave by 08:00 (walk 8m) for Bus 73 from King's Cross (Stop E) "
-            "departing at 08:08 (scheduled). Estimated arrival at Tech Campus by 08:28."
+            "Depart by 08:00 (walk 8m)\n"
+            "🚌 Bus 73 to Euston Station (Stop C): King's Cross (Stop E) 08:08 ➔ Euston Station (Stop C) 08:22\n"
+            "🏁 Arrive Tech Campus by 08:28"
         )
 
         mock_ha = MagicMock(spec=HomeAssistantClient)
@@ -126,7 +127,7 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
         assert active.current_status == JourneyStepStatus.EN_ROUTE_TO_STOP
         mock_ha.send_mobile_notification.assert_called_once()
         call_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "On your way to King's Cross (Stop E)." in call_msg
+        assert "On your way to King's Cross (Stop E)" in call_msg
 
         # 3. Stuart arrives at King's Cross Stop E (51.5302, -0.1225)
         mock_ha.reset_mock()
@@ -141,7 +142,7 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
         assert active.current_leg_index == 1
         assert active.current_status == JourneyStepStatus.AT_DEPARTURE_STOP
         call_msg3 = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "At King's Cross (Stop E)." in call_msg3
+        assert "At King's Cross (Stop E)" in call_msg3
 
         # 4. Bus departs at 08:08; at 08:12 Stuart is on transit midway to Euston (51.5270, -0.1280)
         mock_ha.reset_mock()
@@ -155,8 +156,8 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
         assert res4 is True
         assert active.current_status == JourneyStepStatus.ON_TRANSIT
         call_msg4 = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "On board Bus 73 towards Euston Station (Stop C)." in call_msg4
-        assert "Next step: Walk 6m to Tech Campus." in call_msg4
+        assert "On board Bus 73 to Euston Station (Stop C)" in call_msg4
+        assert "Alighting Euston Station (Stop C) 08:22" in call_msg4
 
         # 5. Bus reaches Euston Stop C (51.5240, -0.1325) -> Stuart exits and begins final walk
         mock_ha.reset_mock()
@@ -171,7 +172,7 @@ def test_update_journey_progress_full_journey_progression(app: Flask) -> None:
         assert active.current_leg_index == 2
         assert active.current_status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION
         call_msg5 = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "Final leg: Walk to Tech Campus." in call_msg5
+        assert "Final leg: Walk to Tech Campus" in call_msg5
 
         # 6. Stuart arrives at Tech Campus (51.5200, -0.1340)
         mock_ha.reset_mock()
@@ -201,7 +202,7 @@ def test_update_journey_progress_live_platform_update(app: Flask) -> None:
         active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
         active.current_leg_index = 1
         active.platform = None
-        active.last_notification_message = "At London King's Cross. Rail Thameslink to Cambridge departs at 08:08 (scheduled) from Platform to be announced. Next step: Walk 6m to Tech Campus."
+        active.last_notification_message = "📍 At London King's Cross\n🚆 Govia to Cambridge (Platform to be announced) • departing at 08:08\n🏁 Arrive Tech Campus by 08:28"
 
         mock_ha = MagicMock(spec=HomeAssistantClient)
         mock_live = MagicMock(spec=TrainLiveClient)
@@ -226,8 +227,8 @@ def test_update_journey_progress_live_platform_update(app: Flask) -> None:
         assert res is True
         assert active.platform == "9"
         call_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "from Platform 9" in call_msg
-        assert "on time" in call_msg
+        assert "Platform 9" in call_msg
+        assert "(on time)" in call_msg
 
 
 def test_update_journey_progress_stuart_wanders_far_away(app: Flask) -> None:

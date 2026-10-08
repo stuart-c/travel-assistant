@@ -437,12 +437,166 @@ def format_next_step_for_on_transit(
     )
 
 
+def resolve_service_destination(
+    leg: ItineraryLeg,
+    live_service_dest: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve the true service destination (matching travel boards) for a transit leg.
+
+    Prioritises:
+    1. Real-time Darwin train destination (e.g. 'Brighton', 'Kings Lynn', 'Ely')
+    2. Headsign if set (e.g. '73 to Euston', 'TL 1T44')
+    3. Destination parsed from line title (e.g. 'London Kings Cross to Cambridge' -> 'Cambridge')
+    4. Leg endpoint destination name as fallback
+    """
+    if live_service_dest:
+        dest_clean = live_service_dest.strip()
+        if dest_clean:
+            return dest_clean
+
+    if leg.headsign:
+        hs = leg.headsign.strip()
+        # Clean headsigns like 'TL 1T44' or '73 to Euston'
+        if " to " in hs:
+            return hs.split(" to ", 1)[1].strip()
+        if hs:
+            return hs
+
+    line_clean = (leg.line or "").strip()
+    if line_clean:
+        line_clean = re.sub(r"\s*\([A-Za-z0-9\-,\s]+\)$", "", line_clean).strip()
+        if " to " in line_clean or " - " in line_clean:
+            sep = " to " if " to " in line_clean else " - "
+            dest_part = line_clean.split(sep, 1)[1].strip()
+            if dest_part:
+                return dest_part
+
+    if leg.destination and leg.destination.name:
+        return leg.destination.name.strip()
+
+    return None
+
+
+def format_compact_delay_badge(
+    dep_time: str,
+    live_status: Optional[str] = None,
+    delay_reason: Optional[str] = None,
+) -> str:
+    """Format a compact delay/running badge for single-line transit entries."""
+    if not live_status:
+        return ""
+    if live_status == "On time":
+        return " (on time)"
+    if live_status == "Cancelled":
+        reason = f" due to {delay_reason}" if delay_reason else ""
+        return f" (cancelled{reason})"
+    if live_status == "Delayed":
+        reason = f" due to {delay_reason}" if delay_reason else ""
+        return f" (delayed{reason})"
+    if ":" in live_status:
+        reason = f" due to {delay_reason}" if delay_reason else ""
+        return f" (expected {live_status}{reason})"
+    return f" ({live_status})"
+
+
+def format_leg_line(
+    leg: ItineraryLeg,
+    platform: Optional[str] = None,
+    live_status: Optional[str] = None,
+    delay_reason: Optional[str] = None,
+    live_service_dest: Optional[str] = None,
+    is_current_on_transit: bool = False,
+    is_current_at_stop: bool = False,
+) -> str:
+    """Format an individual transit or walk leg onto its own line matching travel boards."""
+    if leg.mode in FOOT_MODES:
+        dest_name = leg.destination.name if leg.destination else "destination"
+        mins = leg.duration_minutes or 0
+        return f"🚶 Walk {mins}m to {dest_name}"
+
+    icon = "🚆" if leg.mode == "rail" else "🚌"
+    serv_dest = resolve_service_destination(leg, live_service_dest)
+
+    # Base service title
+    op = (leg.operator or "").strip()
+    line_clean = (leg.line or "").strip()
+    line_clean = re.sub(r"\s*\([A-Za-z0-9\-,\s]+\)$", "", line_clean).strip()
+
+    # Determine service branding (e.g. Thameslink, Bus SB1, Bus 73, Shuttle Bus)
+    if leg.mode == "rail":
+        brand = (
+            op
+            if op
+            else (line_clean if line_clean and " to " not in line_clean else "Train")
+        )
+    else:
+        if line_clean and "bus" in line_clean.lower():
+            brand = line_clean
+        elif line_clean and any(c.isdigit() for c in line_clean):
+            brand = f"Bus {line_clean}"
+        elif op:
+            brand = f"{op} Bus" if "bus" not in op.lower() else op
+        else:
+            brand = "Bus"
+
+    dest_clause = f" to {serv_dest}" if serv_dest else ""
+    service_label = f"{brand}{dest_clause}"
+
+    plat_label = ""
+    plat_val = platform or (leg.origin.platform if leg.origin else None)
+    if plat_val:
+        plat_str = str(plat_val).strip()
+        if leg.mode == "rail":
+            plat_num = plat_str.replace("Platform", "").replace("platform", "").strip()
+            plat_label = (
+                f" (Platform {plat_num})" if plat_num else " (Platform to be announced)"
+            )
+        elif any(w in plat_str.lower() for w in ("stop", "stand", "bay")):
+            plat_label = f" (from {plat_str})"
+    elif leg.mode == "rail":
+        plat_label = " (Platform to be announced)"
+
+    delay_badge = format_compact_delay_badge(leg.dep_time, live_status, delay_reason)
+
+    orig_name = leg.origin.name if leg.origin else ""
+    dest_name = leg.destination.name if leg.destination else ""
+
+    if is_current_on_transit:
+        alight_time = leg.arr_time or ""
+        alight_clause = f" • Alighting {dest_name} {alight_time}" if dest_name else ""
+        return f"{icon} On board {service_label}{plat_label}{alight_clause}"
+
+    if is_current_at_stop:
+        plat_note = ""
+        if plat_val and leg.mode == "rail":
+            plat_num = (
+                str(plat_val).replace("Platform", "").replace("platform", "").strip()
+            )
+            plat_note = (
+                f" (Platform {plat_num})" if plat_num else " (Platform to be announced)"
+            )
+        elif leg.mode == "rail":
+            plat_note = " (Platform to be announced)"
+        elif plat_val and any(
+            w in str(plat_val).lower() for w in ("stop", "stand", "bay")
+        ):
+            plat_note = f" from {plat_val}"
+
+        return f"{icon} {service_label}{plat_note} • departing at {leg.dep_time}{delay_badge}"
+
+    timing_clause = f"{orig_name} {leg.dep_time} ➔ {dest_name} {leg.arr_time}".strip()
+    return f"{icon} {service_label}{plat_label}: {timing_clause}{delay_badge}"
+
+
 __all__ = [
     "_format_departure_timing_with_delay",
     "_format_interchange_boarding_clause",
     "_format_platform_label",
     "_format_transit_service_desc",
     "_format_upcoming_change_platforms",
+    "format_compact_delay_badge",
+    "format_leg_line",
     "format_next_step_for_departure",
     "format_next_step_for_on_transit",
+    "resolve_service_destination",
 ]
