@@ -12,14 +12,7 @@ from app.services.dispatcher.tracker.models import (
     ItineraryLeg,
     JourneyStepStatus,
 )
-from app.services.dispatcher.tracker.service_description import (
-    _format_departure_timing_with_delay,
-    _format_interchange_boarding_clause,
-    _format_platform_label,
-    _format_transit_service_desc,
-    format_next_step_for_departure,
-    format_next_step_for_on_transit,
-)
+from app.services.dispatcher.tracker.service_description import format_leg_line
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 
@@ -67,12 +60,12 @@ def _format_arrival_clause(
     to_name: str,
     expected_arr: str,
 ) -> str:
-    """Format expected arrival clause in British English."""
+    """Format expected arrival line in British English."""
     if not expected_arr:
         return ""
     if to_name:
-        return f" Estimated arrival at {to_name} by {expected_arr}."
-    return f" Estimated arrival by {expected_arr}."
+        return f"🏁 Arrive {to_name} by {expected_arr}"
+    return f"🏁 Arrive by {expected_arr}"
 
 
 def format_progress_notification(
@@ -91,7 +84,8 @@ def format_progress_notification(
     status = active.current_status
     arr_str = _resolve_expected_arrival_time(active, current_dt)
     arr_clause = _format_arrival_clause(active.to_name, arr_str)
-    message = ""
+
+    lines = []
 
     if status == JourneyStepStatus.PRE_DEPARTURE:
         first_transit = next(
@@ -105,51 +99,44 @@ def format_progress_notification(
         walk_mins = walk_leg.duration_minutes if walk_leg else 0
         walk_info = f"walk {walk_mins}m" if walk_mins > 0 else "direct departure"
 
-        transit_desc = (
-            _format_transit_service_desc(
-                first_transit.mode,
-                first_transit.line,
-                first_transit.operator,
-                destination=(first_transit.destination.name if first_transit else None),
-            )
-            if first_transit
-            else "direct departure"
-        )
         dep_time = (
             first_transit.dep_time
             if first_transit
             else (active.itinerary.departure_time if active.itinerary else "00:00")
         )
-        origin_name = first_transit.origin.name if first_transit else active.from_name
-
         dep_min = parse_time_to_minutes(dep_time) or 0
         leave_min = dep_min - walk_mins
         leave_time_str = format_minutes_to_time(leave_min)
 
-        plat_note = (
-            f" (Platform {active.platform})"
-            if (active.platform and first_transit and first_transit.mode == "rail")
-            else ""
-        )
-        dep_desc = _format_departure_timing_with_delay(
-            dep_time=dep_time,
-            live_status=active.live_status,
-            delay_reason=active.delay_reason,
-        )
+        lines.append(f"Depart by {leave_time_str} ({walk_info})")
 
-        next_step_info = ""
-        if first_transit:
-            next_step_info = format_next_step_for_departure(
-                active.legs,
-                first_transit,
-                only_transit=True,
-                live_client=live_client,
-            )
+        # Add all transit legs
+        transit_legs = [lg for lg in active.legs if lg.mode not in FOOT_MODES]
+        if not transit_legs and active.legs:
+            # Entire journey is walking
+            for lg in active.legs:
+                lines.append(format_leg_line(lg))
+        else:
+            for i, lg in enumerate(transit_legs):
+                is_first = i == 0
+                plat = (
+                    active.platform
+                    if (is_first and lg.mode == "rail")
+                    else lg.origin.platform
+                )
+                liv_st = active.live_status if is_first else None
+                del_reas = active.delay_reason if is_first else None
+                lines.append(
+                    format_leg_line(
+                        lg,
+                        platform=plat,
+                        live_status=liv_st,
+                        delay_reason=del_reas,
+                    )
+                )
 
-        message = (
-            f"Leave by {leave_time_str} ({walk_info}) for {transit_desc}{plat_note} "
-            f"from {origin_name} departing at {dep_desc}.{next_step_info}{arr_clause}"
-        )
+        if arr_clause:
+            lines.append(arr_clause)
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_STOP:
         next_transit = next(
@@ -161,42 +148,33 @@ def format_progress_notification(
             current_leg,
         )
         stop_name = next_transit.origin.name if next_transit else "departure stop"
-        line_desc = (
-            _format_transit_service_desc(
-                next_transit.mode,
-                next_transit.line,
-                next_transit.operator,
-                destination=(next_transit.destination.name if next_transit else None),
+        lines.append(f"🚶 On your way to {stop_name}")
+
+        remaining_transit = [
+            lg
+            for lg in active.legs[active.current_leg_index :]
+            if lg.mode not in FOOT_MODES
+        ]
+        for i, lg in enumerate(remaining_transit):
+            is_first = i == 0
+            plat = (
+                active.platform
+                if (is_first and lg.mode == "rail")
+                else lg.origin.platform
             )
-            if next_transit
-            else "Transit"
-        )
-        dep_time = next_transit.dep_time if next_transit else ""
-        next_step_info = (
-            format_next_step_for_departure(
-                active.legs,
-                next_transit,
-                only_transit=True,
-                live_client=live_client,
+            liv_st = active.live_status if is_first else None
+            del_reas = active.delay_reason if is_first else None
+            lines.append(
+                format_leg_line(
+                    lg,
+                    platform=plat,
+                    live_status=liv_st,
+                    delay_reason=del_reas,
+                )
             )
-            if next_transit
-            else ""
-        )
-        dep_desc = _format_departure_timing_with_delay(
-            dep_time=dep_time,
-            live_status=active.live_status,
-            delay_reason=active.delay_reason,
-        )
-        plat_note = (
-            f" (Platform {active.platform})"
-            if (active.platform and next_transit and next_transit.mode == "rail")
-            else ""
-        )
-        dest_part = arr_clause if arr_clause else f" Destination: {active.to_name}."
-        message = (
-            f"On your way to {stop_name}. "
-            f"{line_desc}{plat_note} departs at {dep_desc}.{next_step_info}{dest_part}"
-        )
+
+        if arr_clause:
+            lines.append(arr_clause)
 
     elif status == JourneyStepStatus.AT_DEPARTURE_STOP:
         active_transit = (
@@ -211,116 +189,79 @@ def format_progress_notification(
                 None,
             )
         )
-        next_step_info = (
-            format_next_step_for_departure(
-                active.legs,
-                active_transit,
-                only_transit=False,
-                live_client=live_client,
+        stop_name = active_transit.origin.name if active_transit else "departure stop"
+        lines.append(f"📍 At {stop_name}")
+
+        if active_transit:
+            plat = (
+                active.platform
+                if active_transit.mode == "rail"
+                else active_transit.origin.platform
             )
-            if active_transit
-            else ""
-        )
-        if active_transit and active_transit.mode == "rail":
-            plat_info = (
-                f"Platform {active.platform}"
-                if active.platform
-                else "Platform to be announced"
+            lines.append(
+                format_leg_line(
+                    active_transit,
+                    platform=plat,
+                    live_status=active.live_status,
+                    delay_reason=active.delay_reason,
+                    is_current_at_stop=True,
+                )
             )
-            dep_desc = _format_departure_timing_with_delay(
-                dep_time=active_transit.dep_time,
-                live_status=active.live_status,
-                delay_reason=active.delay_reason,
+
+        # Show subsequent transit connections
+        if active_transit:
+            idx = (
+                active.legs.index(active_transit)
+                if active_transit in active.legs
+                else active.current_leg_index
             )
-            line_desc = _format_transit_service_desc(
-                active_transit.mode, active_transit.line, active_transit.operator
-            )
-            message = (
-                f"At {active_transit.origin.name}. "
-                f"{line_desc} to {active_transit.destination.name} departs at "
-                f"{dep_desc} from {plat_info}.{next_step_info}{arr_clause}"
-            )
-        elif active_transit:
-            line_desc = _format_transit_service_desc(
-                active_transit.mode, active_transit.line, active_transit.operator
-            )
-            plat_info = ""
-            if active.platform and any(
-                w in active.platform.lower() for w in ("stand", "stop")
-            ):
-                plat_info = f" from {active.platform}"
-            dep_desc = _format_departure_timing_with_delay(
-                dep_time=active_transit.dep_time,
-                live_status=active.live_status,
-                delay_reason=active.delay_reason,
-            )
-            message = (
-                f"At {active_transit.origin.name}. "
-                f"{line_desc} to {active_transit.destination.name} departs at {dep_desc}{plat_info}.{next_step_info}{arr_clause}"
-            )
-        else:
-            message = (
-                f"At departure stop for {active.to_name}.{arr_clause}"
-                if arr_clause
-                else f"At departure stop for {active.to_name}."
-            )
+            subsequent_transit = [
+                lg for lg in active.legs[idx + 1 :] if lg.mode not in FOOT_MODES
+            ]
+            for lg in subsequent_transit:
+                lines.append(format_leg_line(lg, platform=lg.origin.platform))
+
+        if arr_clause:
+            lines.append(arr_clause)
 
     elif status == JourneyStepStatus.ON_TRANSIT:
         if current_leg:
-            line_desc = _format_transit_service_desc(
-                current_leg.mode, current_leg.line, current_leg.operator
+            plat = (
+                active.platform
+                if current_leg.mode == "rail"
+                else current_leg.origin.platform
             )
-            next_step_info = format_next_step_for_on_transit(
-                active.legs,
-                active.current_leg_index,
-                current_leg,
-                live_client=live_client,
+            lines.append(
+                format_leg_line(
+                    current_leg,
+                    platform=plat,
+                    live_status=active.live_status,
+                    delay_reason=active.delay_reason,
+                    is_current_on_transit=True,
+                )
             )
-            plat_note = ""
-            if current_leg.mode == "rail" and active.platform:
-                plat_note = f" (Platform {active.platform})"
-            elif (
-                current_leg.mode != "rail"
-                and active.platform
-                and any(w in active.platform.lower() for w in ("stand", "stop"))
-            ):
-                plat_note = f" ({active.platform})"
-
-            dest_arr_clause = ""
-            if (
-                current_leg.destination
-                and active.to_name
-                and current_leg.destination.name.strip().lower()
-                != active.to_name.strip().lower()
-            ):
-                dest_arr_clause = arr_clause
-
-            message = (
-                f"On board {line_desc}{plat_note} towards {current_leg.destination.name}. "
-                f"Expected arrival at {current_leg.arr_time}.{next_step_info}{dest_arr_clause}"
-            )
+            # Show subsequent transit connections
+            subsequent_transit = [
+                lg
+                for lg in active.legs[active.current_leg_index + 1 :]
+                if lg.mode not in FOOT_MODES
+            ]
+            for lg in subsequent_transit:
+                lines.append(format_leg_line(lg, platform=lg.origin.platform))
         else:
-            message = (
-                f"In transit towards {active.to_name}.{arr_clause}"
-                if arr_clause
-                else f"In transit towards {active.to_name}."
-            )
+            lines.append(f"In transit towards {active.to_name}")
+
+        if arr_clause:
+            lines.append(arr_clause)
 
     elif status == JourneyStepStatus.AT_INTERCHANGE:
-        preceding_transit = (
-            active.legs[active.current_leg_index - 1]
-            if 0 < active.current_leg_index <= len(active.legs)
-            else None
-        )
-        arr_plat = (
-            preceding_transit.destination.platform
-            if preceding_transit and preceding_transit.destination
-            else None
-        )
+        interchange_name = current_leg.origin.name if current_leg else "Interchange"
+        lines.append(f"📍 At {interchange_name}")
 
-        if current_leg and current_leg.mode in FOOT_MODES:
-            arr_plat = arr_plat or current_leg.origin.platform
-            next_transit = next(
+        next_transit = (
+            current_leg
+            if (current_leg and current_leg.mode not in FOOT_MODES)
+            else next(
                 (
                     lg
                     for lg in active.legs[active.current_leg_index :]
@@ -328,80 +269,37 @@ def format_progress_notification(
                 ),
                 None,
             )
-            if next_transit:
-                transfer_desc = _format_transit_service_desc(
-                    next_transit.mode,
-                    next_transit.line,
-                    next_transit.operator,
-                    destination=next_transit.destination.name,
-                )
-                dep_plat = (
-                    active.platform
-                    or next_transit.origin.platform
-                    or current_leg.destination.platform
-                )
-                dep_desc = _format_departure_timing_with_delay(
-                    dep_time=next_transit.dep_time,
+        )
+        if next_transit:
+            plat = active.platform or next_transit.origin.platform
+            lines.append(
+                format_leg_line(
+                    next_transit,
+                    platform=plat,
                     live_status=(
                         active.live_status if next_transit.mode == "rail" else None
                     ),
                     delay_reason=(
                         active.delay_reason if next_transit.mode == "rail" else None
                     ),
+                    is_current_at_stop=True,
                 )
-                arr_label = _format_platform_label(
-                    arr_plat, preceding_transit.mode if preceding_transit else "rail"
-                )
-                dep_label = _format_platform_label(dep_plat, next_transit.mode)
-                plat_clause = _format_interchange_boarding_clause(
-                    arr_label,
-                    dep_label,
-                    transfer_desc,
-                    next_transit.mode,
-                    is_walk_transfer=True,
-                )
-                message = (
-                    f"Transfer at {current_leg.origin.name}: "
-                    f"{plat_clause} departing at {dep_desc}.{arr_clause}"
-                )
-            else:
-                message = f"Transfer at {current_leg.origin.name}: Walk to {current_leg.destination.name}.{arr_clause}"
-        elif current_leg:
-            line_desc = _format_transit_service_desc(
-                current_leg.mode,
-                current_leg.line,
-                current_leg.operator,
-                destination=current_leg.destination.name,
             )
-            dep_plat = active.platform or current_leg.origin.platform
-            dep_desc = _format_departure_timing_with_delay(
-                dep_time=current_leg.dep_time,
-                live_status=active.live_status if current_leg.mode == "rail" else None,
-                delay_reason=(
-                    active.delay_reason if current_leg.mode == "rail" else None
-                ),
+            idx = (
+                active.legs.index(next_transit)
+                if next_transit in active.legs
+                else active.current_leg_index
             )
-            arr_label = _format_platform_label(
-                arr_plat, preceding_transit.mode if preceding_transit else "rail"
-            )
-            dep_label = _format_platform_label(dep_plat, current_leg.mode)
-            plat_clause = _format_interchange_boarding_clause(
-                arr_label,
-                dep_label,
-                line_desc,
-                current_leg.mode,
-                is_walk_transfer=False,
-            )
-            message = (
-                f"Transfer at {current_leg.origin.name}: "
-                f"{plat_clause} departing at {dep_desc}.{arr_clause}"
-            )
-        else:
-            message = (
-                f"Interchange stop: transfer to connecting service.{arr_clause}"
-                if arr_clause
-                else "Interchange stop: transfer to connecting service."
-            )
+            subsequent_transit = [
+                lg for lg in active.legs[idx + 1 :] if lg.mode not in FOOT_MODES
+            ]
+            for lg in subsequent_transit:
+                lines.append(format_leg_line(lg, platform=lg.origin.platform))
+        elif current_leg and current_leg.mode in FOOT_MODES:
+            lines.append(format_leg_line(current_leg))
+
+        if arr_clause:
+            lines.append(arr_clause)
 
     elif status == JourneyStepStatus.EN_ROUTE_TO_DESTINATION:
         arr_final = arr_str or (
@@ -413,8 +311,8 @@ def format_progress_notification(
             if current_dt and current_leg and current_leg.duration_minutes
             else ""
         )
-        arr_part = f" Estimated arrival at {arr_final}." if arr_final else ""
-        message = f"Final leg: Walk to {active.to_name}.{arr_part}".strip()
+        arr_part = f" • ETA {arr_final}" if arr_final else ""
+        lines.append(f"🏁 Final leg: Walk to {active.to_name}{arr_part}")
 
     elif status == JourneyStepStatus.ARRIVED:
         arr_time = (
@@ -445,16 +343,16 @@ def format_progress_notification(
         else:
             greeting = "Have a great day!"
 
-        message = (
+        lines.append(
             f"Journey complete: Arrived at {active.to_name} ({arr_time}). {greeting}"
         )
 
     else:
-        message = (
-            f"Journey update: en route to {active.to_name}.{arr_clause}"
-            if arr_clause
-            else f"Journey update: en route to {active.to_name}."
-        )
+        lines.append(f"Journey update: en route to {active.to_name}")
+        if arr_clause:
+            lines.append(arr_clause)
+
+    message = "\n".join(lines).strip()
 
     panel_slug = (
         Setting.get_val(

@@ -25,9 +25,10 @@ def test_format_progress_notification_stages() -> None:
     active.current_status = JourneyStepStatus.PRE_DEPARTURE
     title, msg, data = format_progress_notification(active)
     assert title == "Travel Alert: Daily Office Commute"
-    assert "Leave by 08:00 (walk 8m) for Rail Thameslink" in msg
-    assert "London King's Cross" in msg
-    assert "Estimated arrival at Tech Campus by 08:28." in msg
+    assert "Depart by 08:00 (walk 8m)" in msg
+    assert "Govia to Cambridge" in msg
+    assert "08:08 ➔ Cambridge 08:22" in msg
+    assert "🏁 Arrive Tech Campus by 08:28" in msg
     assert data["tag"] == "journey_1"
     assert data["url"] == "/journey?journey_id=1"
     assert data["clickAction"] == "/journey?journey_id=1"
@@ -45,16 +46,16 @@ def test_format_progress_notification_stages() -> None:
     _, msg_plat, _ = format_progress_notification(active)
     assert "(Platform 4)" in msg_plat
     assert "08:08" in msg_plat
-    assert "on time" in msg_plat
+    assert "(on time)" in msg_plat
 
     # 2. EN_ROUTE_TO_STOP
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
     active.current_leg_index = 0
     _, msg_en_route, _ = format_progress_notification(active)
-    assert "On your way to London King's Cross." in msg_en_route
-    assert "Rail Thameslink (Platform 4)" in msg_en_route
-    assert "on time" in msg_en_route
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_en_route
+    assert "On your way to London King's Cross" in msg_en_route
+    assert "Govia to Cambridge (Platform 4)" in msg_en_route
+    assert "(on time)" in msg_en_route
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_en_route
 
     # 3. AT_DEPARTURE_STOP (Rail)
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
@@ -62,39 +63,35 @@ def test_format_progress_notification_stages() -> None:
     active.platform = "4"
     active.live_status = "On time"
     _, msg_at_stop, _ = format_progress_notification(active)
-    assert "At London King's Cross." in msg_at_stop
-    assert "from Platform 4" in msg_at_stop
-    assert "on time" in msg_at_stop
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_at_stop
+    assert "At London King's Cross" in msg_at_stop
+    assert "(Platform 4)" in msg_at_stop
+    assert "departing at 08:08 (on time)" in msg_at_stop
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_at_stop
 
     # 3b. AT_DEPARTURE_STOP (Rail, platform unannounced)
     active.platform = None
     active.live_status = None
     _, msg_unannounced, _ = format_progress_notification(active)
     assert "Platform to be announced" in msg_unannounced
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_unannounced
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_unannounced
 
     # 3c. AT_DEPARTURE_STOP (Bus)
     active_bus = create_sample_active_journey(with_rail=False)
     active_bus.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
     active_bus.current_leg_index = 1
     _, msg_bus_stop, _ = format_progress_notification(active_bus)
-    assert "At King's Cross (Stop E)." in msg_bus_stop
-    assert (
-        "Bus 73 to Euston Station (Stop C) departs at 08:08 (scheduled)."
-        in msg_bus_stop
-    )
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_bus_stop
+    assert "At King's Cross (Stop E)" in msg_bus_stop
+    assert "Bus 73 to Euston Station (Stop C) • departing at 08:08" in msg_bus_stop
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_bus_stop
 
     # 4. ON_TRANSIT (with next leg walk)
     active.current_status = JourneyStepStatus.ON_TRANSIT
     active.current_leg_index = 1
     active.platform = "4"
     _, msg_transit, _ = format_progress_notification(active)
-    assert "On board Rail Thameslink (Platform 4) towards Cambridge." in msg_transit
-    assert "Expected arrival at 08:22." in msg_transit
-    assert "Next step: Walk 6m to Tech Campus." in msg_transit
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_transit
+    assert "On board Govia to Cambridge (Platform 4)" in msg_transit
+    assert "Alighting Cambridge 08:22" in msg_transit
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_transit
 
     # 4b. ON_TRANSIT (with next leg transit transfer)
     multi_active = create_sample_active_journey()
@@ -115,24 +112,24 @@ def test_format_progress_notification_stages() -> None:
     multi_active.legs[2].mode = "bus"
     multi_active.legs[2].line = "14"
     _, msg_transfer, _ = format_progress_notification(multi_active)
-    assert "Bus 14" in msg_transfer
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_transfer
+    assert "Bus 14 to North Office" in msg_transfer
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_transfer
 
     # 5. AT_INTERCHANGE
     active.current_status = JourneyStepStatus.AT_INTERCHANGE
     active.current_leg_index = 1
     active.platform = "2"
     _, msg_interchange, _ = format_progress_notification(active)
-    assert "Transfer at London King's Cross:" in msg_interchange
+    assert "At London King's Cross" in msg_interchange
     assert "Platform 2" in msg_interchange
-    assert "Estimated arrival at Tech Campus by 08:28." in msg_interchange
+    assert "🏁 Arrive Tech Campus by 08:28" in msg_interchange
 
     # 6. EN_ROUTE_TO_DESTINATION
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_DESTINATION
     active.current_leg_index = 2
     _, msg_egress, _ = format_progress_notification(active)
-    assert "Final leg: Walk to Tech Campus." in msg_egress
-    assert "Estimated arrival at 08:28." in msg_egress
+    assert "Final leg: Walk to Tech Campus" in msg_egress
+    assert "ETA 08:28" in msg_egress
 
     # 7. ARRIVED
     active.current_status = JourneyStepStatus.ARRIVED
@@ -148,24 +145,24 @@ def test_format_progress_notification_empty_leg_fallbacks() -> None:
 
     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
     _, msg1, _ = format_progress_notification(active)
-    assert "At departure stop for Tech Campus." in msg1
-    assert "Estimated arrival at Tech Campus by 08:28." in msg1
+    assert "At departure stop" in msg1
+    assert "🏁 Arrive Tech Campus by 08:28" in msg1
 
     active.current_status = JourneyStepStatus.ON_TRANSIT
     _, msg2, _ = format_progress_notification(active)
-    assert "In transit towards Tech Campus." in msg2
-    assert "Estimated arrival at Tech Campus by 08:28." in msg2
+    assert "In transit towards Tech Campus" in msg2
+    assert "🏁 Arrive Tech Campus by 08:28" in msg2
 
     active.current_status = JourneyStepStatus.AT_INTERCHANGE
     _, msg3, _ = format_progress_notification(active)
-    assert "Interchange stop: transfer to connecting service." in msg3
-    assert "Estimated arrival at Tech Campus by 08:28." in msg3
+    assert "At Interchange" in msg3
+    assert "🏁 Arrive Tech Campus by 08:28" in msg3
 
     # Fallback status
     active.current_status = JourneyStepStatus.EXPIRED
     _, msg4, _ = format_progress_notification(active)
-    assert "Journey update: en route to Tech Campus." in msg4
-    assert "Estimated arrival at Tech Campus by 08:28." in msg4
+    assert "Journey update: en route to Tech Campus" in msg4
+    assert "🏁 Arrive Tech Campus by 08:28" in msg4
 
 
 def test_format_notification_with_custom_ingress_panel_slug(app: Flask) -> None:
@@ -245,8 +242,8 @@ def test_format_progress_notification_interchange_foot_modes() -> None:
     )
 
     _, msg, _ = format_progress_notification(active)
-    assert "Transfer at Stevenage Rail Station" in msg
-    assert "Great Northern train towards Cambridge Rail Station" in msg
+    assert "At Stevenage Rail Station" in msg
+    assert "Great Northern to Cambridge Rail Station" in msg
     assert "06:48" in msg
     assert "On board Interchange" not in msg
 
@@ -329,33 +326,27 @@ def test_format_progress_notification_at_departure_stop_connecting_train() -> No
 
     # 1. AT_DEPARTURE_STOP
     _, msg, _ = format_progress_notification(active)
-    assert "At Shuttle Bus." in msg
-    assert (
-        "Shuttle Bus to Cambridge North Rail Station departs at 17:40 (scheduled)."
-        in msg
-    )
-    assert (
-        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
-        in msg
-    )
+    assert "At Shuttle Bus" in msg
+    assert "Shuttle Bus to Cambridge North Rail Station • departing at 17:40" in msg
+    assert "Great Northern to London Kings Cross Rail Station" in msg
+    assert "Cambridge North Rail Station 17:54 ➔ Stevenage Rail Station 18:39" in msg
+    assert "🏁 Arrive Home by 18:45" in msg
 
     # 2. PRE_DEPARTURE
     active.current_status = JourneyStepStatus.PRE_DEPARTURE
     _, msg_pre, _ = format_progress_notification(active)
-    assert "Leave by 17:36 (walk 4m)" in msg_pre
-    assert (
-        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
-        in msg_pre
-    )
+    assert "Depart by 17:36 (walk 4m)" in msg_pre
+    assert "Shuttle Bus to Cambridge North Rail Station" in msg_pre
+    assert "Great Northern to London Kings Cross Rail Station" in msg_pre
+    assert "🏁 Arrive Home by 18:45" in msg_pre
 
     # 3. EN_ROUTE_TO_STOP
     active.current_status = JourneyStepStatus.EN_ROUTE_TO_STOP
     _, msg_en_route, _ = format_progress_notification(active)
-    assert "On your way to Shuttle Bus." in msg_en_route
-    assert (
-        "Next step: Transfer at Cambridge North Rail Station (platforms to be announced) to board Great Northern train to Stevenage Rail Station departing at 17:54 (scheduled)."
-        in msg_en_route
-    )
+    assert "On your way to Shuttle Bus" in msg_en_route
+    assert "Shuttle Bus to Cambridge North Rail Station" in msg_en_route
+    assert "Great Northern to London Kings Cross Rail Station" in msg_en_route
+    assert "🏁 Arrive Home by 18:45" in msg_en_route
 
 
 def test_format_progress_notification_bus_interchange_no_platform() -> None:
@@ -366,10 +357,8 @@ def test_format_progress_notification_bus_interchange_no_platform() -> None:
     active.platform = None
     _, msg, _ = format_progress_notification(active)
     assert "Platform" not in msg
-    assert (
-        "Transfer at King's Cross (Stop E): Board Bus 73 departing at 08:08 (scheduled)."
-        in msg
-    )
+    assert "At King's Cross (Stop E)" in msg
+    assert "Bus 73 to Euston Station (Stop C) • departing at 08:08" in msg
 
     # Even if active.platform was mistakenly populated with a rail platform number, bus ignores it
     active.platform = "3"
@@ -462,13 +451,13 @@ def test_format_progress_notification_arrival_time_fallbacks() -> None:
     assert active.itinerary is not None
     active.itinerary.arrival_time = "08:35"
     _, msg1, _ = format_progress_notification(active)
-    assert "Estimated arrival at Tech Campus by 08:35." in msg1
+    assert "🏁 Arrive Tech Campus by 08:35" in msg1
 
     # 2. Fallback to legs[-1].arr_time when itinerary is None
     active.itinerary = None
     active.legs[-1].arr_time = "08:40"
     _, msg2, _ = format_progress_notification(active)
-    assert "Estimated arrival at Tech Campus by 08:40." in msg2
+    assert "🏁 Arrive Tech Campus by 08:40" in msg2
 
     # 3. Fallback to current_dt + remaining durations when legs arr_time is empty
     active.legs[-1].arr_time = ""
@@ -477,7 +466,7 @@ def test_format_progress_notification_arrival_time_fallbacks() -> None:
     now_dt = datetime.datetime(2026, 9, 29, 8, 10)
     # Remaining from index 1: 15 + 5 = 20 mins -> 08:30
     _, msg3, _ = format_progress_notification(active, current_dt=now_dt)
-    assert "Estimated arrival at Tech Campus by 08:30." in msg3
+    assert "🏁 Arrive Tech Campus by 08:30" in msg3
 
 
 def test_format_progress_notification_stale_arrival_time_recalculated() -> None:
@@ -495,7 +484,7 @@ def test_format_progress_notification_stale_arrival_time_recalculated() -> None:
     # Dynamic recalculation: 19:15 + (15 + 5 mins) = 19:35
     _, msg, _ = format_progress_notification(active, current_dt=now_dt)
     assert "19:02" not in msg
-    assert "Estimated arrival at Tech Campus by 19:35." in msg
+    assert "🏁 Arrive Tech Campus by 19:35" in msg
     assert active.expected_arrival_time == "19:35"
 
 

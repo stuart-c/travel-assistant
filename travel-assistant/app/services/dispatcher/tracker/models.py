@@ -34,6 +34,7 @@ class LiveRailStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     platform: Optional[str] = None
+    service_destination: Optional[str] = None
     std: Optional[str] = None
     etd: Optional[str] = None
     delay_minutes: int = 0

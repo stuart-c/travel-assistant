@@ -253,9 +253,9 @@ def test_update_journey_progress_advances_forward_bypassing_intermediate_leg(
         assert active.current_status == JourneyStepStatus.ON_TRANSIT
         mock_ha.send_mobile_notification.assert_called_once()
         msg = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "On board Great Northern train towards Cambridge Rail Station." in msg
-        assert "Expected arrival at 07:18." in msg
-        assert "Next step: Walk 10m to Cambridge Office." in msg
+        assert "On board Great Northern to Cambridge Rail Station" in msg
+        assert "Alighting Cambridge Rail Station 07:18" in msg
+        assert "🏁 Arrive Cambridge Office by 07:28" in msg
 
 
 def test_update_journey_progress_unresolved_coordinates_safe_fallback(
