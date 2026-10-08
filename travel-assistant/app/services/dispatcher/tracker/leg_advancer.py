@@ -2,9 +2,10 @@
 
 import datetime
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from app.datasources.train_live import TrainLiveClient
+from app.services.dispatcher.proximity import is_person_near_origin
 from app.services.dispatcher.tracker.models import (
     FOOT_MODES,
     ActiveJourney,
@@ -25,6 +26,57 @@ from app.utils.geo import (
 from app.utils.transit_time import format_minutes_to_time, parse_time_to_minutes
 
 logger = logging.getLogger(__name__)
+
+
+def _is_commuter_at_distinct_origin(
+    active: ActiveJourney,
+    person_state: Optional[Dict[str, Any]],
+    max_proximity_metres: float = 200.0,
+) -> bool:
+    """Check if commuter is at a distinct origin location separate from transit departure stop."""
+    if not person_state:
+        return False
+
+    if not is_person_near_origin(
+        person_state=person_state,
+        from_type=active.from_type,
+        from_id=active.from_id,
+        max_distance_metres=max_proximity_metres,
+    ):
+        return False
+
+    # If the first leg is transit and starts directly at the journey origin entity,
+    # the commuter at that station/stop is at the departure stop, not at home.
+    if active.legs:
+        first_leg = active.legs[0]
+        if first_leg.mode not in FOOT_MODES:
+            orig_id = (first_leg.origin.id or "").lower()
+            from_id = (active.from_id or "").lower()
+            if orig_id and from_id:
+                clean_orig = orig_id.split(":")[-1]
+                clean_from = from_id.split(":")[-1]
+                if clean_orig == clean_from and active.from_type not in (
+                    "ha",
+                    "custom",
+                ):
+                    return False
+
+    return True
+
+
+def _should_revert_to_pre_departure(
+    active: ActiveJourney,
+    person_state: Optional[Dict[str, Any]],
+    max_proximity_metres: float = 200.0,
+) -> bool:
+    """Evaluate whether an active journey at departure stop should revert to pre-departure."""
+    if active.current_status != JourneyStepStatus.AT_DEPARTURE_STOP:
+        return False
+    return _is_commuter_at_distinct_origin(
+        active=active,
+        person_state=person_state,
+        max_proximity_metres=max_proximity_metres,
+    )
 
 
 def _check_and_realign_rail_interchange(
@@ -269,6 +321,7 @@ def _advance_current_leg(
     live_client: Optional[TrainLiveClient],
     max_proximity_metres: float,
     old_status: JourneyStepStatus,
+    person_state: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Evaluate progress along the current leg.
 
@@ -310,12 +363,34 @@ def _advance_current_leg(
         ):
             curr_prox_dest = max(max_proximity_metres, 400.0)
 
+    # Check if commuter at departure stop returned to origin
+    if _should_revert_to_pre_departure(
+        active=active,
+        person_state=person_state,
+        max_proximity_metres=curr_prox_orig,
+    ):
+        active.current_status = JourneyStepStatus.PRE_DEPARTURE
+        if (
+            active.current_leg_index == 1
+            and active.legs
+            and active.legs[0].mode in FOOT_MODES
+        ):
+            active.current_leg_index = 0
+        return True
+
     dep_min = parse_time_to_minutes(leg.dep_time)
 
     if leg.mode in FOOT_MODES:
         if active.current_leg_index == 0:
             # First walking leg (origin -> departure stop)
-            if dist_to_orig is not None and dist_to_orig <= curr_prox_orig:
+            is_at_origin = _is_commuter_at_distinct_origin(
+                active=active,
+                person_state=person_state,
+                max_proximity_metres=curr_prox_orig,
+            )
+            if is_at_origin or (
+                dist_to_orig is not None and dist_to_orig <= curr_prox_orig
+            ):
                 active.current_status = JourneyStepStatus.PRE_DEPARTURE
             elif dist_to_dest is not None and dist_to_dest <= curr_prox_dest:
                 active.current_leg_index += 1
@@ -371,7 +446,19 @@ def _advance_current_leg(
                     active.current_status = JourneyStepStatus.AT_INTERCHANGE
     else:
         # Transit leg (rail, bus, metro, tram)
-        if dist_to_orig is not None and dist_to_orig <= curr_prox_orig:
+        is_at_origin = _is_commuter_at_distinct_origin(
+            active=active,
+            person_state=person_state,
+            max_proximity_metres=curr_prox_orig,
+        )
+        if is_at_origin and (
+            active.current_leg_index == 0
+            or (active.current_leg_index == 1 and active.legs[0].mode in FOOT_MODES)
+        ):
+            active.current_status = JourneyStepStatus.PRE_DEPARTURE
+            if active.current_leg_index == 1:
+                active.current_leg_index = 0
+        elif dist_to_orig is not None and dist_to_orig <= curr_prox_orig:
             if active.current_leg_index == 0 or (
                 active.current_leg_index == 1 and active.legs[0].mode in FOOT_MODES
             ):
@@ -450,7 +537,12 @@ def _advance_current_leg(
             elif active.current_leg_index == 0 or (
                 active.current_leg_index == 1 and active.legs[0].mode in FOOT_MODES
             ):
-                active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+                if is_at_origin:
+                    active.current_status = JourneyStepStatus.PRE_DEPARTURE
+                    if active.current_leg_index == 1:
+                        active.current_leg_index = 0
+                else:
+                    active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
             else:
                 active.current_status = JourneyStepStatus.AT_INTERCHANGE
 
@@ -460,4 +552,5 @@ def _advance_current_leg(
 __all__ = [
     "_advance_current_leg",
     "_advance_future_legs",
+    "_should_revert_to_pre_departure",
 ]

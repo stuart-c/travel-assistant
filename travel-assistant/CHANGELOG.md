@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added multi-stage unit test assertions and arrival time fallback tests.
 
 ### Fixed
+- **Reversion from At Departure Stop to Pre-Departure when at Origin** (`app/services/dispatcher/tracker/leg_advancer.py`, `app/services/dispatcher/tracker/progress.py`):
+  - Added state reversion allowing commuters in `AT_DEPARTURE_STOP` status who remain at or return to their journey origin to revert back to `PRE_DEPARTURE` (and reset the active leg back to leg 0 if walking), preventing journeys from becoming stuck when the departure stop is near the origin.
+  - Guarded initial walking leg 0 and transit departure stop detection from advancing prematurely when the commuter is still located at a distinct journey origin.
+  - Re-enabled commute window expiry and pre-departure rollover evaluation upon returning to `PRE_DEPARTURE`, preventing endless 2-minute rollover notifications once commute hours have elapsed.
+  - Excluded journeys whose departure point is the transit station itself to prevent false reversions.
 - **Morning Commute Corridor Matching, Rail Station Aliasing & BODS Timetable Validity** (`app/services/planner/transfers.py`, `app/services/planner/raptor/planner.py`, `app/datasources/bods/corridor_builder.py`):
   - Normalised rail station name matching in `resolve_stop_id_aliases` to flexibly match variations such as "Railway Station", "Rail Station", and "Station" across NaPTAN bus and Darwin rail stops (e.g. `Stevenage Railway Station` <-> `Stevenage Rail Station` <-> `9100STEVNGE`).
   - Added full prefixed alias variants (`atco:...` and `naptan:...`) for all discovered stop interchanges and station counterparts.
