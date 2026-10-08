@@ -11,6 +11,7 @@ import app.services.dispatcher.tracker as tracker_pkg
 from app.services.dispatcher.tracker.leg_advancer import (
     _advance_current_leg,
     _advance_future_legs,
+    _should_revert_to_pre_departure,
 )
 from app.services.dispatcher.tracker.models import (
     FOOT_MODES,
@@ -214,9 +215,35 @@ def update_journey_progress(
 
     current_minutes = current_dt.hour * 60 + current_dt.minute
 
+    # Track pre-update state for significance evaluation
+    old_status = active.current_status
+    old_leg_idx = active.current_leg_index
+    old_platform = active.platform
+    old_delay = active.delay_minutes
+    old_live_status = active.live_status
+
     # 1. Check journey expiration timeout (90 minutes past expected arrival)
     if _check_journey_expired(active, current_minutes):
         return False
+
+    # 2. Allow AT_DEPARTURE_STOP to revert to PRE_DEPARTURE if commuter returned to origin
+    if _should_revert_to_pre_departure(
+        active=active,
+        person_state=person_state,
+        max_proximity_metres=max_proximity_metres,
+    ):
+        active.current_status = JourneyStepStatus.PRE_DEPARTURE
+        if (
+            active.current_leg_index == 1
+            and active.legs
+            and active.legs[0].mode in FOOT_MODES
+        ):
+            active.current_leg_index = 0
+        logger.info(
+            "Stuart detected back at origin for journey %d (%s); transitioning from AT_DEPARTURE_STOP back to PRE_DEPARTURE.",
+            active.journey_id,
+            active.journey_name,
+        )
 
     # 3. Check if Stuart missed departure time while still in PRE_DEPARTURE
     handled, dispatched = _handle_pre_departure_rollover(
@@ -250,13 +277,6 @@ def update_journey_progress(
     raw_lon = attrs.get("longitude")
     person_lat = float(raw_lat) if raw_lat is not None else None
     person_lon = float(raw_lon) if raw_lon is not None else None
-
-    # Track pre-update state for significance evaluation
-    old_status = active.current_status
-    old_leg_idx = active.current_leg_index
-    old_platform = active.platform
-    old_delay = active.delay_minutes
-    old_live_status = active.live_status
 
     # 6. Step through leg progression
     if active.current_leg_index >= len(active.legs):
@@ -294,6 +314,7 @@ def update_journey_progress(
                 live_client=live_client,
                 max_proximity_metres=max_proximity_metres,
                 old_status=old_status,
+                person_state=person_state,
             )
             if not is_valid:
                 return False

@@ -304,3 +304,188 @@ def test_update_journey_progress_notification_exception_handling(app: Flask) -> 
         }
         res_prog_err = update_journey_progress(active, state_walking, now, mock_ha)
         assert res_prog_err is False
+
+
+def test_update_journey_progress_at_departure_stop_reverts_to_pre_departure(
+    app: Flask,
+) -> None:
+    """Test that an active journey at AT_DEPARTURE_STOP reverts to PRE_DEPARTURE when returning home."""
+    with app.app_context():
+        Location.create(
+            id="ha:home", name="Home", latitude=51.5350, longitude=-0.1230, ha=True
+        )
+        Location.create(
+            id="ha:office",
+            name="Tech Campus",
+            latitude=51.5200,
+            longitude=-0.1340,
+            ha=True,
+        )
+        Stop.create(
+            atco_code="490000077E",
+            naptan_code="490000077E",
+            name="King's Cross (Stop E)",
+            stop_type="bus",
+            latitude=51.5302,
+            longitude=-0.1225,
+        )
+        Stop.create(
+            atco_code="490000077C",
+            naptan_code="490000077C",
+            name="Euston Station (Stop C)",
+            stop_type="bus",
+            latitude=51.5240,
+            longitude=-0.1325,
+        )
+
+        active = create_sample_active_journey(with_rail=False)
+        # Commuter had walked to bus stop
+        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+        active.current_leg_index = 1
+        active.last_notification_message = "At King's Cross (Stop E)."
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Stuart returns home before departure time (07:55, leave time is 08:00)
+        now_755 = datetime.datetime(2026, 9, 7, 7, 55)
+        stuart_home = {
+            "entity_id": "person.stuart",
+            "state": "home",
+            "attributes": {"latitude": 51.5350, "longitude": -0.1230},
+        }
+
+        res = update_journey_progress(active, stuart_home, now_755, mock_ha)
+        # Should revert status and reset current_leg_index to 0
+        assert active.current_status == JourneyStepStatus.PRE_DEPARTURE
+        assert active.current_leg_index == 0
+        assert res is True
+        mock_ha.send_mobile_notification.assert_called_once()
+        sent_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
+        assert "Leave by" in sent_msg
+
+
+def test_update_journey_progress_at_departure_stop_reverts_and_expires_when_window_closed(
+    app: Flask,
+) -> None:
+    """Test that active journey at AT_DEPARTURE_STOP reverts and expires when returning home after window closes."""
+    with app.app_context():
+        active = create_sample_active_journey(with_rail=False)
+        active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
+        active.current_leg_index = 1
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Leave time was 08:00; at 08:15 Stuart is detected at home
+        now_815 = datetime.datetime(2026, 9, 7, 8, 15)
+        stuart_home = {
+            "entity_id": "person.stuart",
+            "state": "home",
+            "attributes": {"latitude": 51.5350, "longitude": -0.1230},
+        }
+
+        res = update_journey_progress(active, stuart_home, now_815, mock_ha)
+        assert res is False
+        assert active.current_status == JourneyStepStatus.EXPIRED
+        mock_ha.clear_mobile_notification.assert_called_once_with(
+            tag=f"journey_{active.journey_id}",
+            service_name="mobile_app_stuart_mobile",
+        )
+
+
+def test_walking_leg_does_not_prematurely_advance_to_stop_when_at_origin(
+    app: Flask,
+) -> None:
+    """Test that a stop within 200m does not advance to AT_DEPARTURE_STOP while Stuart is still at home."""
+    with app.app_context():
+        # Stop located only 120m away from Home
+        Location.create(
+            id="ha:home", name="Home", latitude=51.5350, longitude=-0.1230, ha=True
+        )
+        Stop.create(
+            atco_code="490000077E",
+            naptan_code="490000077E",
+            name="Nearby Stop",
+            stop_type="bus",
+            latitude=51.5340,
+            longitude=-0.1230,
+        )
+
+        active = create_sample_active_journey(with_rail=False)
+        active.current_status = JourneyStepStatus.PRE_DEPARTURE
+        active.current_leg_index = 0
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        now_755 = datetime.datetime(2026, 9, 7, 7, 55)
+        stuart_home = {
+            "entity_id": "person.stuart",
+            "state": "home",
+            "attributes": {"latitude": 51.5350, "longitude": -0.1230},
+        }
+
+        update_journey_progress(active, stuart_home, now_755, mock_ha)
+        # Should stay in PRE_DEPARTURE and leg 0
+        assert active.current_status == JourneyStepStatus.PRE_DEPARTURE
+        assert active.current_leg_index == 0
+
+
+def test_at_departure_stop_does_not_revert_when_origin_is_station_itself(
+    app: Flask,
+) -> None:
+    """Test that AT_DEPARTURE_STOP does not revert to PRE_DEPARTURE when the journey origin is the station itself."""
+    with app.app_context():
+        from app.services.planner.models import ItineraryEndpoint, ItineraryLeg
+
+        Stop.create(
+            atco_code="9100STP",
+            name="London St Pancras",
+            stop_type="rail",
+            latitude=51.5314,
+            longitude=-0.1261,
+        )
+        Stop.create(
+            atco_code="9100SVG",
+            name="Stevenage Rail Station",
+            stop_type="rail",
+            latitude=51.9017,
+            longitude=-0.2066,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(id="9100STP", name="London St Pancras"),
+                destination=ItineraryEndpoint(
+                    id="9100SVG", name="Stevenage Rail Station"
+                ),
+                dep_time="08:15",
+                arr_time="08:45",
+                duration_minutes=30,
+            )
+        ]
+        from app.services.dispatcher.tracker.models import ActiveJourney
+
+        active = ActiveJourney(
+            journey_id=5,
+            journey_name="Station to Station",
+            from_type="station",
+            from_id="9100STP",
+            from_name="London St Pancras",
+            to_type="station",
+            to_id="9100SVG",
+            to_name="Stevenage Rail Station",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.AT_DEPARTURE_STOP,
+            expected_arrival_time="08:45",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        stuart_at_station = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5314, "longitude": -0.1261},
+        }
+
+        now_810 = datetime.datetime(2026, 9, 7, 8, 10)
+        update_journey_progress(active, stuart_at_station, now_810, mock_ha)
+        # Should stay AT_DEPARTURE_STOP
+        assert active.current_status == JourneyStepStatus.AT_DEPARTURE_STOP
