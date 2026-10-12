@@ -203,3 +203,104 @@ def test_realign_active_journey_timings_untimetabled_bus_roll_forward(
         assert active.expected_arrival_time == "18:12"
         assert active.delay_minutes == 32  # 17:47 - 17:15
         assert active.delay_reason == "Service estimated / delayed"
+
+
+def test_realign_active_journey_timings_pull_forward_early_connection(
+    app: Flask,
+) -> None:
+    """Test that arriving early at an interchange pulls forward an earlier connecting timetable service."""
+    with app.app_context():
+        # Seed bus timetable with trips at 19:00 and 19:30
+        Timetable.create(
+            name="SB1",
+            transport_type="bus",
+            monday=True,
+            tuesday=True,
+            wednesday=True,
+            thursday=True,
+            friday=True,
+            saturday=True,
+            sunday=True,
+            content=TimetableContent(
+                stops=[
+                    TimetableStop(id="490000077E", name="Bus Interchange (Stop E)"),
+                    TimetableStop(id="490000077C", name="Local Stop (Stop C)"),
+                ],
+                trips=[
+                    TimetableTrip(id="trip-1900", times=["19:00", "19:15"]),
+                    TimetableTrip(id="trip-1930", times=["19:30", "19:45"]),
+                ],
+            ),
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(id="9100KGX", name="London King's Cross"),
+                destination=ItineraryEndpoint(
+                    id="490000077E", name="Bus Interchange (Stop E)"
+                ),
+                dep_time="18:00",
+                arr_time="18:50",
+                duration_minutes=50,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="bus",
+                origin=ItineraryEndpoint(
+                    id="490000077E", name="Bus Interchange (Stop E)"
+                ),
+                destination=ItineraryEndpoint(
+                    id="490000077C", name="Local Stop (Stop C)"
+                ),
+                dep_time="19:30",
+                arr_time="19:45",
+                duration_minutes=15,
+                line="SB1",
+            ),
+            ItineraryLeg(
+                leg_index=2,
+                mode="walk",
+                origin=ItineraryEndpoint(id="490000077C", name="Local Stop (Stop C)"),
+                destination=ItineraryEndpoint(id="ha:home", name="Home"),
+                dep_time="19:45",
+                arr_time="19:50",
+                duration_minutes=5,
+            ),
+        ]
+        itin = ScheduledItinerary(
+            departure_time="18:00",
+            arrival_time="19:50",
+            total_duration_minutes=110,
+            transfers_count=1,
+            robustness_score="high",
+            legs=legs,
+        )
+        active = ActiveJourney(
+            journey_id=2,
+            journey_name="Evening Commute Home",
+            from_type="station",
+            from_id="9100KGX",
+            from_name="London King's Cross",
+            to_type="ha",
+            to_id="ha:home",
+            to_name="Home",
+            itinerary=itin,
+            legs=legs,
+            current_leg_index=1,
+            current_status=JourneyStepStatus.AT_INTERCHANGE,
+            expected_arrival_time="19:50",
+        )
+
+        # Commuter arrives at interchange early at 18:55 (ahead of 19:30 scheduled departure)
+        dt_1855 = datetime.datetime(2026, 10, 12, 18, 55)
+        _realign_active_journey_timings(active, dt_1855)
+
+        # Leg 1 pulled forward to 19:00 service!
+        assert active.legs[1].dep_time == "19:00"
+        assert active.legs[1].arr_time == "19:15"
+        # Leg 2 egress walking leg updated
+        assert active.legs[2].dep_time == "19:15"
+        assert active.legs[2].arr_time == "19:20"
+        assert active.expected_arrival_time == "19:20"
