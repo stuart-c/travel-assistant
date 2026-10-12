@@ -585,3 +585,169 @@ def test_dynamic_rail_interchange_realignment(app: Flask) -> None:
         assert active.legs[1].origin.id == "9100KNGX"
         assert active.current_leg_index == 1
         assert active.current_status == JourneyStepStatus.AT_INTERCHANGE
+
+
+def test_rail_interchange_distant_station_not_realigned(app: Flask) -> None:
+    """Test that a distant station passed along a transit corridor (>6km from planned interchange) is not realigned."""
+    with app.app_context():
+        # Planned journey: Watford Junction -> London Euston (rail), then London Euston -> London Victoria (rail)
+        # Passing station: Harrow & Wealdstone (~16km away from Euston)
+        Stop.create(
+            atco_code="9100WATFDJ",
+            name="Watford Junction Rail Station",
+            stop_type="rail",
+            latitude=51.6641,
+            longitude=-0.3965,
+        )
+        Stop.create(
+            atco_code="9100HARROW",
+            name="Harrow & Wealdstone Rail Station",
+            stop_type="rail",
+            latitude=51.5923,
+            longitude=-0.3347,
+        )
+        Stop.create(
+            atco_code="9100EUSTON",
+            name="London Euston Rail Station",
+            stop_type="rail",
+            latitude=51.5281,
+            longitude=-0.1337,
+        )
+        Stop.create(
+            atco_code="9100VICTRIC",
+            name="London Victoria Rail Station",
+            stop_type="rail",
+            latitude=51.4952,
+            longitude=-0.1439,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(
+                    id="9100WATFDJ", name="Watford Junction Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="9100EUSTON", name="London Euston Rail Station"
+                ),
+                dep_time="08:00",
+                arr_time="08:35",
+                duration_minutes=35,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="rail",
+                origin=ItineraryEndpoint(
+                    id="9100EUSTON", name="London Euston Rail Station"
+                ),
+                destination=ItineraryEndpoint(
+                    id="9100VICTRIC", name="London Victoria Rail Station"
+                ),
+                dep_time="08:45",
+                arr_time="09:00",
+                duration_minutes=15,
+            ),
+        ]
+        active = ActiveJourney(
+            journey_id=8,
+            journey_name="Watford to Victoria",
+            from_type="station",
+            from_id="9100WATFDJ",
+            from_name="Watford Junction Rail Station",
+            to_type="station",
+            to_id="9100VICTRIC",
+            to_name="London Victoria Rail Station",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.ON_TRANSIT,
+            expected_arrival_time="09:00",
+        )
+
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Stuart is passing Harrow & Wealdstone (within 100m of Harrow platform)
+        stuart_at_harrow = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5923, "longitude": -0.3347},
+        }
+        now_dt = datetime.datetime(2026, 9, 29, 8, 15)
+        res = update_journey_progress(active, stuart_at_harrow, now_dt, mock_ha)
+        assert res is True
+        # Interchange MUST remain London Euston, NOT Harrow & Wealdstone!
+        assert active.legs[0].destination.id == "9100EUSTON"
+        assert active.legs[1].origin.id == "9100EUSTON"
+        assert active.current_leg_index == 0
+
+
+def test_advance_current_leg_early_transit_boarding(app: Flask) -> None:
+    """Test that boarding an earlier transit service ahead of schedule pulls forward departure and arrival times."""
+    with app.app_context():
+        Stop.create(
+            atco_code="9100KGX",
+            name="London King's Cross",
+            stop_type="rail",
+            latitude=51.5308,
+            longitude=-0.1238,
+        )
+        Stop.create(
+            atco_code="9100FPK",
+            name="Finsbury Park",
+            stop_type="rail",
+            latitude=51.5642,
+            longitude=-0.1062,
+        )
+
+        legs = [
+            ItineraryLeg(
+                leg_index=0,
+                mode="rail",
+                origin=ItineraryEndpoint(id="9100KGX", name="London King's Cross"),
+                destination=ItineraryEndpoint(id="9100FPK", name="Finsbury Park"),
+                dep_time="08:30",
+                arr_time="08:40",
+                duration_minutes=10,
+            ),
+            ItineraryLeg(
+                leg_index=1,
+                mode="walk",
+                origin=ItineraryEndpoint(id="9100FPK", name="Finsbury Park"),
+                destination=ItineraryEndpoint(id="ha:work", name="Work"),
+                dep_time="08:40",
+                arr_time="08:45",
+                duration_minutes=5,
+            ),
+        ]
+        active = ActiveJourney(
+            journey_id=9,
+            journey_name="King's Cross to Work",
+            from_type="station",
+            from_id="9100KGX",
+            from_name="London King's Cross",
+            to_type="ha",
+            to_id="ha:work",
+            to_name="Work",
+            legs=legs,
+            current_leg_index=0,
+            current_status=JourneyStepStatus.AT_DEPARTURE_STOP,
+            expected_arrival_time="08:45",
+        )
+
+        # Commuter boards at 08:20 (10 minutes before 08:30 scheduled departure) and moves en route
+        mock_ha = MagicMock(spec=HomeAssistantClient)
+        # Position midway between King's Cross and Finsbury Park
+        stuart_en_route = {
+            "entity_id": "person.stuart",
+            "state": "not_home",
+            "attributes": {"latitude": 51.5475, "longitude": -0.1150},
+        }
+        now_dt = datetime.datetime(2026, 9, 29, 8, 20)
+        res = update_journey_progress(active, stuart_en_route, now_dt, mock_ha)
+        assert res is True
+        assert active.current_status == JourneyStepStatus.ON_TRANSIT
+        # Departure pulled forward to 08:18 (08:20 - 2m), arrival to 08:28, walk to 08:33
+        assert active.legs[0].dep_time == "08:18"
+        assert active.legs[0].arr_time == "08:28"
+        assert active.legs[1].dep_time == "08:28"
+        assert active.legs[1].arr_time == "08:33"
+        assert active.expected_arrival_time == "08:33"

@@ -361,7 +361,7 @@ def test_update_journey_progress_at_departure_stop_reverts_to_pre_departure(
         assert res is True
         mock_ha.send_mobile_notification.assert_called_once()
         sent_msg = mock_ha.send_mobile_notification.call_args[1]["message"]
-        assert "Leave by" in sent_msg
+        assert "Depart by" in sent_msg
 
 
 def test_update_journey_progress_at_departure_stop_reverts_and_expires_when_window_closed(

@@ -2003,3 +2003,29 @@ def test_format_departure_notification_custom_ingress_slug_and_persistence(
                 "uri": expected_url,
             }
         ]
+
+
+def test_depart_mode_candidate_before_start_time_ignored(app: Flask) -> None:
+    """Test that in depart mode, transit departures scheduled before the timeslot start_time are ignored."""
+    from app.models.journey import JourneyTimeSetting
+
+    with app.app_context():
+        journey = _seed_commute_data()
+        # Bus 73 has trips at 08:08 and 08:38.
+        # Configure a timeslot in depart mode starting at 08:20 to 09:00.
+        ts = JourneyTimeSetting(
+            days=["mon"],
+            mode="depart",
+            start_time="08:20",
+            end_time="09:00",
+        )
+        journey.time_settings = [ts]
+        journey.save()
+
+        # At 07:55, Stuart could physically catch the 08:08 bus (leave at 08:00).
+        # However, because mode="depart" and start_time="08:20", the 08:08 bus must be ignored
+        # and the 08:38 bus should be chosen instead.
+        now_dt = datetime.datetime(2026, 9, 7, 7, 55)
+        picked = find_next_departure_candidate(journey, now_dt)
+        assert picked is not None
+        assert picked.transit_dep_time == "08:38"

@@ -12,6 +12,7 @@ from app.services.dispatcher.tracker.models import (
     JourneyStepStatus,
 )
 from app.services.dispatcher.tracker.schedule_aligner import (
+    _propagate_leg_timings,
     _realign_active_journey_timings,
 )
 from app.services.dispatcher.tracker.significance import (
@@ -132,6 +133,21 @@ def _check_and_realign_rail_interchange(
         )
         if dist > 400.0:
             return False
+
+        # Verify alternative station is in the same hub / terminal area as planned interchange
+        # (e.g. King's Cross vs Finsbury Park <= 6 km), not a distant station 20+ km down the line!
+        curr_dest_lat, curr_dest_lon, _ = resolve_endpoint_coordinates(
+            curr_leg.mode, curr_leg.destination.id
+        )
+        if curr_dest_lat is not None and curr_dest_lon is not None:
+            interchange_dist = haversine_distance_m(
+                float(st.latitude or 0.0),
+                float(st.longitude or 0.0),
+                curr_dest_lat,
+                curr_dest_lon,
+            )
+            if interchange_dist > 6000.0:
+                return False
 
         st_aliases = resolve_stop_id_aliases(st.atco_code, st.name)
         curr_dest_aliases = resolve_stop_id_aliases(
@@ -545,6 +561,23 @@ def _advance_current_leg(
                     active.current_status = JourneyStepStatus.AT_DEPARTURE_STOP
             else:
                 active.current_status = JourneyStepStatus.AT_INTERCHANGE
+
+        if active.current_status == JourneyStepStatus.ON_TRANSIT:
+            if dep_min is not None and current_minutes < dep_min - 3:
+                # Commuter boarded an earlier transit service ahead of schedule
+                earlier_dep_m = max(0, current_minutes - 2)
+                leg.dep_time = format_minutes_to_time(earlier_dep_m)
+                dur = leg.duration_minutes or 20
+                leg.arr_time = format_minutes_to_time(earlier_dep_m + dur)
+                _propagate_leg_timings(active, active.current_leg_index)
+                logger.info(
+                    "Detected earlier transit departure on leg %d (%s -> %s): updated departure to %s, arrival to %s",
+                    active.current_leg_index,
+                    leg.origin.name,
+                    leg.destination.name,
+                    leg.dep_time,
+                    leg.arr_time,
+                )
 
     return True
 

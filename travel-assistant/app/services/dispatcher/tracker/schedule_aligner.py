@@ -15,6 +15,7 @@ from app.services.planner.transfers import (
     get_active_timetables,
     normalise_id,
 )
+from app.utils.geo import resolve_endpoint_coordinates
 from app.utils.transit_time import (
     format_minutes_to_time,
     get_day_code,
@@ -33,7 +34,7 @@ def _propagate_leg_timings(active: ActiveJourney, from_index: int) -> None:
         if prev_arr_m is None:
             continue
         next_dep_m = parse_time_to_minutes(next_leg.dep_time)
-        if next_dep_m is None or next_dep_m < prev_arr_m:
+        if next_leg.mode in FOOT_MODES or next_dep_m is None or next_dep_m < prev_arr_m:
             next_leg.dep_time = prev_leg.arr_time
             dur = next_leg.duration_minutes or 5
             next_leg.arr_time = format_minutes_to_time(prev_arr_m + dur)
@@ -149,6 +150,143 @@ def _realign_active_journey_timings(
         dep_m = parse_time_to_minutes(leg.dep_time)
         if dep_m is None:
             continue
+
+        # Check if commuter is at an interchange or departure stop early with an excessive wait,
+        # where an earlier departure could be caught:
+        is_early = (
+            idx == active.current_leg_index
+            and active.current_status
+            in (JourneyStepStatus.AT_INTERCHANGE, JourneyStepStatus.AT_DEPARTURE_STOP)
+            and dep_m > current_minutes + 5
+        )
+
+        if is_early:
+            # 1. Check timetable for an earlier trip departing after current time + 1 min buffer
+            earlier_trip = _find_next_timetable_trip(
+                origin_id=leg.origin.id,
+                dest_id=leg.destination.id,
+                after_minutes=current_minutes + 1,
+                current_dt=current_dt,
+            )
+            if earlier_trip:
+                e_dep, e_arr, e_line, e_op = earlier_trip
+                e_dep_m = parse_time_to_minutes(e_dep)
+                if e_dep_m is not None and e_dep_m < dep_m:
+                    leg.dep_time = e_dep
+                    leg.arr_time = e_arr
+                    if e_line:
+                        leg.line = e_line
+                    if e_op:
+                        leg.operator = e_op
+                    if leg.origin and leg.origin.platform:
+                        active.platform = leg.origin.platform
+                    _propagate_leg_timings(active, idx)
+                    logger.info(
+                        "Pulled forward active timetable leg %d (%s -> %s) to earlier trip %s (arr %s)",
+                        idx,
+                        leg.origin.name,
+                        leg.destination.name,
+                        e_dep,
+                        e_arr,
+                    )
+                    continue
+
+            # 2. Check live rail if early at rail station
+            if leg.mode == "rail" and live_client:
+                live_res = resolve_live_rail_platform(
+                    origin_id=leg.origin.id,
+                    dest_id=leg.destination.id,
+                    scheduled_time=format_minutes_to_time(current_minutes + 1),
+                    live_client=live_client,
+                )
+                if live_res.std:
+                    earlier_rail_dep_m = parse_time_to_minutes(live_res.std)
+                    if (
+                        earlier_rail_dep_m is not None
+                        and current_minutes <= earlier_rail_dep_m < dep_m
+                    ):
+                        leg.dep_time = live_res.std
+                        dur = leg.duration_minutes or 20
+                        leg.arr_time = format_minutes_to_time(earlier_rail_dep_m + dur)
+                        if live_res.platform:
+                            leg.origin.platform = live_res.platform
+                            active.platform = live_res.platform
+                        active.live_status = live_res.etd
+                        active.delay_minutes = live_res.delay_minutes
+                        active.delay_reason = live_res.delay_reason
+                        _propagate_leg_timings(active, idx)
+                        logger.info(
+                            "Pulled forward active rail leg %d (%s -> %s) to earlier live train %s (arr %s)",
+                            idx,
+                            leg.origin.name,
+                            leg.destination.name,
+                            leg.dep_time,
+                            leg.arr_time,
+                        )
+                        continue
+
+            # 3. If wait at interchange is long (> 15 mins) and active journey has an associated journey model,
+            # query dynamic reroute from current stop to see if a faster connecting route is available
+            if dep_m > current_minutes + 15 and active.journey_id:
+                try:
+                    from app.models.journey import Journey
+                    from app.services.reroute_engine import RerouteEngine
+
+                    journey_obj = Journey.get_by_id(active.journey_id)
+                    if journey_obj:
+                        re_engine = RerouteEngine(live_client=live_client)
+                        cur_orig_lat, cur_orig_lon, _ = resolve_endpoint_coordinates(
+                            leg.mode, leg.origin.id
+                        )
+                        rerouted_itin, _ = re_engine.evaluate_and_reroute(
+                            journey=journey_obj,
+                            trigger_reason=f"Early arrival at interchange ({dep_m - current_minutes}m wait)",
+                            departure_time=current_dt,
+                            current_lat=cur_orig_lat,
+                            current_lon=cur_orig_lon,
+                        )
+                        if rerouted_itin and rerouted_itin.legs:
+                            new_arr_m = parse_time_to_minutes(
+                                rerouted_itin.arrival_time
+                            )
+                            old_arr_m = parse_time_to_minutes(
+                                active.expected_arrival_time
+                            )
+                            if (
+                                new_arr_m is not None
+                                and old_arr_m is not None
+                                and new_arr_m < old_arr_m
+                            ):
+                                spliced_legs = list(active.legs[:idx])
+                                for r_idx, r_leg in enumerate(
+                                    rerouted_itin.legs, start=idx
+                                ):
+                                    r_leg.leg_index = r_idx
+                                    spliced_legs.append(r_leg)
+                                active.legs = spliced_legs
+                                active.expected_arrival_time = (
+                                    rerouted_itin.arrival_time
+                                )
+                                cur_l = active.legs[idx]
+                                if cur_l.origin and cur_l.origin.platform:
+                                    active.platform = cur_l.origin.platform
+                                elif active.platform and not any(
+                                    w in str(active.platform).lower()
+                                    for w in ("stand", "stop", "bay")
+                                ):
+                                    active.platform = None
+                                logger.info(
+                                    "Dynamic reroute pulled forward connection for journey %d at leg %d: new ETA %s (was %s)",
+                                    active.journey_id,
+                                    idx,
+                                    active.expected_arrival_time,
+                                    format_minutes_to_time(old_arr_m),
+                                )
+                                continue
+                except Exception as reroute_exc:
+                    logger.debug(
+                        "Early arrival dynamic reroute check skipped: %s", reroute_exc
+                    )
 
         # If departure time is in the past (more than 1 min ago)
         if dep_m < current_minutes - 1:

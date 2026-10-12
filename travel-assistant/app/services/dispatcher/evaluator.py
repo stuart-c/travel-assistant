@@ -491,10 +491,18 @@ def evaluate_journey_notification(
                     and cand_arr > end_arr + 15
                 ):
                     continue
-            elif mode != "arrive" and active_ts.end_time:
-                end_dep = parse_time_to_minutes(active_ts.end_time)
-                if end_dep is not None and adjusted.leave_minutes > end_dep + 15:
-                    continue
+            elif mode != "arrive":
+                if active_ts.start_time:
+                    start_dep = parse_time_to_minutes(active_ts.start_time)
+                    if (
+                        start_dep is not None
+                        and adjusted.transit_dep_minutes < start_dep
+                    ):
+                        continue
+                if active_ts.end_time:
+                    end_dep = parse_time_to_minutes(active_ts.end_time)
+                    if end_dep is not None and adjusted.leave_minutes > end_dep + 15:
+                        continue
 
         # Check if already notified
         if adjusted.service_key in sent_keys:
@@ -629,10 +637,18 @@ def find_next_departure_candidate(
                 cand_arr = parse_time_to_minutes(adjusted.arrival_time)
                 if end_arr is not None and cand_arr is not None and cand_arr > end_arr:
                     continue
-            elif mode != "arrive" and active_ts.end_time:
-                end_dep = parse_time_to_minutes(active_ts.end_time)
-                if end_dep is not None and adjusted.leave_minutes > end_dep:
-                    continue
+            elif mode != "arrive":
+                if active_ts.start_time:
+                    start_dep = parse_time_to_minutes(active_ts.start_time)
+                    if (
+                        start_dep is not None
+                        and adjusted.transit_dep_minutes < start_dep
+                    ):
+                        continue
+                if active_ts.end_time:
+                    end_dep = parse_time_to_minutes(active_ts.end_time)
+                    if end_dep is not None and adjusted.leave_minutes > end_dep:
+                        continue
 
         if adjusted.service_key in excluded:
             continue
