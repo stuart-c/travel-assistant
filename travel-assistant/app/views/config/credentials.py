@@ -12,6 +12,11 @@ from flask import (
 )
 
 from app.models import Setting
+from app.services.api_tracker import (
+    get_recent_calls,
+    get_usage_summary,
+    global_api_cache,
+)
 from app.validators import validate_service_credentials
 from app.views.config import config_bp
 
@@ -30,6 +35,8 @@ CREDENTIAL_FIELDS = [
     "open_api_model",
     "google_maps_api_key",
     "google_maps_region",
+    "google_maps_daily_limit",
+    "google_maps_monthly_limit",
 ]
 
 
@@ -65,12 +72,39 @@ def credentials() -> Any:
         current_credentials["open_api_model"] = "gpt-4o-mini"
     if not current_credentials.get("google_maps_region"):
         current_credentials["google_maps_region"] = "uk"
+    if not current_credentials.get("google_maps_daily_limit"):
+        current_credentials["google_maps_daily_limit"] = "100"
+    if not current_credentials.get("google_maps_monthly_limit"):
+        current_credentials["google_maps_monthly_limit"] = "1000"
+
+    api_usage = get_usage_summary("google_maps")
+    recent_calls = get_recent_calls(limit=15, provider="google_maps")
 
     return render_template(
         "config_credentials.html",
         credentials=current_credentials,
+        api_usage=api_usage,
+        recent_calls=recent_calls,
         active_tab="credentials",
     )
+
+
+@config_bp.route("/credentials/clear_cache", methods=["POST"])
+def clear_api_cache() -> Any:
+    """Clear external API in-memory response cache."""
+    provider = request.form.get("provider") or None
+    cleared = global_api_cache.clear(provider=provider)
+    flash(f"Successfully purged {cleared} cached API responses.", "success")
+    return redirect(url_for("config.credentials"), code=303)
+
+
+@config_bp.route("/credentials/api_usage", methods=["GET"])
+def api_usage_summary_json() -> Any:
+    """Retrieve JSON summary of external API usage and quota status."""
+    provider = request.args.get("provider", "google_maps")
+    summary = get_usage_summary(provider=provider)
+    recent = get_recent_calls(limit=25, provider=provider)
+    return jsonify({"summary": summary, "recent_calls": recent})
 
 
 @config_bp.route("/credentials/validate", methods=["POST"])

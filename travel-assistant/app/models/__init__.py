@@ -20,6 +20,7 @@ from app.models.transit import (
     Stop,
     SyncMetadata,
 )
+from app.models.api_usage import ApiUsageLog
 from app.models.mcp import MCPTool
 from app.models.route_query_log import RouteQueryLog
 from app.models.walking import Walking
@@ -33,6 +34,7 @@ ALL_MODELS = [
     Location,
     Journey,
     RouteQueryLog,
+    ApiUsageLog,
     Walking,
     MCPTool,
 ]
@@ -49,6 +51,7 @@ __all__ = [
     "Location",
     "Journey",
     "RouteQueryLog",
+    "ApiUsageLog",
     "JourneyTimeSetting",
     "Walking",
     "Stop",

@@ -184,7 +184,7 @@ def journey_discover_corridors(journey_id: int) -> Dict[str, Any]:
     from app.services.planner.dynamic_planner import DynamicRoutePlanner
 
     planner = DynamicRoutePlanner()
-    itineraries = planner.plan_transit(journey=journey)
+    itineraries = planner.plan_transit(journey=journey, caller="mcp_journey")
     routes = [itin.model_dump() for itin in itineraries]
     return {
         "success": True,

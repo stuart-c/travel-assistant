@@ -392,11 +392,13 @@ def sync_walking_routes(
                         origin=(loc_lat, loc_lon),
                         destination=(st_lat, st_lon),
                         mode="walking",
+                        caller="walking_sync",
                     )
                     rev_resp = client.directions(
                         origin=(st_lat, st_lon),
                         destination=(loc_lat, loc_lon),
                         mode="walking",
+                        caller="walking_sync",
                     )
 
                     fwd_min = extract_walking_minutes(fwd_resp)

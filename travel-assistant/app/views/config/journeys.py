@@ -117,7 +117,7 @@ def discover_journey_corridors(journey_id: int) -> Any:
         return jsonify({"error": f"Journey {journey_id} not found."}), 404
 
     planner = DynamicRoutePlanner()
-    itineraries = planner.plan_transit(journey=journey)
+    itineraries = planner.plan_transit(journey=journey, caller="ui_journeys")
     routes = [itin.model_dump() for itin in itineraries]
     return jsonify(
         {
@@ -137,7 +137,7 @@ def get_journey_routes(journey_id: int) -> Any:
         return jsonify({"error": f"Journey {journey_id} not found."}), 404
 
     planner = DynamicRoutePlanner()
-    itineraries = planner.plan_transit(journey=journey)
+    itineraries = planner.plan_transit(journey=journey, caller="ui_journeys")
     routes = [itin.model_dump() for itin in itineraries]
     return jsonify(
         {

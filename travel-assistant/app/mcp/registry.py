@@ -114,6 +114,7 @@ def _ensure_all_tools_imported() -> None:
     import app.mcp.tools_dispatcher  # noqa: F401
     import app.mcp.tools_sync  # noqa: F401
     import app.mcp.tools_database  # noqa: F401
+    import app.mcp.tools_api_usage  # noqa: F401
 
 
 __all__ = [
