@@ -64,7 +64,9 @@ def get_journey_estimated_duration_minutes(
     """Estimate journey duration in minutes from dynamic planning or fallback default."""
     try:
         planner = DynamicRoutePlanner()
-        plans = planner.plan_transit(journey=journey, enrich_live=False)
+        plans = planner.plan_transit(
+            journey=journey, enrich_live=False, caller="departure_monitor"
+        )
         if plans:
             return max(int(plans[0].total_duration_minutes), 30)
     except Exception:
@@ -237,6 +239,7 @@ def extract_departure_candidates(
             departure_time=dt,
             max_results=max_plans,
             enrich_live=True,
+            caller="departure_monitor",
         )
     except Exception as exc:
         logger.debug(

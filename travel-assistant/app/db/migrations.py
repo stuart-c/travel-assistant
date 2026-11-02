@@ -53,6 +53,7 @@ def cleanup_legacy_tables(database: SqliteDatabase) -> None:
 
 def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
     """Ensure all core schema models and R*Tree virtual tables exist."""
+    from app.models.api_usage import ApiUsageLog
     from app.models.journey import Journey
     from app.models.location import Location
     from app.models.mcp import MCPTool
@@ -75,6 +76,7 @@ def ensure_tables_and_virtual_tables(database: SqliteDatabase) -> None:
         Location,
         Journey,
         RouteQueryLog,
+        ApiUsageLog,
         Walking,
         MCPTool,
     ]

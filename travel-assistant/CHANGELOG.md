@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **External API Usage Telemetry, Response Caching & Safety Quotas** (`app/models/api_usage.py`, `app/services/api_tracker.py`, `app/datasources/google_maps.py`, `app/mcp/tools_api_usage.py`, `app/views/config/credentials.py`, `config_credentials.html`):
+  - Added `ApiUsageLog` Peewee model and SQLite audit log (`api_usage_logs`) tracking external requests, endpoints, callers, roundtrip latencies, HTTP status codes, cache hit flags, and estimated API spend.
+  - Implemented `ApiCache` in-memory thread-safe TTL cache layer caching identical Google Routes transit routes (15-minute TTL) and static walking directions/geocoding (24-hour TTL).
+  - Added daily and monthly safety request caps (`google_maps_daily_limit`, `google_maps_monthly_limit`) configurable via the Credentials UI to prevent runaway API spend.
+  - Added live API Usage & Cost Telemetry dashboard card to the Google Maps Credentials settings page with daily/monthly call progress, estimated cost, cache hit rate metrics, and a "Clear Cache" button.
+  - Added MCP tools `api_usage_get_summary`, `api_usage_list_recent`, `api_cache_clear`, and `api_quota_set` for AI agent auditing and quota management.
 - **Dynamic Transit Route Planning with Google Routes v2 & Custom Timetable Splicing** (`app/services/planner/dynamic_planner.py`, `app/services/reroute_engine.py`, `app/views/journey.py`, `app/services/dispatcher/tracker/view_model.py`):
   - Transitioned from static pre-computed route templates to real-time, dynamic multi-modal transit planning using Google Maps Routes API v2 (`directions/v2:computeRoutes`).
   - Added hybrid private/custom timetable splicing for first-mile and last-mile links (e.g., campus and hospital shuttle services) into public transit itineraries.

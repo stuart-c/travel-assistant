@@ -214,6 +214,8 @@ class DynamicRoutePlanner:
         current_name: Optional[str] = None,
         enrich_live: bool = True,
         max_results: int = 5,
+        caller: str = "dynamic_planner",
+        bypass_cache: bool = False,
     ) -> List[ScheduledItinerary]:
         """Compute live transit itineraries for a Journey.
 
@@ -281,6 +283,8 @@ class DynamicRoutePlanner:
                 departure_time=effective_dep,
                 arrival_time=effective_arr,
                 compute_alternative_routes=True,
+                caller=caller,
+                bypass_cache=bypass_cache,
             )
             for r in resp.get("routes", []):
                 itin = self._parse_google_route_to_itinerary(
